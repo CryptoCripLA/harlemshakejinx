@@ -24,6 +24,15 @@ class LiveExecutionUnavailable(RuntimeError):
     """Raised when live execution is requested but no live executor is wired (always, in Phase 1)."""
 
 
+def _clean_id(name: str, value) -> None:
+    """Ids are stored as text and compared by SQLite; control characters (NUL above all, which SQLite's
+    text functions treat as the end of the string) are refused."""
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{name} must be a non-empty string")
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in value):
+        raise ValueError(f"{name} must not contain control characters")
+
+
 def _positive_int(name: str, value) -> None:
     if isinstance(value, bool) or not isinstance(value, int):
         raise TypeError(f"{name} must be an int, got {type(value).__name__}")
@@ -40,8 +49,8 @@ class EntryIntent:
     created_ns: int = field(default_factory=time.time_ns)
 
     def __post_init__(self) -> None:
-        if not self.intent_id or not self.mint:
-            raise ValueError("entry intent needs an id and a mint")
+        _clean_id("intent_id", self.intent_id)
+        _clean_id("mint", self.mint)
         _positive_int("budget_lamports", self.budget_lamports)
 
 
@@ -53,8 +62,7 @@ class ExitIntent:
     reason: str = "unspecified"
 
     def __post_init__(self) -> None:
-        if not self.intent_id:
-            raise ValueError("exit intent needs an id")
+        _clean_id("intent_id", self.intent_id)
         if self.token_amount is not None:
             _positive_int("token_amount", self.token_amount)
 

@@ -143,7 +143,7 @@ CREATE TABLE IF NOT EXISTS paper_wallet_entries (
 """
 
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 # v1 (up to commit 1ad0d65): no entry budget, no exit_intents, no amount CHECK constraints.
 # v2: positions.entry_budget_lamports (NULL = unknown for positions created by v1), exit_intents, CHECKs.
 # v3: exit_intents.legacy_fill_id; v1 sell fills ("<intent>:sell") become historical exit bindings, so a
@@ -154,20 +154,17 @@ SCHEMA_VERSION = 6
 #     binding, which a rejected attempt can leave behind).
 # v6: historical sell evidence lives in historical_exits, keyed by fill id, and is checked before any exit
 #     binding; a binding under the same intent id can no longer suppress it.
+# v7: the historical-evidence scan runs in Python (NUL-safe) and also preserves sells it cannot classify.
 
 V2_POSITIONS = SCHEMA[SCHEMA.index("CREATE TABLE IF NOT EXISTS positions ("):SCHEMA.index("CREATE INDEX IF NOT EXISTS positions_active")]
 V2_FILLS = SCHEMA[SCHEMA.index("CREATE TABLE IF NOT EXISTS fills ("):SCHEMA.index("CREATE TABLE IF NOT EXISTS exit_intents")]
 # Only a fill's own provenance proves which exit produced it: from schema v5 every sell fill records its
 # exit_intent_id in the same transaction. Every sell fill without provenance (written before v5) is
-# recorded as historical evidence in its own table, keyed by the fill id, so no exit binding, whatever it
-# says, can displace or hide it (the v5 rule wrote this evidence into exit_intents, where an existing row
-# for the same intent id silently won). Idempotent; runs on every open, repairing older databases.
-LEGACY_EXIT_BACKFILL = """
-INSERT OR IGNORE INTO historical_exits (fill_id, intent_id, position_id)
-SELECT fill_id, substr(fill_id, 1, length(fill_id) - 5), position_id
-FROM fills
-WHERE side = 'sell' AND exit_intent_id IS NULL AND fill_id LIKE '%:sell'
-"""
+# recorded as historical evidence in its own table, keyed by the fill id, so no exit binding can displace
+# it. The scan runs in Python, not SQL: SQLite's text functions (LIKE, length, substr) stop at an embedded
+# NUL, which once let an old intent id escape. A fill id ending in ":sell" yields its intent id; any other
+# provenance-free sell is still recorded, under its own full fill id. Idempotent; runs on every open.
+SELL_SUFFIX = ":sell"
 
 
 class SchemaTooNew(RuntimeError):
@@ -211,7 +208,12 @@ class Store:
                 c.execute("ALTER TABLE exit_intents ADD COLUMN legacy_fill_id TEXT")
             if "exit_intent_id" not in self._columns("fills"):
                 c.execute("ALTER TABLE fills ADD COLUMN exit_intent_id TEXT")
-            c.execute(LEGACY_EXIT_BACKFILL)
+            rows = c.execute("SELECT fill_id, position_id FROM fills WHERE side = 'sell' AND exit_intent_id IS NULL"
+                             ).fetchall()
+            for fill_id, position_id in rows:
+                intent_id = fill_id[:-len(SELL_SUFFIX)] if fill_id.endswith(SELL_SUFFIX) else fill_id
+                c.execute("INSERT OR IGNORE INTO historical_exits (fill_id, intent_id, position_id) VALUES (?,?,?)",
+                          (fill_id, intent_id, position_id))
 
     def _tables(self) -> set[str]:
         return {r[0] for r in self.conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}

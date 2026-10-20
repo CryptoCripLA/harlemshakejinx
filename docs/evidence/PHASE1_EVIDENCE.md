@@ -69,7 +69,7 @@ Replay latency differs by mode. The batch modes push all 356 events at once, so 
 
 ## 6. Final state
 
-- Full suite at the round-6 fix head: **203 passed, 0 failed, 0 skipped** (`.venv/bin/python -m pytest`). This includes the round-1 to round-6 regression files and `tests/test_licenses.py`. The rustc differential ran; it was not skipped. The full suite was run by the builder on jinx-nyc; Codex's Windows runs covered selected tests only.
+- Full suite at the round-7 fix head: **224 passed, 0 failed, 0 skipped** (`.venv/bin/python -m pytest`). This includes the round-1 to round-7 regression files and `tests/test_licenses.py`. The rustc differential ran; it was not skipped. The full suite was run by the builder on jinx-nyc; Codex's Windows runs covered selected tests only.
 - 30-second live smoke run on the fixed code: status ok, 11 events stored and applied, 0 malformed, 0 write retries, ingestion not stalled, wallet reconciled. Local processing p50 0.29 ms.
 - `scripts/upstream_sync.py --verify`: all four upstreams OK, now including clean Windows CRLF checkouts.
 - Independent review:
@@ -78,7 +78,8 @@ Replay latency differs by mode. The batch modes push all 356 events at once, so 
   - Round 3 (Codex, `e1c5b06`): FAIL, 3 findings (section 8).
   - Round 4 (Codex, `631da32`): FAIL, 1 high, 2 medium, 2 low (section 9).
   - Round 5 (Codex, `1b6d797`): FAIL, 1 high, 1 medium, 1 low (section 10).
-  - Round 6 (Codex, `f270bf5`): FAIL, 1 high, 1 medium, 1 low; fixed by the builder, awaiting round 7 (section 11).
+  - Round 6 (Codex, `f270bf5`): FAIL, 1 high, 1 medium, 1 low (section 11).
+  - Round 7 (Codex, `a2068e3`): FAIL, 1 high, 1 medium; fixed by the builder, awaiting round 8 (section 12).
 - Not verified, with reasons:
   - Docker image build: no Docker permission on jinx-nyc.
   - Live GMGN API calls: no API key yet (B-08).
@@ -143,13 +144,22 @@ Codex round 5 (`docs/audits/phase1-codex-20261020-round5.md`, on `1b6d797`) retu
 | R5-2 MED: a cancelled unsubscribe plus a clean reconnect lost a held mint | A cancelled unsubscribe re-subscribes the mint, which restores Mako's own reconnect tracking. Every reconcile checks the connection object; on any new connection, clean closes included, the confirmed set is reset to what Mako re-subscribed. Test: Codex's five-step sequence followed by a code-1000 close ends with the held mint subscribed on the new connection and in Mako's set |
 | R5-3 LOW: the replay network guard allowed any loopback connection | **Partial per round 6 (R6-3: `connect_ex` was unguarded); completed in section 11.** The guard allows only the connection asyncio makes inside `socket.socketpair()`. A second test proves loopback application connections are refused |
 
-## 11. Review round 6 fixes (awaiting re-review)
+## 11. Review round 6 fixes (round 7: R6-1 and R6-3 confirmed; R6-2 partial, see section 12)
 
 Codex round 6 (`docs/audits/phase1-codex-20261020-round6.md`, on `f270bf5`) returned FAIL. It confirmed R5-2, R4-2, R3-2 and B5 fixed, so all subscription findings are now independently confirmed. R5-1, R5-3, R4-1, R4-3, R3-1, B1 and round-1 #3 remain partial, plus the findings below. Each fix has a failing regression test first (`tests/test_review_round6.py`). **None of these is confirmed until the next independent review.**
 
 | Finding | Fix (builder) |
 |---|---|
-| R6-1 HIGH: an existing binding under the historical intent id made the v5 backfill skip the historical fill | Schema v6. Historical evidence no longer shares the binding table. Every sell fill without provenance gets a row in `historical_exits`, keyed by its own fill id, so no binding can displace it. `claim_exit` checks this evidence before any binding. An intent with historical evidence is only ever answered as a replay (exact same position and amount, or the closing fill for a whole-position request) or refused; it is never executed. Tests: Codex's exact NO_QUOTE → upgrade → replay sequence, and all 15 combinations of 5 pre-upgrade binding states × 3 requested amounts, each asserting inventory and sell count unchanged |
+| R6-1 HIGH: an existing binding under the historical intent id made the v5 backfill skip the historical fill | **Confirmed fixed for binding collisions in round 7, but its SQL scan missed ids containing NUL (R7-1); the scan is replaced in section 12.** Schema v6. Historical evidence no longer shares the binding table. Every sell fill without provenance gets a row in `historical_exits`, keyed by its own fill id, so no binding can displace it. `claim_exit` checks this evidence before any binding. An intent with historical evidence is only ever answered as a replay (exact same position and amount, or the closing fill for a whole-position request) or refused; it is never executed. Tests: Codex's exact NO_QUOTE → upgrade → replay sequence, and all 15 combinations of 5 pre-upgrade binding states × 3 requested amounts, each asserting inventory and sell count unchanged |
 | R6-2 MED: completion claims ran ahead of the code | The claims Codex cited (section 10's R5-1 row, the network-guard wording) are marked partial or superseded. `BUILD_STATUS.md` lists confirmed and unconfirmed items separately |
 | R6-3 LOW: `connect_ex` bypassed the replay network guard | The guard also refuses `connect_ex` and `sendto`. Test: both are refused against a live local listener, which receives nothing |
+
+## 12. Review round 7 fixes (awaiting re-review)
+
+Codex round 7 (`docs/audits/phase1-codex-20261020-round7.md`, on `a2068e3`) returned FAIL. It confirmed R6-1 (the binding collision), R6-3 and R5-3 fixed. It also reported that additional v2–v5 states with conflicting legacy markers, and ids with newlines, Unicode or repeated `:sell`, stayed protected. Two findings remained. Each fix has a failing regression test first (`tests/test_review_round7.py`). **None of these is confirmed until the next independent review.**
+
+| Finding | Fix (builder) |
+|---|---|
+| R7-1 HIGH: a historical intent id containing NUL escaped the evidence scan (SQLite's `LIKE`/`length`/`substr` stop at NUL) and could sell again | Schema v7. The evidence scan selects provenance-free sell rows in SQL but derives intent ids in Python, which handles embedded NUL. A sell whose id does not end in `:sell` is still recorded, under its full fill id, rather than skipped. New `EntryIntent`/`ExitIntent` ids and mints refuse control characters (NUL, newline, tab, ESC, DEL), so new NUL ids cannot be created. Tests: 7 awkward historical ids (NUL in several positions, newline, Unicode with a direction override, repeated `:sell`, plain `p1:X`) each recorded as evidence and never sold again at 3 requested amounts; an unclassifiable id preserved; Codex's NUL reproduction refused at the gateway boundary; control characters refused in new intents |
+| R7-2 MED: replacement claims were broader than the code | This section states the tested scope instead of "every". `BUILD_STATUS.md` lists the unconfirmed items |
 
