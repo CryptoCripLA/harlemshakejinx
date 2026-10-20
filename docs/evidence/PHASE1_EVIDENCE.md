@@ -69,13 +69,14 @@ Replay latency differs by mode. The batch modes push all 356 events at once, so 
 
 ## 6. Final state
 
-- Full suite at the round-2 fix head: **165 passed, 0 failed, 0 skipped** (`.venv/bin/python -m pytest`). This includes the round-1 and round-2 regression files and `tests/test_licenses.py`. The rustc differential ran; it was not skipped.
+- Full suite at the round-3 fix head: **175 passed, 0 failed, 0 skipped** (`.venv/bin/python -m pytest`). This includes the round-1, round-2 and round-3 regression files and `tests/test_licenses.py`. The rustc differential ran; it was not skipped. The full suite was run by the builder on jinx-nyc; Codex's Windows runs covered selected tests only.
 - 30-second live smoke run on the fixed code: status ok, 11 events stored and applied, 0 malformed, 0 write retries, ingestion not stalled, wallet reconciled. Local processing p50 0.29 ms.
 - `scripts/upstream_sync.py --verify`: all four upstreams OK, now including clean Windows CRLF checkouts.
 - Independent review:
   - Round 1 (Codex, `1ad0d65`): FAIL, 9 findings, all fixed (`docs/audits/phase1-codex-20261020-round1.md`).
-  - Round 2 (Codex, `69111a2`): FAIL, 7 new findings, all fixed (section 7).
-  - Round 3: see `docs/audits/`.
+  - Round 2 (Codex, `69111a2`): FAIL, 7 new findings (section 7).
+  - Round 3 (Codex, `e1c5b06`): FAIL, 3 findings, fixed but not yet re-reviewed (section 8).
+  - Round 4: see `docs/audits/`.
 - Not verified, with reasons:
   - Docker image build: no Docker permission on jinx-nyc.
   - Live GMGN API calls: no API key yet (B-08).
@@ -93,11 +94,29 @@ Codex round 2 (`docs/audits/phase1-codex-20261020-round2.md`, on `69111a2`) retu
 | B3 MED: a failed COMMIT wedged the connection | COMMIT failures roll back, and the next write succeeds |
 | B4 MED: concurrent GMGN restarts | One lock serializes start, restart and stop. Each bridge process owns its pending requests and readers. Concurrent callers trigger exactly one restart, no request is lost, and stop leaves no child behind |
 | B5 MED: OFF kept paid trade subscriptions | Paid PumpPortal trade subscriptions follow the mode: OFF subscribes no new mint and drops existing ones, except mints JINX holds (exit observation). Re-synced every status tick |
-| B6 MED: latency excluded the durable write | The bus now reports admission→state (dedup, durable write, queue, apply) and receive→state (wall clock from feed receipt). Earlier figures are relabelled "post-write" |
+| B6 MED: latency excluded the durable write | The bus now times from admission (dedup, durable write, queue, handlers). Earlier figures are relabelled "post-write". Round 3 (R3-3) found failed applies were still sampled; see section 8 |
 | B7 LOW: license tests failed on Windows | Canonical LF comparison, POSIX paths, and `.gitattributes` keeping vendored licenses LF |
 
-Corrected live measurement after the fixes (`python -m jinx run --seconds 120`, 2026-10-20, 26 events, local processing only):
+Live measurement after the round-2 fixes (`python -m jinx run --seconds 120`, 2026-10-20, 26 events, local processing only, all applies succeeded):
 - **Receive→state:** p50 0.59 ms, p95 0.90 ms, max 0.97 ms.
 - **Admission→state:** p50 0.44 ms, p95 0.67 ms.
 - Status ok; 0 malformed; 0 write retries; mode OFF with no paid subscriptions.
+
+## 8. Review round 3 fixes
+
+Codex round 3 (`docs/audits/phase1-codex-20261020-round3.md`, on `e1c5b06`) returned FAIL. It confirmed B2, B3, B4, B7 and round-1 #4 and #5 fixed. B1, B5, B6 and round-1 #3 were partial, which led to three findings. Each fix below has a failing regression test first (`tests/test_review_round3.py`). These fixes have not been re-reviewed yet.
+
+| Finding | Fix |
+|---|---|
+| R3-1 HIGH: a migrated pre-v2 partial exit could sell again | Schema v3 turns every pre-v2 sell fill into a historical exit binding (`exit_intents.legacy_fill_id`). A historical intent is accepted only as an unambiguous replay: same position and the same amount as its recorded fill, or a whole-position request whose fill closed the position. Anything else, including another position, is `INTENT_CONFLICT`. Its original requested amount was never stored, so it is not guessed. v2 databases from `e1c5b06` upgrade in place |
+| R3-2 MED: a failed OFF unsubscribe was forgotten | Unsubscribes wait in a pending set until sent, are retried on every sync, and show in health (`pending_unsubscribes`, status degraded). Mako's reconnect hook re-syncs subscriptions with the current mode and held positions |
+| R3-3 MED: failed applies counted as state latency | The bus samples latency only when every handler succeeds. Receive→state is now measured by the core state at the moment an event's state commits, so an event applied later by `apply_pending` is counted once, with its full wait |
+
+Metric definitions after round 3 (local processing inside JINX, never execution latency):
+- **receive→state:** feed receipt → the event's state committed, for applied events only.
+- **admission→state:** `publish()` called → every fast-lane handler succeeded.
+
+Live run after the round-3 fixes (`python -m jinx run --seconds 90`, 13 events, mode OFF): status ok, 0 handler errors, 0 unsent unsubscribes.
+- **Receive→state:** p50 0.60 ms, p95 0.92 ms.
+- **Admission→state:** p50 0.45 ms, p95 0.62 ms.
 

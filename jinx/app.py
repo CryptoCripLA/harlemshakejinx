@@ -86,7 +86,7 @@ class JinxApp:
         return build_health(self.store, self.ledger, self.wallet, adapters, self.bus.stats, time.time_ns(),
                             latency_ns=self.bus.latency_ns(Lane.FAST),
                             feed_stale_after_ns=self.s.feed_stale_after_s * 1_000_000_000,
-                            receive_latency_ns=self.bus.receive_latency_ns())
+                            receive_latency_ns=self.core.receive_latency_ns())
 
     async def _http(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:

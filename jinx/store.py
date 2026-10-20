@@ -117,7 +117,8 @@ CREATE TABLE IF NOT EXISTS exit_intents (
     intent_id TEXT PRIMARY KEY,
     position_id INTEGER NOT NULL REFERENCES positions(position_id),
     token_amount INTEGER CHECK (token_amount IS NULL OR token_amount > 0),
-    created_ns INTEGER NOT NULL
+    created_ns INTEGER NOT NULL,
+    legacy_fill_id TEXT  -- set for exits recorded before schema v2 (their only identity is the old fill id)
 );
 
 CREATE TABLE IF NOT EXISTS paper_wallet (
@@ -134,12 +135,21 @@ CREATE TABLE IF NOT EXISTS paper_wallet_entries (
 """
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 # v1 (up to commit 1ad0d65): no entry budget, no exit_intents, no amount CHECK constraints.
 # v2: positions.entry_budget_lamports (NULL = unknown for positions created by v1), exit_intents, CHECKs.
+# v3: exit_intents.legacy_fill_id; v1 sell fills ("<intent>:sell") become historical exit bindings, so a
+#     replayed pre-v2 exit is recognized instead of selling again.
 
 V2_POSITIONS = SCHEMA[SCHEMA.index("CREATE TABLE IF NOT EXISTS positions ("):SCHEMA.index("CREATE INDEX IF NOT EXISTS positions_active")]
 V2_FILLS = SCHEMA[SCHEMA.index("CREATE TABLE IF NOT EXISTS fills ("):SCHEMA.index("CREATE TABLE IF NOT EXISTS exit_intents")]
+# a fill id written by schema v2+ code is "p<position_id>:<intent>:<side>"; anything else on a sell is a v1 id
+LEGACY_EXIT_BACKFILL = """
+INSERT OR IGNORE INTO exit_intents (intent_id, position_id, token_amount, created_ns, legacy_fill_id)
+SELECT substr(fill_id, 1, length(fill_id) - 5), position_id, NULL, ts_ns, fill_id
+FROM fills
+WHERE side = 'sell' AND fill_id LIKE '%:sell' AND fill_id NOT LIKE 'p' || position_id || ':%'
+"""
 
 
 class SchemaTooNew(RuntimeError):
@@ -174,7 +184,15 @@ class Store:
         if version < 2 and "positions" in self._tables() and "entry_budget_lamports" not in self._columns("positions"):
             self._migrate_v1_to_v2()
         self.conn.executescript(SCHEMA)
+        if version < 3:
+            self._migrate_to_v3()
         self.conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+
+    def _migrate_to_v3(self) -> None:
+        with self.transaction() as c:
+            if "legacy_fill_id" not in self._columns("exit_intents"):
+                c.execute("ALTER TABLE exit_intents ADD COLUMN legacy_fill_id TEXT")
+            c.execute(LEGACY_EXIT_BACKFILL)
 
     def _tables(self) -> set[str]:
         return {r[0] for r in self.conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}

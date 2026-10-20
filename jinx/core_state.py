@@ -7,16 +7,22 @@ it leaves nothing to redo.
 """
 from __future__ import annotations
 
+import time
+from collections import deque
+
 from jinx.core.events import MarketEvent
 from jinx.registry import TokenRegistry, WalletRegistry
 from jinx.store import Store
 
 
 class CoreState:
-    def __init__(self, store: Store, tokens: TokenRegistry, wallets: WalletRegistry) -> None:
+    def __init__(self, store: Store, tokens: TokenRegistry, wallets: WalletRegistry, clock_ns=time.time_ns,
+                 latency_window: int = 100_000) -> None:
         self.store, self.tokens, self.wallets = store, tokens, wallets
+        self.clock_ns = clock_ns
         self.applied = 0
         self.skipped_already_applied = 0
+        self._receive_latency: deque[int] = deque(maxlen=latency_window)
 
     def apply(self, ev: MarketEvent) -> None:
         try:
@@ -33,6 +39,12 @@ class CoreState:
             self.wallets.reload()
             raise
         self.applied += 1
+        self._receive_latency.append(self.clock_ns() - ev.recv_ns)
+
+    def receive_latency_ns(self) -> list[int]:
+        """Feed receive -> state committed, wall clock, for successful applies only (including retries via
+        apply_pending, which therefore include the time the event waited). Local processing, not execution."""
+        return list(self._receive_latency)
 
     def apply_pending(self) -> int:
         """Apply stored events that are still unapplied (after a handler failure). Safe to repeat."""

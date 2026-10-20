@@ -191,20 +191,24 @@ def test_off_mode_stops_paid_trade_subscriptions_but_keeps_held_positions_watche
 
 
 # ---- B6: latency must cover the durable write ------------------------------------------------
-def test_reported_latency_includes_the_durable_write():
+def test_reported_latency_includes_the_durable_write(store):
     from jinx.core.bus import EventBus, Lane
+    from jinx.core_state import CoreState
+    from jinx.registry import WalletRegistry
+
+    core = CoreState(store, TokenRegistry(store), WalletRegistry(store))
 
     async def main():
         def slow_persist(ev):
             time.sleep(0.05)
-            return True
+            return store.record_event(ev)
         bus = EventBus(persist=slow_persist)
-        bus.subscribe(Lane.FAST, lambda e: None)
+        bus.subscribe(Lane.FAST, core.apply, name="core_state")
         task = asyncio.create_task(bus.run())
-        ev = make_trade(recv_ns=time.time_ns())
-        await bus.publish(ev)
+        await bus.publish(make_trade(recv_ns=time.time_ns()))
         await bus.drain()
         task.cancel()
-        return bus.latency_ns(Lane.FAST), bus.receive_latency_ns()
-    admission, receive = asyncio.run(main())
+        return bus.latency_ns(Lane.FAST)
+    admission = asyncio.run(main())
+    receive = core.receive_latency_ns()
     assert admission[0] >= 50_000_000 and receive[0] >= 50_000_000
