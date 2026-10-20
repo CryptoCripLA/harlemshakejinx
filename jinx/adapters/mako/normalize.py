@@ -2,7 +2,9 @@
 
 A create message is two on-chain facts in one transaction: the token creation
 and the creator's initial buy, so it becomes a TOKEN_CREATED event plus a BUY
-trade by the creator. Bonding-curve reserves are attached only when the
+trade by the creator. A migrate message (PumpPortal's free migration stream)
+becomes one MIGRATION event; it names the destination venue ("pool":
+"pump-amm"), not the new pool's address, and carries no chain time. Bonding-curve reserves are attached only when the
 message says the trade happened on the pump.fun curve ("pool": "pump"). A
 message missing a required field raises MalformedMessage; nothing is guessed.
 """
@@ -45,6 +47,10 @@ def normalize(msg: Any, recv_ns: int, next_seq: Callable[[], int]) -> list[Marke
     if not isinstance(msg, dict):
         raise MalformedMessage("message is not an object")
     tx_type = msg.get("txType")
+    if tx_type == "migrate":
+        _str(msg, "pool")   # the destination venue must be named
+        return [MarketEvent(kind=EventKind.MIGRATION, source=SOURCE, mint=_str(msg, "mint"),
+                            signature=_str(msg, "signature"), recv_ns=recv_ns, seq=next_seq(), raw=msg)]
     if tx_type not in ("create", "buy", "sell"):
         raise MalformedMessage(f"unknown txType {tx_type!r}")
     signature, mint, trader = _str(msg, "signature"), _str(msg, "mint"), _str(msg, "traderPublicKey")

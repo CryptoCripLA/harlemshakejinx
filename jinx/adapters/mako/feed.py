@@ -5,6 +5,13 @@ which Mako fires for the same messages and would double them). Each new mint's
 trades are subscribed through Mako's subscribe_token; the watch list is bounded
 and the oldest mint that JINX does not hold is unsubscribed first.
 
+Migrations: PumpPortal streams them free (`subscribeMigration`, verified without
+a key 2026-10-20). Mako neither subscribes to them nor routes migrate messages
+(its dispatcher only handles creations and trades), so this adapter wraps the
+stream object's dispatch: on the first message of each connection it sends
+`subscribeMigration` once, and it hands migrate messages to the normal publish
+path. Mako's code is not modified. Free like creations, so not mode-gated.
+
 PumpPortal only streams token trades to connections that carry an API key
 funded with at least 0.02 SOL (server reply observed 2026-10-20), and charges
 for streamed trades. Without a key the feed delivers token creations only
@@ -16,6 +23,7 @@ still holds, whose exits must keep being observed.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from collections import OrderedDict
@@ -56,13 +64,45 @@ class MakoPumpPortalFeed:
         self._pending_unsub: set[str] = set()
         self._sub_lock = asyncio.Lock()
         self._conn_seen = None
+        self._migration_conn = None            # connection the migration subscription was sent on
+        self._migration_confirmed_conn = None  # connection on which PumpPortal confirmed it
+        upstream_dispatch = self.stream._dispatch
+
+        async def dispatch(data):
+            await self._before_dispatch(data)
+            await upstream_dispatch(data)
+        self.stream._dispatch = dispatch
         self.stream.on_reconnect(self._on_reconnect)
         self.stats = {"received": 0, "malformed": 0, "published": 0, "duplicates": 0, "publish_retries": 0,
                       "subscribe_failures": 0, "unsubscribe_failures": 0,
-                      "ingest_stalled": False, "subscribed": 0, "unsubscribed": 0, "last_message_ns": None}
+                      "ingest_stalled": False, "subscribed": 0, "unsubscribed": 0, "last_message_ns": None,
+                      "migration_subscriptions": 0, "migrations": 0}
 
     async def run(self) -> None:
         await self.stream.connect()
+
+    async def _before_dispatch(self, data) -> None:
+        """Every message Mako parsed, before Mako routes it: keep the free migration subscription on the current
+        connection and take the migrate messages Mako would drop."""
+        ws = self.stream.ws
+        if ws is not None and ws is not self._migration_conn:
+            self._migration_conn = ws
+            try:
+                await ws.send(json.dumps({"method": "subscribeMigration"}))
+                self.stats["migration_subscriptions"] += 1
+            except Exception:
+                self._migration_conn = None   # try again on the next message
+                self.stats["subscribe_failures"] += 1
+                log.exception("migration subscription failed; will retry")
+        if not isinstance(data, dict):
+            return
+        note = str(data.get("message", "")).lower()
+        if "subscribed" in note and "migration" in note:
+            self._migration_confirmed_conn = ws
+        if data.get("txType") == "migrate":
+            published = self.stats["published"]
+            await self._on_message(data)
+            self.stats["migrations"] += self.stats["published"] - published
 
     async def _on_message(self, data) -> None:
         recv = self.clock_ns()
@@ -176,6 +216,8 @@ class MakoPumpPortalFeed:
         connected = ws is not None and getattr(ws, "close_code", None) is None
         return {"adapter": "mako", "source": SOURCE, "connected": connected, "ws_url": self.ws_url,
                 "trade_stream": "on" if self.subscribe_trades else "BLOCKED: PumpPortal API key funded with 0.02 SOL required",
+                "migration_stream": "on" if self.stream.ws is not None and self._migration_confirmed_conn is self.stream.ws
+                else "pending",
                 "watched_tokens": len(self._watched), "pending_unsubscribes": len(self._pending_unsub),
                 "unconfirmed_subscriptions": len((set(self._watched) | set(self.held_mints_provider())) - self._confirmed)
                 if self.subscribe_trades else 0, **self.stats}

@@ -298,7 +298,9 @@ def test_without_a_pumpportal_key_the_feed_sends_no_trade_subscriptions_and_says
             task.cancel(); runner.cancel()
             return subs, feed.health()
     subs, health = asyncio.run(main())
-    assert subs == ["subscribeNewToken"]
+    # no paid subscription without a funded key; the free creation and migration subscriptions are expected
+    assert "subscribeNewToken" in subs and not {"subscribeTokenTrade", "subscribeAccountTrade"} & set(subs)
+    assert set(subs) <= {"subscribeNewToken", "subscribeMigration"}
     assert health["trade_stream"].startswith("BLOCKED")
 
 

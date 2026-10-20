@@ -61,6 +61,8 @@ class TokenRegistry:
         return len(self._tokens)
 
     def apply(self, ev: MarketEvent) -> None:
+        if ev.kind not in (EventKind.TOKEN_CREATED, EventKind.TRADE):
+            return   # e.g. MIGRATION: kept in the event store for the Phase 2 lifecycle; not a token statistic
         known = self._tokens.get(ev.mint)
         # work on a copy so a rolled-back transaction leaves the cache untouched
         t = replace(known) if known else TokenState(mint=ev.mint)

@@ -18,6 +18,7 @@ LAMPORTS_PER_SOL = 1_000_000_000
 class EventKind(StrEnum):
     TOKEN_CREATED = "token_created"
     TRADE = "trade"
+    MIGRATION = "migration"   # a coin left its bonding curve for a pool; the venue is in raw (no trader)
 
 
 class Side(StrEnum):
