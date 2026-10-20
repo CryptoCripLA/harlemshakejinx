@@ -1,0 +1,21 @@
+# Pinned upstream checkouts are fetched by scripts/upstream_sync.py, never committed
+upstream/
+build/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node (GMGN bridge build)
+node_modules/
+
+# Runtime state, captures and secrets
+data/
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.*
+*.pem

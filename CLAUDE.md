@@ -59,7 +59,7 @@ Modes EXACTLY: AUTO / COPY / OFF. No MANUAL. OFF stops new firing and background
 The five jinx-* skills are vendored in .claude/skills/. The remaining six are existing user-global / plugin skills; CHECK actual availability before claiming invocation. Printing a skill list is not invocation. On startup/resume/compaction, proactively READ the profit skill and expressly load/read all remaining available skill bodies; identify missing skills as BLOCKED, not silently replace them. Never fabricate success.
 
 ## PHASE BY PHASE; BUILDER DOES NOT GRADE ITSELF
-**Phase 1 only:** install/verify 11 required skills, create this CLAUDE.md, bind CHAD blueprint, configure session/prompt/edit hooks, inventory pinned upstream sources, output a source-to-requirement map. NO trading engine implementation in Phase 1.
+**Phase scope:** each phase's scope is exactly what the owner's four-phase mandate below defines. Phase 1 builds the foundation: pinned isolated upstreams, typed events, event bus, registries, one position ledger, durable storage, AUTO/COPY/OFF, paper wallet and paper execution, dedup, and restart recovery. It does not build signals, sizing or live execution. (Superseded 2026-10-19 text said "NO trading engine implementation in Phase 1"; the owner's mandate replaced it.)
 At EVERY phase:
 A. Re-read CLAUDE.md, CHAD blueprint and full applicable original source.
 B. Create requirements/acceptance/line-level provenance ledger before code.

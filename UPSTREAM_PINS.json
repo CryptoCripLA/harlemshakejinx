@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "pinned_on": "2026-10-20",
+  "note": "The four owner-approved source repositories. Each is fetched read-only into upstream/<name>/ at exactly this commit by scripts/upstream_sync.py. JINX never edits upstream files; it reaches them only through jinx/adapters/<name>/.",
+  "repos": {
+    "gmgn": {
+      "url": "https://github.com/GMGNAI/gmgn-skills.git",
+      "commit": "402671e2ab8d1336df9e20f4fc7da123dc719e59",
+      "license": "MIT",
+      "license_file": "LICENSE",
+      "license_sha256": "f30d1c51ef4c15e6d67aabae23f48cb0715499a7e6549c76c860ff9bd6e9484c",
+      "reuse": "code",
+      "role": "Data intelligence and approved GMGN API capabilities (token, market, wallet, tracking, trade API client). Does not decide entries or exits."
+    },
+    "mako": {
+      "url": "https://github.com/SalahMessaoud/mako.git",
+      "commit": "45dadc03f84dc957139c9f4b3e447d472438407a",
+      "license": "MIT",
+      "license_file": "LICENSE",
+      "license_sha256": "d5b4d8ff546288a02b27ed1e916cf0526b11db6f54c9e8b993bdb1fec4d50559",
+      "reuse": "code",
+      "role": "Trading infrastructure: discovery, event feeds, wallet observation, persistence and risk-monitoring mechanics. Its wallet score, entry policy, sizing defaults and exit ladders are NOT used."
+    },
+    "d3ad": {
+      "url": "https://github.com/D3AD-E/Solana-sniper-bot.git",
+      "commit": "a91ca33695ff4eafadd14db7d139c6ec3000c89a",
+      "license": "Apache-2.0",
+      "license_file": "LICENSE",
+      "license_sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "reuse": "code",
+      "role": "Fast execution: transaction construction, submission, confirmation and reconciliation (Phase 3). Executes JINX decisions; never sets strategy."
+    },
+    "datanomad": {
+      "url": "https://github.com/datanomadhq/kaggle-solana-sniper-bot.git",
+      "commit": "b79c9bd147b4053a0d8e3aeaa87d544c4c47a48d",
+      "license": "NONE",
+      "license_file": null,
+      "license_sha256": null,
+      "reuse": "reference-only",
+      "role": "Historical intelligence research. No license file at this commit, so no code may be copied into JINX; methodology reference only until the author grants permission."
+    }
+  }
+}

@@ -1,0 +1,13 @@
+[project]
+name = "jinx"
+version = "0.1.0"
+description = "JINX: one coordinated Solana trading engine built to the CHAD blueprint (HEAR CHATTER -> SIZE -> FIRE -> EXIT)."
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+    "live: needs live network access (PumpPortal); deselect with -m 'not live'",
+    "node: needs Node.js and the built GMGN bridge",
+]

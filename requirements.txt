@@ -1,0 +1,7 @@
+# Runtime dependencies (pinned). Mako's pumpportal.py imports base58, httpx, solders and websockets;
+# Mako's config.py imports python-dotenv.
+base58==2.1.1
+httpx==0.28.1
+python-dotenv==1.2.4
+solders==0.29.0
+websockets==17.3
