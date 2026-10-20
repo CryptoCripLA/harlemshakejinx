@@ -59,7 +59,7 @@ def test_no_adapter_touches_another_upstream_tree(name):
                     f"{path.name} references upstream {o}"
 
 
-COMPOSITION_ROOT = {"app.py", "__main__.py"}  # the one place that wires adapters to core
+COMPOSITION_ROOT = {"app.py", "__main__.py", "config.py", "sim.py"}  # wiring and replay harness
 
 
 def test_core_never_imports_adapters_or_reads_upstream_paths():
@@ -150,7 +150,7 @@ def test_mako_feed_end_to_end_over_a_local_websocket():
             got = []
             bus.subscribe(Lane.FAST, got.append)
             feed = MakoPumpPortalFeed(bus, ROOT / "upstream" / "mako", ws_url=f"ws://127.0.0.1:{port}",
-                                      max_watched_tokens=10)
+                                      max_watched_tokens=10, subscribe_trades=True)
             runner = asyncio.create_task(bus.run())
             task = asyncio.create_task(feed.run())
             for _ in range(100):
@@ -272,6 +272,42 @@ def test_gmgn_bridge_crash_is_reported_not_propagated(tmp_path):
         await a.stop()
         return h
     assert asyncio.run(main())["bridge"] == "down"
+
+
+def test_without_a_pumpportal_key_the_feed_sends_no_trade_subscriptions_and_says_so():
+    from jinx.adapters.mako.feed import MakoPumpPortalFeed
+
+    async def main():
+        subs = []
+        async def server(ws):
+            async for msg in ws:
+                subs.append(json.loads(msg)["method"])
+                if subs[-1] == "subscribeNewToken":
+                    await ws.send(json.dumps(CREATE))
+        async with websockets.serve(server, "127.0.0.1", 0) as srv:
+            port = srv.sockets[0].getsockname()[1]
+            bus = EventBus()
+            feed = MakoPumpPortalFeed(bus, ROOT / "upstream" / "mako", ws_url=f"ws://127.0.0.1:{port}")
+            runner, task = asyncio.create_task(bus.run()), asyncio.create_task(feed.run())
+            for _ in range(100):
+                await asyncio.sleep(0.02)
+                if feed.stats["published"] >= 2:
+                    break
+            task.cancel(); runner.cancel()
+            return subs, feed.health()
+    subs, health = asyncio.run(main())
+    assert subs == ["subscribeNewToken"]
+    assert health["trade_stream"].startswith("BLOCKED")
+
+
+def test_pumpportal_key_is_used_for_the_connection_but_never_reported():
+    from jinx.adapters.mako.feed import MakoPumpPortalFeed
+    feed = MakoPumpPortalFeed(EventBus(), ROOT / "upstream" / "mako", api_key="SECRETKEY")
+    assert feed.subscribe_trades is True
+    assert "SECRETKEY" not in json.dumps(feed.health())
+    from jinx.adapters.mako.loader import load_mako
+    assert load_mako(ROOT / "upstream" / "mako").pumpportal.PUMPPORTAL_WS_URL.endswith("?api-key=SECRETKEY")
+    MakoPumpPortalFeed(EventBus(), ROOT / "upstream" / "mako")  # reset the module URL for later tests
 
 
 def test_gmgn_adapter_passes_only_its_own_variables_to_the_bridge(tmp_path, monkeypatch):

@@ -4,6 +4,11 @@ JINX registers only the new-token and token-trade handlers (not account-trade,
 which Mako fires for the same messages and would double them). Each new mint's
 trades are subscribed through Mako's subscribe_token; the watch list is bounded
 and the oldest mint is unsubscribed first.
+
+PumpPortal only streams token trades to connections that carry an API key
+funded with at least 0.02 SOL (server reply observed 2026-10-20). Without a
+key the feed delivers token creations only (which include the creator's
+initial buy) and does not send trade subscriptions that would be rejected.
 """
 from __future__ import annotations
 
@@ -20,13 +25,17 @@ class MakoPumpPortalFeed:
     name = SOURCE
 
     def __init__(self, bus: EventBus, upstream_root: Path, ws_url: str | None = None,
-                 max_watched_tokens: int = 300, clock_ns=time.time_ns) -> None:
+                 max_watched_tokens: int = 300, clock_ns=time.time_ns, tap=None, api_key: str | None = None,
+                 subscribe_trades: bool | None = None) -> None:
         mods = load_mako(upstream_root)
+        base = ws_url or mods.default_ws_url
         # PumpPortalStream.connect() reads this module global; tests point it at a local server.
-        mods.pumpportal.PUMPPORTAL_WS_URL = ws_url or mods.default_ws_url
-        self.ws_url = mods.pumpportal.PUMPPORTAL_WS_URL
+        mods.pumpportal.PUMPPORTAL_WS_URL = f"{base}?api-key={api_key}" if api_key else base
+        self.ws_url = base  # never report the key
+        self.subscribe_trades = bool(api_key) if subscribe_trades is None else subscribe_trades
         self.bus = bus
         self.clock_ns = clock_ns
+        self.tap = tap  # optional callable(recv_ns, raw_message), used to record captures for replay
         self.max_watched = max_watched_tokens
         self.stream = mods.pumpportal.PumpPortalStream()
         self.stream.on_new_token(self._on_message)
@@ -42,6 +51,8 @@ class MakoPumpPortalFeed:
         recv = self.clock_ns()
         self.stats["received"] += 1
         self.stats["last_message_ns"] = recv
+        if self.tap is not None:
+            self.tap(recv, data)
         try:
             events = normalize(data, recv, self.bus.next_seq)
         except MalformedMessage:
@@ -52,7 +63,7 @@ class MakoPumpPortalFeed:
                 self.stats["published"] += 1
             else:
                 self.stats["duplicates"] += 1
-        if data.get("txType") == "create":
+        if data.get("txType") == "create" and self.subscribe_trades:
             await self._watch(events[0].mint)
 
     async def _watch(self, mint: str) -> None:
@@ -70,4 +81,5 @@ class MakoPumpPortalFeed:
         ws = self.stream.ws
         connected = ws is not None and getattr(ws, "close_code", None) is None
         return {"adapter": "mako", "source": SOURCE, "connected": connected, "ws_url": self.ws_url,
+                "trade_stream": "on" if self.subscribe_trades else "BLOCKED: PumpPortal API key funded with 0.02 SOL required",
                 "watched_tokens": len(self._watched), **self.stats}
