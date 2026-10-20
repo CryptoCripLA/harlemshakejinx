@@ -20,8 +20,9 @@ handling, not trading:
 - Evidence newer than the observed migration that contradicts it (curve data, another pool) moves the token to
   CONFLICTING once; every contradicting report is kept in `conflicts`.
 - A creation report is a fact about the past. It is merged into the record (creation time, launchpad,
-  pre-migration pool), never ordered against the current stage and never a contradiction; it moves the state
-  only to start the lifecycle. A creation time on the provider's clock replaces one taken from JINX's receipt
+  pre-migration pool), never ordered against the current stage and never a contradiction. While the token is
+  still at its creation stage, a successful creation observation is current evidence: it refreshes freshness
+  and clears STALE or FAILED. At a later stage it only fills in history. A creation time on the provider's clock replaces one taken from JINX's receipt
   time (a feed without chain time), never the reverse.
 - STALE (caller's age limit) and FAILED (a failed observation) are exceptional states. The last consistent
   state is kept, and the next accepted consistent evidence returns the token to it.
@@ -63,6 +64,9 @@ class MissingEvidence(ValueError):
     pass
 
 
+CLOCKS = ("provider", "receipt")
+
+
 @dataclass(frozen=True)
 class Evidence:
     kind: Kind
@@ -71,6 +75,10 @@ class Evidence:
     event_ns: int                     # when the provider says it happened (= observed_ns if not supplied)
     clock: str = "provider"           # "provider": event_ns is the provider's time; "receipt": JINX's receipt time
     payload: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.clock not in CLOCKS:
+            raise ValueError(f"evidence clock must be one of {CLOCKS}, got {self.clock!r}")
 
 
 @dataclass(frozen=True)
@@ -190,19 +198,24 @@ class TokenLifecycle:
 
     def _observe_creation(self, e: Evidence) -> Transition | None:
         self._record(e)
-        if self.last_consistent_state is not State.UNKNOWN:
-            return None   # creation is the entry state; a later creation report never moves a token back
-        self._latest_by_kind[e.kind] = e.event_ns
+        base = self.last_consistent_state
+        if base not in (State.UNKNOWN, State.NEWLY_DETECTED):
+            return None   # a later stage: the report only fills in history; it never moves a token back
+        # the token is (still) at its creation stage, so a successful creation observation is current evidence
+        self._latest_by_kind[e.kind] = max(self._latest_by_kind.get(e.kind, e.event_ns), e.event_ns)
         self.last_accepted_ns = max(self.last_accepted_ns or 0, e.observed_ns)
-        return self._move(State.NEWLY_DETECTED, e)
+        if base is State.UNKNOWN or self.state in EXCEPTIONAL:
+            return self._move(State.NEWLY_DETECTED, e)
+        return None
 
     # ---- rules ---------------------------------------------------------------------------------------
     def _validate(self, e: Evidence) -> None:
         """Evidence that cannot support its kind is refused before anything is recorded."""
         if e.kind is Kind.MIGRATION_CONFIRMED:
-            if not (_text(e.payload.get("post_pool")) and _text(e.payload.get("exchange")) and e.event_ns > 0):
+            if not (_text(e.payload.get("post_pool")) and _text(e.payload.get("exchange")) and e.event_ns > 0
+                    and e.clock == "provider"):
                 raise MissingEvidence("a migration is confirmed only with the destination pool, the destination "
-                                      "venue and the provider's migration time")
+                                      "venue and the provider's migration time (clock='provider')")
         if e.kind is Kind.POST_MIGRATION_MARKET and not (
                 self.last_consistent_state.value >= State.MIGRATION_CONFIRMED.value and self.post_pool):
             raise MissingEvidence("post-migration market data is accepted only after a confirmed migration")

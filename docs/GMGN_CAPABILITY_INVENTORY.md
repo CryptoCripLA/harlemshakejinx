@@ -74,7 +74,7 @@ What this shows (6 tokens, one read; not a distribution):
 - **`launchpad_status` is not a stable migration indicator.** `skills/gmgn-token/SKILL.md:166` documents `0` not opened, `1` live, `2` migrated. In this cross-sectional sample (three different tokens, each read once), token info showed `2` for the two completed 39 s and 54 s earlier and `1` for the one completed 232 s earlier, while trenches showed `1` for all three. No same-token sequence was observed.
 - **The new pool can appear in token info later than the completion time.** It was missing for the two tokens read 39–54 s after completion, and present for the one read 232 s after.
 - **What the lifecycle interface requires.** `jinx/core/lifecycle.py`, tested, enforces this:
-  - A migration is confirmed only with the destination pool, the destination venue and the provider's migration time.
+  - A migration is confirmed only with the destination pool, the destination venue and the provider's migration time (evidence on the provider's clock; a receipt-time confirmation is refused).
   - Post-migration market data is accepted only after that confirmation.
 - **How the Phase 2 translation will use it** (contract §5): a non-zero `complete_timestamp` without a pool is a migration signal (MIGRATION_OBSERVED). `migrated_pool` present, with `exchange: pump_amm` and `migrated_timestamp`, is the confirmation. `launchpad_status` is kept as payload only.
 

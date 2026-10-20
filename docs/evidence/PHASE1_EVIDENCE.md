@@ -251,3 +251,16 @@ Full suite after these fixes: `303 passed` (`.venv/bin/python -m pytest -o addop
 | R10-L2 LOW: the contract's confirmation mapping omitted `exchange` | Added to the mapping; the creation rows state their clock | `test_the_documented_gmgn_mapping_produces_evidence_the_lifecycle_accepts`: a contract test that builds the confirmation from the documented table. It failed before the doc fix |
 
 Full suite after these fixes: `307 passed` (`.venv/bin/python -m pytest -o addopts="" -q`, 16.5 s on jinx-nyc).
+
+## 17. Review round 11 (on 39525dd) and fixes (awaiting round 12)
+
+**Round 11 result.** Codex returned FAIL, with no CRITICAL or HIGH findings (`docs/audits/phase1-codex-20261020-round11.md`).
+- Confirmed FIXED: R10-M1, R10-L1, R10-L2, R9-H1 and R9-L1. It re-ran both creation reproductions and the mixed-clock sequence.
+- PARTIAL: round-8 M3 and R4-3, both through the two findings below.
+
+| Finding | Fix (builder) | Tests |
+|---|---|---|
+| R11-M1 MEDIUM: a successful creation observation could not clear FAILED or STALE, and did not refresh freshness, for a token still at its creation stage | While the token is at its creation stage, a creation observation is current evidence: it refreshes `last_accepted_ns` and clears STALE or FAILED. At a later stage it only fills in history and moves nothing | `test_a_successful_creation_observation_recovers_a_failed_newly_detected_token` (Codex reproduction), `test_a_successful_creation_observation_recovers_a_stale_newly_detected_token`, `test_a_creation_report_never_recovers_or_refreshes_a_later_stage` |
+| R11-M2 MEDIUM: a confirmation timed on JINX's receipt clock passed validation | `MIGRATION_CONFIRMED` requires `clock="provider"`; a receipt-time confirmation is refused before anything changes. `Evidence` refuses any clock other than `provider` or `receipt` | `test_a_confirmation_on_jinx_receipt_time_is_refused_before_anything_changes` (Codex reproduction), `test_an_unknown_clock_is_refused` (4 cases) |
+
+Full suite after these fixes: `315 passed` (`.venv/bin/python -m pytest -o addopts="" -q`, 16.8 s on jinx-nyc).

@@ -120,7 +120,7 @@ The rules are tested in `tests/test_lifecycle.py`:
   - a backward curve move with older evidence than the one that set the current stage.
 - A late report never moves the state, never replaces a recorded value and never refreshes freshness. A migration indexed after a newer curve read is still recognized (round 9 H1);
 - a recorded value is replaced only by newer evidence for that value, so a delayed report can fill in what is missing;
-- a creation report is merged into the record and never conflicts with the current stage; a provider creation time replaces a receipt-time one, never the reverse (round 10 M1);
+- a creation report is merged into the record and never conflicts with the current stage; a provider creation time replaces a receipt-time one, never the reverse (round 10 M1). While the token is still at its creation stage, a successful creation observation also refreshes freshness and clears STALE or FAILED; at a later stage it only fills in history (round 11 M1);
 - a repeated report makes no second transition;
 - newer evidence that contradicts a migration becomes `CONFLICTING`;
 - `STALE` is declared by the caller's own age limit;
@@ -144,7 +144,7 @@ Phase 2 translates provider data into `Evidence` exactly as below. The categorie
 
 `migrated_pool` can still be empty after `complete_timestamp` is set. Until it appears, the token stays MIGRATION_OBSERVED.
 
-The interface itself (`_validate`) requires a non-empty `post_pool`, a non-empty `exchange` and a positive event time for `MIGRATION_CONFIRMED`. It requires an already-confirmed migration for `POST_MIGRATION_MARKET`. The specific value `pump_amm` is the Phase 2 translator's rule for Pump.fun, not a lifecycle constant.
+The interface itself (`_validate`) requires a non-empty `post_pool`, a non-empty `exchange` and a positive event time on the provider's clock (`clock="provider"`) for `MIGRATION_CONFIRMED`; a receipt-time confirmation is refused before anything changes. Every `Evidence` must declare `clock` as `provider` or `receipt`. It requires an already-confirmed migration for `POST_MIGRATION_MARKET`. The specific value `pump_amm` is the Phase 2 translator's rule for Pump.fun, not a lifecycle constant.
 
 Migration handling around positions (mandate §3.4 and §3.5) is built in Phase 2 and Phase 3:
 - one deduplicated migration event;

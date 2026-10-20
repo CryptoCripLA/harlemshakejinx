@@ -292,3 +292,43 @@ def test_the_documented_gmgn_mapping_produces_evidence_the_lifecycle_accepts(): 
     lc.observe(ev(Kind.MIGRATION_SIGNAL, 10))
     lc.observe(ev(Kind.MIGRATION_CONFIRMED, 20, **confirmed))
     assert lc.state is State.MIGRATION_CONFIRMED
+
+
+# ---- Codex round 11 (docs/audits/phase1-codex-20261020-round11.md) -------------------------------
+def test_a_successful_creation_observation_recovers_a_failed_newly_detected_token():   # R11-M1 (reproduction)
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.CREATED, 100, event_ns=50))
+    lc.record_failure("gmgn.trenches", 110, "HTTP 500")
+    t = lc.observe(ev(Kind.CREATED, 120, event_ns=50))
+    assert t is not None and lc.state is State.NEWLY_DETECTED and lc.last_accepted_ns == 120
+
+
+def test_a_successful_creation_observation_recovers_a_stale_newly_detected_token():    # R11-M1
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.CREATED, 100, event_ns=50))
+    assert lc.mark_stale_if_older_than(now_ns=2_000, max_age_ns=100).to_state is State.STALE
+    lc.observe(ev(Kind.CREATED, 2_100, event_ns=50))
+    assert lc.state is State.NEWLY_DETECTED and lc.last_accepted_ns == 2_100
+
+
+def test_a_creation_report_never_recovers_or_refreshes_a_later_stage():                # R11-M1: no regression
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.ON_CURVE, 100))
+    lc.record_failure("gmgn.trenches", 110, "HTTP 500")
+    assert lc.observe(ev(Kind.CREATED, 120, event_ns=50, launchpad="Pump.fun")) is None
+    assert lc.state is State.FAILED and lc.last_accepted_ns == 100 and lc.fields["launchpad"].value == "Pump.fun"
+
+
+def test_a_confirmation_on_jinx_receipt_time_is_refused_before_anything_changes():     # R11-M2 (reproduction)
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.MIGRATION_SIGNAL, 10))
+    before = (lc.state, dict(lc.fields), len(lc.history), lc.last_accepted_ns, lc.last_received_ns)
+    with pytest.raises(MissingEvidence):
+        lc.observe(ev(Kind.MIGRATION_CONFIRMED, 20, clock="receipt", post_pool="P", exchange="pump_amm"))
+    assert (lc.state, dict(lc.fields), len(lc.history), lc.last_accepted_ns, lc.last_received_ns) == before
+
+
+@pytest.mark.parametrize("clock", ["wall", "", None, "PROVIDER"])
+def test_an_unknown_clock_is_refused(clock):                                             # R11-M2
+    with pytest.raises(ValueError):
+        Evidence(kind=Kind.ON_CURVE, source="s", observed_ns=1, event_ns=1, clock=clock)
