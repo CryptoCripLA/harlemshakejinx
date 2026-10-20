@@ -62,6 +62,7 @@ safety 0–100 formula and pass threshold; momentum "stall" and "sustained volum
 ## B-14 Separate GMGN wallets for native copy trading and JINX
 - If GMGN native copy trading and JINX share one GMGN wallet, copy-trade positions land in JINX's reconciliation and use up the owner's one-slot limit.
 - Needed: the owner confirms JINX gets its own GMGN wallet (the API key binds to one wallet).
+- Observed 2026-10-20 (read-only, from GMGN wallet activity): the wallet bound to JINX's API key traded ENERGY at 20:15–20:23 UTC (two buys of 0.297 SOL, two sells). No JINX process was running, and the bridge refuses every trading call. So these trades came from outside JINX, through GMGN copy trading or manually. Until B-14 is decided, JINX's Phase 3 reconciliation would have to tell those positions apart from its own.
 
 ## B-15 GMGN plan tier sets JINX's polling budget — RESOLVED 2026-10-20
 - GMGN rate limits per plan: Free 5/5, Plus 20/20, Pro 50/50 weight per second. 1-second candles are Pro only.

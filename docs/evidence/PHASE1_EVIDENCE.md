@@ -271,3 +271,20 @@ Full suite after these fixes: `307 passed` (`.venv/bin/python -m pytest -o addop
 A creation report adds readings only while the token is at its creation stage. Tests: `test_current_readings_follow_the_latest_accepted_report_not_a_cross_clock_comparison` (replaces a builder test that encoded the cross-clock comparison), `test_creation_facts_keep_the_first_value_unless_a_provider_value_replaces_a_receipt_one`, `test_a_current_creation_report_records_its_readings_but_a_historical_one_does_not`.
 
 Full suite after these fixes: `317 passed` (`.venv/bin/python -m pytest -o addopts="" -q`, 16.9 s on jinx-nyc).
+
+## 18. Review round 12 (on 127d3d5): PASS
+
+Codex returned **VERDICT: PASS** (`docs/audits/phase1-codex-20261020-round12.md`):
+- R11-M1, R11-M2, round-8 M3 and R4-3 are FIXED.
+- No CRITICAL, HIGH, MEDIUM or LOW findings in the fresh review.
+- Every current Phase 1 claim is supported by code, tests or committed evidence.
+
+The reviewer independently:
+- re-ran the earlier mixed-clock and creation reproductions;
+- replayed the live capture in memory: 234 tokens, 356 events, 78 wallets, the recorded digest, 113 duplicate refusals and 122 accounting round trips reconciled exactly;
+- verified all four upstream pins;
+- confirmed the execution boundaries: paper executor only, LIVE refuses, 30 read methods with all five mutations refused, D3AD submission refuses.
+
+Not rerun by the reviewer, so builder evidence only: disk durability and restart tests, the compiled GMGN bridge integration tests, authenticated GMGN calls, and the full 317-test run (the reviewer confirmed 317 tests collected).
+
+Phase 1 is at its review gate, waiting for owner acceptance.
