@@ -75,3 +75,884 @@ The checked-in .claude/settings.json invokes .claude/hooks/jinx-profit-reminder.
 
 ## INITIAL STATUS
 New repo began with README.md and LICENSE only. No JINX bot, hosted runtime, live test result, funding, or profitable trades are claimed in this repository. Source inventory and Phase 1 proof determine readiness.
+
+---
+
+# OWNER'S COMPLETE FOUR-PHASE EXECUTION MANDATE — CANONICAL VERBATIM SOURCE
+
+This is the exact supplied four-phase directive from ClaudeDrop; one exposed credential value has been redacted for public GitHub. Where previous text in CLAUDE.md describes Phase 1 as documentation-only, **the following owner directive takes precedence: Phase 1 builds the foundation, event bus, authoritative position ledger, paper wallet, and source isolation.** Railway is the owner-selected application host; GMGN is the API and native copy-trade platform.
+
+jinx is being hosted on gmgn using their platform.HERE IS THE PLAN SOLCHAD IS THE BIBLE.. WE ARE MAKING JINX OUT OF HIS BLUEPRINT WITHH 1 REPO WE CLONE. THERES NO MAKING OUR OWN ADJUSTMENTS CLAUDE, WE GOT STEP BY STEP FIRST STEP IS YOU EQUIPIING ALL 11 SKILLS THAT CLAUDE MD SAYS AND ALSO UPDATE THE NEW CLAUDE MD TO WE ARE HOSTING JINX GMGN AND SOLCHADS BLUE PRINT IS OUR BIBLE .. MORE IMPORTANTLY PROFITS IS THE MOST IMPORTANT THING.. EVERYTHING WE DO IS FOR MAKING MONEY EVERY LINE OF CODE CLAUDE THINKS DOES THIS HELP PUT JINX IN THE POSITION TO MAKE MONEY. THATS WHAT JINX IS , HE MAKES AND PRINTS MONEY.. HE ENTERS SIZES FIRES AND EXITS LIKE A TOP 1 PERCENT BOT before anycode is written i need your exact plan for phase 1 each phase you will mark off what on the instruction you are doing. you are to build againgst the instruction no wondering off no ideas or blockers or drifting off into claude land you build off the instruction nothing else... i need your plan also move jinx and repo to railway since we are using gmgn api the token is [REDACTED - RAILWAY SECRET ONLY]
+
+DIRECTIVE
+
+FOUR BUILD PHASES. PERIOD. No ten separate bots, no endless development roadmap, no unnecessary subsystems, and no extra approval checkpoints inside a phase.
+
+The architecture is one trading engine: HEAR CHATTER → SIZE → FIRE → EXIT. Safety, intelligence, wallet tracking, and confluence operate behind that path.
+
+The directive will enforce these distinctions:
+- New repository: CryptoCripLA/harlemshakejinx. Greenfield build.
+- CHAD: Master architecture and trading-behavior blueprint.
+- Four GitHub repositories: Clone and reuse actual licensed code, with strict module isolation.
+- Claude: Must update CLAUDE.md, account for all 11 skills, and present its complete plan before changing code.
+- Every phase: Visible checklist, actual implementation, continuous paper simulation using real market observations where available, measurable evidence, and a final review-panel verdict.
+- Execution: Once the owner has preauthorized the live trading configuration, no per-trade permission prompts. Until then, paper mode.
+- Priority: Early detection, rapid eligible entries, intelligent exits, and verified realized profit after costs—not inflated backtest claims.
+Four phases means four phases of building and proving functionality, not four phases of writing documents.
+
+# JINX — FOUR-PHASE EXECUTION MANDATE
+## ENTER EARLY. EXIT SMARTER. PROTECT REALIZED PROFITS.
+
+**GREENFIELD BUILD | CHAD MASTER BLUEPRINT | ACTUAL GITHUB SOURCE CODE | FOUR PHASES ONLY | PAPER-TEST CONTINUOUSLY | INDEPENDENT CODE REVIEW**
+
+# THE MISSION
+
+You are the lead implementation engineer for JINX.
+
+JINX is an autonomous, event-driven Solana trading system designed to detect actionable activity early, evaluate it intelligently, execute eligible trades rapidly, protect profitable positions, and optimize realized, cost-adjusted trading performance.
+
+**HEAR CHATTER → SIZE → FIRE → EXIT.**
+
+That is the operational model.
+
+All intelligence, signal scoring, developer research, whale discovery, social analysis, and safety checks work in the background to support that single trading path.
+
+We are NOT building ten independent bots.
+
+We are NOT creating ten competing strategies.
+
+We are NOT building an academic research project.
+
+We are NOT creating a trading system based on your personal interpretation of what should work.
+
+**CHAD IS THE MASTER ARCHITECTURE.**
+
+CHAD.txt defines the required capabilities and documented trading behavior. Four approved GitHub repositories contain actual code to reuse to construct that architecture.
+
+Your job is to assemble the correct working parts into ONE cohesive JINX system, implement the explicitly specified CHAD behavior, and prove it works.
+
+Do not promise profits. The engineering objective is measurable improvement in realized P&L after transaction costs while controlling losses, execution errors and unintended exposure.
+
+# NON-NEGOTIABLE PROJECT FACTS
+
+**NEW JINX REPOSITORY:**
+
+`https://github.com/CryptoCripLA/harlemshakejinx`
+
+This is a new greenfield repository.
+
+The previous JINX implementation was deleted. There is no legacy trading engine to migrate.
+
+Inspect the repository's actual contents and preserve administrative files such as its license and Git configuration.
+
+Build the application from scratch in this repository.
+
+**TONIGHT IS THE DELIVERY TARGET.**
+
+There are exactly four build phases. Do not invent fifth, sixth, seventh, or additional future development phases.
+
+Work efficiently, avoid speculative features, use existing code, and test continuously.
+
+Do not sacrifice correctness, isolate failures, or falsely claim completion to satisfy the deadline.
+
+A phase that has not passed verification remains visibly incomplete.
+
+# AUTHORITY HIERARCHY
+
+1. **CHAD.txt** — Master architecture, required behaviors, documented trigger conditions, sizing and exit requirements.
+2. **Owner's preapproved JINX operating contract** — AUTO/COPY/OFF definitions, trade permissions, risk limits, accounts, execution settings and unresolved CHAD parameters.
+3. **Four approved GitHub repositories** — Source code for compatible implementation mechanics.
+4. **Claude** — Implementation, integration, testing and engineering execution only.
+
+You are forbidden from replacing CHAD behavior with an upstream repository's competing trading strategy.
+
+If a documented CHAD formula is incomplete, do not invent it.
+
+Create the surrounding implementation, expose the unresolved policy as a fail-closed interface, and record the exact missing decision.
+
+Do not let one unresolved rule prevent work on independently implementable functionality.
+
+# MANDATORY BEFORE WRITING CODE
+
+## Update CLAUDE.md
+
+Read the repository's existing `CLAUDE.md` if present.
+
+Update or create `CLAUDE.md` with this complete directive, including:
+
+- The greenfield project definition.
+- CHAD architectural supremacy.
+- The four upstream repositories and their responsibilities.
+- Mandatory isolation between source integrations.
+- The single trading pipeline.
+- Prohibition on invented strategy logic.
+- The exact four-phase development structure.
+- Continuous simulation requirements.
+- Real-time progress reporting.
+- Independent review-panel gates.
+- Autonomous execution rules after preauthorization.
+- Default paper-only operation.
+- Exact completion and evidence standards.
+
+This file is the permanent project engineering contract.
+
+Never silently delete or weaken these rules in a later session.
+
+## Discover and invoke all 11 skills
+
+Before implementing application code:
+
+1. Enumerate the eleven skills available in the Claude environment.
+2. Read each skill's actual instructions.
+3. Invoke each skill through its prescribed mechanism.
+4. Confirm that each invocation succeeded.
+5. Report the skill name, purpose, invocation result and relevant output.
+6. Map the available skills to source auditing, architecture, implementation, testing, security and review where applicable.
+
+Do not invent skill names or claim a skill ran when it did not.
+
+If fewer than eleven skills are available, report the missing capabilities immediately. Do not fake compliance.
+
+## Present the master build plan first
+
+Before coding, show the owner:
+
+- Four-phase build plan.
+- Modules produced in each phase.
+- Which upstream source files will be reused.
+- Dependencies between the four phases.
+- Exact paper-simulation tests for each phase.
+- Expected deliverables and acceptance criteria.
+- Known blockers and missing permissions.
+- Review-panel membership or available auditing tools.
+
+**PRESENT THE PLAN BEFORE WRITING APPLICATION CODE.**
+
+The owner must be able to see what is about to be built.
+
+Once the owner approves the overall build plan, complete work within each phase without repeatedly asking permission for ordinary engineering actions.
+
+Only the four phase-boundary reviews require progression approval.
+
+# THE FOUR SOURCE-CODE REPOSITORIES
+
+Clone each repository into an isolated, pinned upstream directory.
+
+```bash
+git clone https://github.com/GMGNAI/gmgn-skills.git
+git clone https://github.com/SalahMessaoud/mako.git
+git clone https://github.com/D3AD-E/Solana-sniper-bot.git
+git clone https://github.com/datanomadhq/kaggle-solana-sniper-bot.git
+```
+
+Record the exact commit SHA and inspect the applicable license.
+
+**REUSE ACTUAL SOURCE CODE WHERE LICENSES AND INTERFACES PERMIT. DO NOT REWRITE FUNCTIONING COMPONENTS SIMPLY BECAUSE YOU PREFER YOUR OWN IMPLEMENTATION.**
+
+### GMGN — Data intelligence
+
+Reuse its supported token, market, wallet, tracking and execution API clients, request schemas, authentication, error handling and rate-limit mechanisms.
+
+GMGN supplies data and approved API capabilities.
+
+It does not determine JINX entry or exit strategy.
+
+### Mako — Trading infrastructure
+
+Reuse suitable discovery, event handling, trading feeds, wallet observation, position management, database persistence, order recovery, and risk-monitoring infrastructure.
+
+Do not inherit Mako's incompatible wallet score, entry policy, position-sizing defaults or exit ladders.
+
+### D3AD-E — Fast execution
+
+Reuse compatible transaction-event detection, low-latency dispatch, transaction construction, signer management, provider submission, confirmation and reconciliation machinery.
+
+D3AD-E executes approved decisions. It does not set JINX's strategy.
+
+### DataNomad — Historical intelligence
+
+Reuse legally permitted deployer-history feature processing, transaction parsing, decision-time-safe modeling utilities, anti-lookahead tests, and fee-aware evaluation code.
+
+Do not import its trained selection policy or backtested predictions as CHAD's trading strategy.
+
+If a source does not have a license permitting reuse, keep its original code separate for inspection and do not copy it into JINX without confirmed permission.
+
+# ABSOLUTE CODE ISOLATION RULE
+
+**THE FOUR UPSTREAM REPOSITORIES MUST NOT DIRECTLY INTERACT WITH OR MODIFY ONE ANOTHER.**
+
+Place them behind separate JINX-owned adapters.
+
+```text
+GMGN SOURCE ────────────> GMGN ADAPTER ────────┐
+                                               │
+MAKO SOURCE ────────────> MAKO ADAPTER ────────┤
+                                               │
+D3AD-E SOURCE ──────────> EXECUTION ADAPTER ───┤
+                                               │
+DATANOMAD SOURCE ───────> RESEARCH ADAPTER ────┤
+                                               │
+                                               v
+                                     JINX CORE ENGINE
+```
+
+Enforce these rules:
+
+- No upstream repository imports another upstream repository directly.
+- No upstream repository writes into another repository's files or state.
+- No shared mutable global configuration.
+- No competing position ledgers.
+- No competing execution controllers.
+- No hidden automatic trade behavior inherited from upstream defaults.
+- No two components independently issuing orders for the same JINX decision.
+- No duplicate wallet subscriptions that create duplicate trade intents.
+- No repository may change another repository's risk or strategy settings.
+- All interaction occurs through documented, typed JINX interfaces.
+- All upstream trade-capable policies are disabled unless explicitly integrated into JINX's approved execution path.
+
+A failure in GMGN must not corrupt Mako's storage.
+
+A failure in market-data ingestion must not generate a false trade.
+
+A failure in transaction dispatch must not produce a fabricated position.
+
+A failure in research processing must not halt the entire execution engine.
+
+No extra runtime services or infrastructure without a demonstrated need and owner approval.
+
+**ISOLATE THE CODE. UNIFY THE DECISIONS.**
+
+# JINX'S ONLY OPERATIONAL PIPELINE
+
+```text
+      LIVE MARKET + ON-CHAIN + SOCIAL DATA
+                     |
+                     v
+              HEAR CHATTER
+         Observe / Detect / Normalize
+                     |
+                     v
+        CHAD BACKGROUND INTELLIGENCE
+       Safety | Whales | Momentum | X
+       Telegram | Curve | Dev | Clusters
+                     |
+                     v
+           CONFLUENCE + SAFETY
+                     |
+                     v
+                    SIZE
+            Risk / Kelly / Exposure
+                     |
+                     v
+                    FIRE
+             One Execution Gateway
+                     |
+                     v
+             CONFIRM ACTUAL FILL
+                     |
+                     v
+                    EXIT
+          Confluence / Divergence /
+          Stop / Trailing / Safety
+                     |
+                     v
+            RECONCILE REAL P&L
+```
+
+Build one logical trading system with a unified event stream, token registry, signal store, risk coordinator, execution gateway and authoritative position ledger.
+
+CHAD's ten documented functional roles are preserved as capabilities inside this system—not ten independent bot runtimes.
+
+### Hear chatter
+
+JINX must listen continuously to supported on-chain buy activity, tracked wallets, bonding curves, market observations, social intelligence and Telegram events.
+
+Do not delay early-momentum detection for a slow social-analysis batch.
+
+Use separate bounded fast and background processing paths inside the same coordinated system.
+
+### Size
+
+Calculate authorized position size from CHAD's applicable Kelly and risk policies.
+
+Honor the actual configured account limits, open exposure and available balances.
+
+Never fabricate model parameters or position-sizing defaults.
+
+### Fire
+
+Once every required predicate is satisfied, and the trading mode has already been authorized, issue the order without requesting another human confirmation.
+
+Use the low-latency execution adapter and record each transaction lifecycle event.
+
+No order may be treated as filled until confirmation and balance reconciliation establish the outcome.
+
+### Exit
+
+Continuously monitor open positions for signal deterioration and protective exits.
+
+Exit according to CHAD's documented rules, including adaptive partial-profit protection, Confluence Collapse and the configured independent emergency protections.
+
+**ENTER EARLY. EXIT SMARTER.**
+
+Do not optimize entry latency at the expense of the ability to sell or reconcile an actual position.
+
+# AUTONOMOUS OPERATION CONTRACT
+
+JINX is intended to operate autonomously after setup.
+
+The owner configures and authorizes operating modes, wallet access, supported assets, trading permissions, sizing boundaries, risk settings and execution limits **before live trading begins**.
+
+Once approved and activated, JINX must not request manual approval for each qualifying trade.
+
+Trading execution remains subject to its preauthorized safety and risk constraints.
+
+- AUTO — JINX-generated eligible entries.
+- COPY — Eligible tracked-wallet activity routed through JINX's safety and execution policy.
+- OFF — No new automated entries; preconfigured management of existing positions must be honored.
+
+Exact mode precedence and remaining configuration parameters must be recorded in the preapproved operating contract.
+
+Live-money trading is disabled by default. Paper simulation can proceed without real-money authorization.
+
+An initial explicit authorization to enable live-money execution is required; that is separate from unnecessary per-trade approval prompts.
+
+# GHOST OPERATION
+
+JINX must operate quietly and efficiently.
+
+No unsolicited public signal publication.
+
+No promotional wallet broadcasting.
+
+No exposure of private keys, API secrets, strategy parameters or proprietary wallet-ranking data.
+
+Never commit credentials to GitHub, particularly because the new repository is public.
+
+Minimize execution-path logging overhead while retaining necessary security, accounting and forensic audit logs.
+
+On-chain trades remain publicly observable. Do not claim public transaction activity can be made invisible.
+
+JINX's edge must come from better detection, disciplined execution and exits—not supposed transaction invisibility.
+
+---
+
+# PHASE 1 — FOUNDATION, SOURCE EXTRACTION AND CORE
+
+**OBJECTIVE: Build the real JINX foundation and isolate the four upstream code sources.**
+
+### Before starting
+
+Display the Phase 1 build map, file list, upstream integrations, tests and expected completion evidence.
+
+### Required implementation
+
+- Initialize JINX's actual application structure.
+- Update `CLAUDE.md`.
+- Verify all eleven skills.
+- Clone and pin all four source repositories.
+- Audit licensing and dependencies.
+- Create four isolated source adapters.
+- Implement typed normalized market events.
+- Build the central event bus.
+- Build token and wallet registries.
+- Build one authoritative position ledger.
+- Build persistent event and trade storage.
+- Implement AUTO/COPY/OFF mode interfaces.
+- Create the initial paper-wallet and paper-execution mechanism.
+- Implement event deduplication and idempotency.
+- Create the source-fidelity matrix mapping actual CHAD requirements to original upstream functions and JINX destinations.
+- Implement basic restart/recovery and integration health checks.
+
+### Required simulation
+
+Immediately test the foundation using genuine captured or accessible market events.
+
+Verify:
+
+- Events are ingested correctly.
+- Duplicate transactions are not counted twice.
+- Events are processed in timestamp order where required.
+- Out-of-order events are handled safely.
+- Source adapters cannot overwrite each other's internal state.
+- Paper wallet balances reconcile.
+- Position state survives restart.
+- No accidental real-money order can escape the paper boundary.
+- One adapter failing does not create corrupt JINX state.
+
+### Phase 1 acceptance
+
+Provide working source code, source mapping, test outputs, simulation results and measured processing overhead.
+
+Submit the Phase 1 recap to the review panel.
+
+**STOP AT THE PHASE 1 APPROVAL GATE.**
+
+No Phase 2 build work until approved.
+
+---
+
+# PHASE 2 — CHAD INTELLIGENCE, SAFETY AND FAST SIGNALS
+
+**OBJECTIVE: Make JINX hear actionable market activity and evaluate it through the CHAD architecture.**
+
+### Before starting
+
+Display the Phase 2 implementation map and test checklist.
+
+### Required implementation
+
+Build the complete CHAD background intelligence and decision-evidence pipeline:
+
+**Safety**
+
+- Rug and honeypot evidence.
+- Mint/freeze authority checks.
+- Token and holder risk analysis.
+- Safety PASS/FAIL/UNKNOWN.
+- Hard safety veto.
+
+**Momentum**
+
+- Price velocity and volume acceleration.
+- Fifteen-second observation cycle.
+- Negative Divergence evidence.
+- Event-time freshness.
+
+**Whales**
+
+- Passive tracked-wallet observation.
+- Active wallet investigation.
+- Four-hour discovery cycle.
+- Forty-percent historical win-rate promotion requirement.
+- Second-degree wallet discovery.
+- Fifteen pinned wallets.
+- Wallet-confidence 50/25/25 components.
+- Fourteen-day recency half-life.
+
+**Social**
+
+- X Scout five-dimension 25/20/20/10/25 scoring structure.
+- STRONG/WATCH/RUG_FILTER verdict interfaces.
+- RUG_FILTER veto.
+- @SolBotChad signal handling.
+- Telegram two-group, sixty-second confluence.
+- Stronger classification for three or more independent groups.
+
+**On-chain intelligence**
+
+- Bonding-curve reserve and graduation observations.
+- 0–20 graduation score contribution.
+- Three-wallet clustering.
+- Developer historical-launch analysis.
+- Decision-time-safe historical features.
+- Time-weighted signal freshness.
+
+**Early Momentum**
+
+- Event-driven buy detection.
+- Three buys.
+- Three distinct fee-paying wallets.
+- Thirty-second window.
+- Live reserve observations.
+- Peak historical virtual SOL reserve.
+- Common-funder investigation.
+- Immediate fast-path notification.
+
+Do not generate a trade when a required CHAD predicate is unresolved.
+
+Specifically flag the conflicting 0.5–10 SOL and under-35 SOL curve requirements for owner resolution.
+
+Do not fabricate missing score formulas.
+
+### Required simulation
+
+Test all signal capabilities against live observable events where data access is available, and replay timestamped historical events for repeatability.
+
+Use verified data provenance, recorded timestamps and deterministic event ordering.
+
+Include adverse examples:
+
+- Artificial volume or repeated wallet purchases.
+- Three transactions from the same wallet.
+- Wallet clusters outside the permitted window.
+- Duplicate Telegram posts.
+- Stale wallet signals.
+- Incomplete developer history.
+- Unsafe tokens with favorable momentum.
+- Fast launches missing mandatory safety evidence.
+- Token reserve retraces after higher historical peaks.
+- API failures and delayed responses.
+
+Measure detection delay and false-trigger behavior.
+
+Do not claim statistical reliability from a handful of examples.
+
+### Phase 2 acceptance
+
+Demonstrate that JINX can continuously consume market activity, generate the correctly documented evidence, refuse unsafe or underspecified entries and identify preliminary eligible signals.
+
+All available signal components must feed the same JINX state.
+
+Provide replay results and actual measured delays.
+
+Submit the recap and code to the panel.
+
+**STOP AT THE PHASE 2 APPROVAL GATE.**
+
+---
+
+# PHASE 3 — SIZE, FIRE, EXIT AND REALIZED PROFIT ACCOUNTING
+
+**OBJECTIVE: Make JINX execute the entire trading lifecycle in PAPER MODE, including intelligent exits.**
+
+### Before starting
+
+Display the Phase 3 implementation map and required end-to-end proof.
+
+### Required implementation
+
+**Confluence and entry**
+
+- Combine approved signal contributions.
+- Apply freshness and hard safety vetoes.
+- Maintain each token's confluence state.
+- Separate standard and fast-path scheduling.
+- Do not delay approved fast-path entries behind background intelligence queues.
+
+**Sizing**
+
+- Implement quarter-Kelly mechanics.
+- Separate models by user and score bucket.
+- Cold-start state.
+- Recalibration after twenty closed trades per bucket.
+- Filter-change reset behavior.
+- Owner-approved exposure constraints.
+
+Do not invent Bayesian priors, undefined buckets or sizing caps.
+
+**Execution**
+
+- Integrate D3AD-E's compatible low-latency machinery.
+- Maintain one order gateway.
+- Enforce trade-intent idempotency.
+- Manage quotes, signing, submission and confirmation.
+- Recover uncertain transaction outcomes.
+- Reconcile actual fills and wallet balances.
+- Prevent duplicate positions.
+- Preserve execution-provider isolation.
+
+**The Executioner**
+
+Check every open position at least every ten seconds for Confluence Collapse:
+
+```text
+collapse_boundary = entry_threshold * 0.40
+
+IF position_age >= 600 seconds
+AND current_confluence < collapse_boundary
+THEN trigger full exit
+```
+
+Implement Negative Divergence partial-profit exits:
+
+```text
+Entry score >= 75  => 30% exit
+Entry score 65–74  => 40% exit
+Entry score 60–64  => 50% exit
+Entry score < 60   => 60% exit
+```
+
+Partial-profit exits require an actually profitable position and a qualifying divergence event.
+
+Prevent one divergence event from causing repeated partial sales.
+
+Preserve CHAD's immediate re-entry eligibility after a Negative Divergence exit.
+
+Implement configurable stop-loss, trailing exits and documented emergency exits separately. Unspecified trigger values remain configuration blockers, not invented defaults.
+
+**Accounting**
+
+- Record actual and simulated fills distinctly.
+- Record fees, tips, slippage and network costs.
+- Track realized and unrealized P&L separately.
+- Reconcile every partial and full exit.
+- Account for positions that remain open.
+- Record transaction failure costs.
+- Produce transparent trade-by-trade execution reports.
+
+**Operator interface**
+
+Provide one compact operating view covering:
+
+- Active signals.
+- Entry qualification.
+- Safety state.
+- Open positions.
+- Entry versus current confluence.
+- Outstanding orders.
+- Position age.
+- Exit reason and status.
+- Available balance.
+- Realized cost-adjusted P&L.
+- Latency and feed-health indicators.
+
+Do not let interface work block the execution engine.
+
+### Required simulation
+
+Paper-test the complete **HEAR → SIZE → FIRE → EXIT** sequence using available live market observations.
+
+Run historical event replay as a separate reproducible validation mode.
+
+Test:
+
+- Early momentum entries.
+- Failed safety checks.
+- Delayed market events.
+- Liquidity deterioration.
+- Failed quote retrieval.
+- Slippage and stale-price effects.
+- Insufficient balances.
+- Partial fills.
+- Dropped confirmations.
+- Repeated sell signals.
+- Rapid momentum reversals.
+- Profitable divergence exits.
+- Loss exits.
+- Confluence Collapse.
+- Restart with open positions.
+- Multiple simultaneous candidate tokens.
+
+A historical observed market price is not automatically an executable fill. Model execution realistically, including supported liquidity, time delay and costs.
+
+Measure signal-to-decision and decision-to-submission time separately from transaction landing time.
+
+### Phase 3 acceptance
+
+JINX must demonstrate a complete paper-trading lifecycle, with verified state transitions, accounting, recovery and risk behavior.
+
+Provide trade logs, measured latency, cost-adjusted simulated results, failed-test records, and reconciled paper-wallet balances.
+
+The review panel must compare implementations directly against CHAD and the pinned upstream sources.
+
+**STOP AT THE PHASE 3 APPROVAL GATE.**
+
+---
+
+# PHASE 4 — REAL-TIME HARDENING, FULL SIMULATION AND INDEPENDENT AUDIT
+
+**OBJECTIVE: Prove the integrated JINX system is operationally ready and eliminate observed defects before any live-money activation.**
+
+### Before starting
+
+Display the complete Phase 4 verification matrix.
+
+### Required implementation and verification
+
+- Run the full continuous paper-trading system.
+- Feed current available market and on-chain observations into the actual event pipeline.
+- Execute deterministic replay against captured real-market events.
+- Verify all documented CHAD entry predicates.
+- Verify every hard safety rejection.
+- Verify every approved exit condition.
+- Verify the independence of all four upstream adapters.
+- Test reconnects, dropped messages and provider outages.
+- Check position recovery after interruption.
+- Stress simultaneous token events.
+- Stress order duplication and delayed confirmations.
+- Verify transaction balance reconciliation.
+- Run anti-lookahead checks.
+- Measure median, p95 and worst-observed decision/execution latency.
+- Measure paper P&L after all modeled costs.
+- Evaluate adverse price movement and failed exit conditions.
+- Verify that missing data fails safely.
+- Audit for secrets and private keys.
+- Verify all dependency licenses.
+- Verify no extra unapproved infrastructure or independent strategy controller has been introduced.
+
+### Speed requirement
+
+**JINX MUST BE ENGINEERED TO REACT WITHIN SECONDS WHEN THE DATA, SAFETY CONDITIONS AND EXECUTION NETWORK PERMIT IT.**
+
+No unnecessary polling wait in the Early Momentum event path.
+
+No social-analysis queue blocking event detection.
+
+No heavyweight historical analysis on the transaction hot path.
+
+No synchronous dashboard update delaying an order.
+
+No repeated API calls when a valid fresh observation is already cached.
+
+No unbounded queue.
+
+Measure the actual timing and report every bottleneck.
+
+Do not claim seconds-level order landing unless measured. Network conditions, Solana congestion, RPC behavior and confirmation delays remain external variables.
+
+### Independent panel audit
+
+Submit the final implementation to the available independent reviewers, including Codex if connected.
+
+Each reviewer receives:
+
+- CHAD.txt.
+- The upstream repository commit map.
+- The JINX source code.
+- `CLAUDE.md`.
+- The source-fidelity matrix.
+- Contract and integration test output.
+- Paper-simulation logs.
+- Reconciliation evidence.
+- Performance and latency measurements.
+- Known unresolved strategy parameters.
+
+Panel verdict:
+
+**PASS / FAIL / BLOCKED**
+
+The panel must identify architectural deviations, invented strategy rules, defective code, missing implementation, fragile integration boundaries, incorrect P&L, unrealistic fills, concurrency errors and missing verification evidence.
+
+Do not fabricate a panel review or claim independent approval without actual reviewer output.
+
+### Phase 4 acceptance
+
+The phase is complete only when all required tests have passing evidence, known failures have been addressed or explicitly accepted, and the panel issues a documented verdict.
+
+Provide a final operational summary separating:
+
+- Implemented and verified.
+- Implemented but unverified.
+- Blocked by missing data or owner parameters.
+- Failed and not fixed.
+- Live-readiness constraints.
+
+Paper-mode completion never automatically activates real-money trading.
+
+Final owner sign-off for live-money activation is distinct from normal autonomous trading authorization.
+
+---
+
+# REAL-TIME PROGRESS AND REVIEW PROTOCOL
+
+Before EACH of the four phases, print a visible checklist or dependency graph.
+
+Maintain `docs/BUILD_STATUS.md` in the repository.
+
+Use this progress format:
+
+| Component | Status | Source | Tests | Evidence |
+|---|---|---|---|---|
+| Event ingestion | NOT STARTED | Upstream/JINX | Pending | — |
+| Source isolation | NOT STARTED | Four adapters | Pending | — |
+| Signal processing | NOT STARTED | CHAD | Pending | — |
+| Execution | NOT STARTED | D3AD-E/JINX | Pending | — |
+| Position monitoring | NOT STARTED | CHAD/Mako | Pending | — |
+| P&L reconciliation | NOT STARTED | JINX | Pending | — |
+
+Update entries as implementation progresses.
+
+Use only:
+
+`NOT STARTED / IN PROGRESS / TESTING / PASSED / FAILED / BLOCKED`
+
+Every PASSED item must link to a real test or verifiable result.
+
+After every meaningful code change:
+
+1. Run relevant unit or contract tests.
+2. Run the associated paper-simulation or replay scenario.
+3. Fix failures immediately.
+4. Record the result.
+5. Continue only when the change is stable.
+
+Do not postpone all simulation until Phase 4.
+
+At the end of EACH phase:
+
+- Summarize exactly what was built.
+- Identify reused source files.
+- Show actual changed JINX files.
+- Provide test commands and outputs.
+- Show paper-simulation evidence.
+- Record bugs found and fixed.
+- List unresolved blockers.
+- Obtain independent panel review.
+- Wait for owner approval before the next phase.
+
+**FOUR PHASES. FOUR REVIEW GATES. NO EXTRA PHASES.**
+
+# ZERO-DRIFT RULES
+
+YOU ARE STRICTLY FORBIDDEN FROM:
+
+- Inventing a new trading strategy.
+- Inventing undocumented CHAD thresholds.
+- Replacing CHAD's decision policy with Mako's or D3AD-E's.
+- Replacing reusable licensed upstream code without technical justification.
+- Building ten competing trading runtimes.
+- Allowing cloned sources to modify each other.
+- Creating competing order controllers.
+- Adding unnecessary services.
+- Waiting on the normal scoring queue for an otherwise eligible fast-path entry.
+- Bypassing safety because a signal looks profitable.
+- Hiding failed fills.
+- Counting unrealized gains as realized profits.
+- Treating backtested profits as guaranteed live returns.
+- Using future market observations in historical decisions.
+- Marking code complete without tests.
+- Deferring every bug until final integration.
+- Proceeding past a phase gate without approval.
+- Pretending to have invoked unavailable skills.
+- Claiming panel approval without an actual review.
+- Enabling real-money trading without the owner's initial explicit authorization.
+- Requesting fresh human approval for each trade after valid live authorization and predefined risk permissions are in force.
+
+# THE FINAL STANDARD
+
+JINX exists to detect actionable opportunities early, execute qualifying trades quickly, and protect capital through intelligent, evidence-driven exits.
+
+**CHAD supplies the behavioral architecture.**
+
+**THE FOUR GITHUB REPOSITORIES SUPPLY REUSABLE WORKING CODE.**
+
+**JINX IS THE SINGLE COORDINATED EXECUTION SYSTEM.**
+
+**CLAUDE IS THE IMPLEMENTATION ENGINEER — NOT THE STRATEGY INVENTOR.**
+
+The system must be evaluated by realized, cost-adjusted profitability, risk containment, execution latency, position reconciliation and actual test evidence.
+
+No architecture drift.
+
+No invented trading policy.
+
+No invisible bugs left for live trading.
+
+No false completion claims.
+
+## FINAL COMMAND TO CLAUDE
+
+Begin by inspecting `CryptoCripLA/harlemshakejinx`.
+
+Update `CLAUDE.md`.
+
+Discover, read and invoke the eleven available skills, reporting their actual results.
+
+Inspect CHAD.txt and the four cloned source repositories.
+
+**PRESENT THE FOUR-PHASE BUILD PLAN TO THE OWNER BEFORE IMPLEMENTING APPLICATION CODE.**
+
+After the plan is approved, execute Phase 1.
+
+Follow every review gate.
+
+Test continuously against genuine market observations and reproducible replay data.
+
+Build the complete coordinated engine using the approved sources.
+
+**HEAR CHATTER. SIZE. FIRE. EXIT.**
+
+**ENTER EARLY. EXIT SMARTER.**
+
+**FOUR PHASES. REAL CODE. REAL TESTS. VERIFIED RESULTS.**
