@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from jinx.adapters.gmgn.budget import PLANS, CURRENT_PLAN, RateBudget, weight
+
 BRIDGE = Path(__file__).with_name("bridge.mjs")
 PASSED_VARS = ("GMGN_API_KEY", "GMGN_PRIVATE_KEY", "JINX_GMGN_HOST")
 # Response-size contract: one JSON reply per line, at most this many bytes. A larger reply fails that request
@@ -56,7 +58,7 @@ class GmgnAdapter:
 
     def __init__(self, build_dir: Path, env: dict[str, str] | None = None, home: Path | None = None,
                  node: str = "node", timeout_s: float = 15.0, max_response_bytes: int = MAX_RESPONSE_BYTES,
-                 auto_restart: bool = True) -> None:
+                 auto_restart: bool = True, allow_signing_key: bool = False, budget: RateBudget | None = None) -> None:
         self.build_dir = Path(build_dir)
         self.env = env
         self.home = home
@@ -64,6 +66,11 @@ class GmgnAdapter:
         self.timeout_s = timeout_s
         self.max_response_bytes = max_response_bytes
         self.auto_restart = auto_restart
+        # The request-signing key reaches the bridge only when allowed: with it, the API key can trade the
+        # GMGN-hosted wallet. The default withholds it; the runtime allows it for signed reads by owner decision
+        # (jinx/config.py). Trading stays refused by the bridge allowlist either way.
+        self.allow_signing_key = allow_signing_key
+        self.budget = budget if budget is not None else RateBudget(PLANS[CURRENT_PLAN])
         self._gen: _Generation | None = None
         self._lock: asyncio.Lock | None = None
         self._ids = itertools.count(1)
@@ -75,6 +82,9 @@ class GmgnAdapter:
         env = {"PATH": os.environ.get("PATH", ""), "HOME": str(self.home or Path.home()),
                "JINX_GMGN_BUILD": str(self.build_dir / "dist")}
         env.update({k: source[k] for k in PASSED_VARS if source.get(k)})
+        if not self.allow_signing_key:
+            env.pop("GMGN_PRIVATE_KEY", None)
+            env["JINX_GMGN_NO_SIGNING_KEY"] = "1"
         return env
 
     @property
@@ -123,6 +133,16 @@ class GmgnAdapter:
         raise GmgnUnavailable("GMGN bridge is not running")
 
     async def call(self, method: str, *args: Any) -> Any:
+        if not method.startswith("__"):
+            await self.budget.acquire(weight(method))  # pace to the plan instead of tripping GMGN's bans
+        msg = await self._send(method, args)
+        if not msg.get("ok"):
+            self.stats["errors"] += 1
+            err = msg.get("error") or {}
+            raise GmgnError(f"{err.get('code')}: {err.get('message')}")
+        return msg.get("result")
+
+    async def _send(self, method: str, args) -> dict:
         gen = await self._ensure_running()
         req_id = next(self._ids)
         fut = asyncio.get_running_loop().create_future()
@@ -131,17 +151,12 @@ class GmgnAdapter:
         try:
             gen.proc.stdin.write((json.dumps({"id": req_id, "method": method, "args": list(args)}) + "\n").encode())
             await gen.proc.stdin.drain()
-            msg = await asyncio.wait_for(fut, self.timeout_s)
+            return await asyncio.wait_for(fut, self.timeout_s)
         except (BrokenPipeError, ConnectionResetError) as e:
             self.stats["unavailable"] += 1
             raise GmgnUnavailable(f"GMGN bridge pipe closed: {e}") from None
         finally:
             gen.pending.pop(req_id, None)
-        if not msg.get("ok"):
-            self.stats["errors"] += 1
-            err = msg.get("error") or {}
-            raise GmgnError(f"{err.get('code')}: {err.get('message')}")
-        return msg.get("result")
 
     async def health(self) -> dict:
         if not self.running:
@@ -150,7 +165,8 @@ class GmgnAdapter:
             h = await self.call("__health")
         except (GmgnUnavailable, GmgnError, asyncio.TimeoutError):
             return {"adapter": self.name, "bridge": "down", "configured": None, **self.stats}
-        return {"adapter": self.name, "bridge": "up", **h, **self.stats}
+        return {"adapter": self.name, "bridge": "up", **h, **self.stats, "plan": self.budget.plan.name,
+                "budget": dict(self.budget.stats)}
 
     async def stop(self) -> None:
         async with self._lifecycle:

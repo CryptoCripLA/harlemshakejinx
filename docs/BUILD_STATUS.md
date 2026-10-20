@@ -1,6 +1,6 @@
 # BUILD STATUS — harlemshakejinx
 
-**Current stage: Phase 1 built; owner provisionally accepted the foundation (2026-10-20). The gate stays open until the independent review passes. No Phase 2 work starts without owner approval.**
+**Current stage: Phase 1 built, plus the GMGN integration readiness the owner's 2026-10-20 mandate added to Phase 1 (`docs/OWNER_GMGN_MANDATE_20261020.md`). The owner provisionally accepted the foundation. The gate stays open until the independent review passes. No Phase 2 work starts without owner approval.**
 
 How to read the numbers here: paper round trips prove **accounting consistency**, not trading performance. Sub-millisecond figures are **local event processing inside JINX**, never order-execution latency. Since review round 2 the live figure runs from feed receive to state applied, durable write included. Figures recorded earlier (0.22 ms, 0.49 ms) started *after* the durable write and understate local processing. Execution latency is measured in Phase 3 against GMGN's confirmed orders.
 
@@ -22,14 +22,21 @@ Status words: NOT STARTED / IN PROGRESS / TESTING / PASSED / FAILED / BLOCKED. E
 | One authoritative position ledger | PASSED | JINX; owner one-slot rule | `test_ledger.py` (15) | slot 1 default, 2 by owner order, never 3 |
 | Persistent event and trade storage | PASSED | JINX (SQLite WAL) | store, ledger, recovery tests | live restart reloaded all 234 tokens |
 | AUTO/COPY/OFF | PASSED | owner contract | mode tests | default OFF; OFF never blocks exits |
-| GMGN-first execution ownership | PASSED (documented) | owner directive 2026-10-20 | — | `CLAUDE.md` section, `docs/INTEGRATION_MAP.md`, matrix section C. GMGN executes; JINX decides and reconciles; D3AD sender unwired |
+| GMGN-first execution ownership | PASSED (documented) | owner directives 2026-10-20 | — | `CLAUDE.md` sections, `docs/INTEGRATION_MAP.md`, matrix section C. GMGN executes; JINX decides and reconciles; D3AD sender unwired |
+| GMGN authenticated read-only access | PASSED | GMGN's pinned `OpenApiClient` through JINX's bridge | `scripts/gmgn_capability_check.py` (live run 2026-10-20 19:16 UTC: 26 GMGN calls, 25 OK, 1 refused by GMGN as expected on Plus: 1 s candles are Pro only; `swap` refused locally before any request) | `docs/GMGN_CAPABILITY_INVENTORY.md`, `docs/evidence/gmgn_capability_check_20261020.json` (redacted) |
+| GMGN plan and request budget | PASSED | plan measured **Plus** (20 weight/s, capacity 20); weights from GMGN's skill tables | `tests/test_gmgn_plus.py` (bucket burst/pacing/refill/refusal, adapter spends per weight) | `jinx/adapters/gmgn/budget.py`; adapter health reports plan and spend |
+| GMGN read allowlist complete | PASSED | pinned client method list | `test_bridge_allows_exactly_every_non_trading_method_of_the_pinned_client` | `getTokenSignalV2` was missing and is now enabled; trading methods refused |
+| Signing-key policy | PASSED | owner decision 2026-10-20 | `test_paper_bridge_does_not_receive_the_signing_key_by_default`, `test_bridge_ignores_the_signing_key_file_when_told_to`, `test_runtime_loads_the_signing_key_for_signed_reads_by_owner_decision_but_trading_stays_refused` | default excluded; runtime allows it for signed reads; trading still refused (`docs/SECRETS.md` §3) |
+| Migration lifecycle interface | PASSED (interface) | owner mandate §3 | `tests/test_lifecycle.py` (9) | `jinx/core/lifecycle.py`. Feeding it from GMGN Trenches/token info and the Pump.fun stream is Phase 2 work; the field mapping is fixed in `docs/GMGN_ADAPTER_CONTRACT.md` §5 |
+| GMGN adapter contract | PASSED (documented) | pinned client, bridge, adapter | adapter, bridge and budget tests | `docs/GMGN_ADAPTER_CONTRACT.md` |
+| Secrets handling | PASSED | owner mandate §1 | `tests/test_secrets.py` (3: no committable file holds a credential shape or the configured GMGN values) | `docs/SECRETS.md`; the key pasted in chat stays in use by owner decision (B-16) |
 | Paper wallet and paper execution | PASSED | D3AD curve math (SRC lines) | `test_paper.py` incl. rustc differential (2,002 cases) | accounting consistency only: 122 mechanical round trips on real captured reserves reconcile to the lamport. They are not trading performance |
 | Restart recovery and health | PASSED | JINX | `test_recovery.py` (9) incl. hard kill | live restart: 0 replayed, sequence resumed at 357; `/health` 200 |
 | Live market ingestion | PASSED (creations only) | Mako `PumpPortalStream` | live runs | 234 creations / 15 min, 0 malformed; local receive→state p50 0.59 ms, p95 0.90 ms (re-measured after the round-2 fix, durable write included; the earlier 0.22 ms excluded the write). Not execution latency. The creation-only feed cannot detect three-wallet momentum |
 | Live trades from other wallets | BLOCKED | PumpPortal needs a key funded with 0.02 SOL | — | B-01 |
-| GMGN live API access | BLOCKED | owner creating the API key | fake-server contract tests PASSED | B-08 |
-| Runtime host | jinx-nyc (existing) | GMGN does not host custom code; jinx-nyc is the minimum existing environment and the GMGN-trusted IP | — | B-10. Railway not provisioned; `Dockerfile`/`railway.json` ready but unused (image not built: no Docker permission) |
-| Independent Codex review | IN PROGRESS | Codex 0.160.0 on the owner's Windows PC (logged in), read-only, clean GitHub clone | Rounds 1–7 each returned FAIL. Findings per round: 9, 7, 3, 3 (+2 low), 1+1 (+1 low), 1+1 (+1 low), 1+1. Confirmed fixed by Codex: round-1 #1, #2, #4, #5, #6, #7, #8, #9; B2–B7; R3-2, R3-3; R4-2 and both round-4 portability fixes; R5-2, R5-3; R6-1 (binding collision), R6-3. Not yet confirmed (historical replay protection for migrated databases, and the claims about it): round-1 #3, B1, R3-1, R4-1, R4-3, R5-1, R6-2, R7-1, R7-2. The builder's fixes for these are at the current head with regression tests; they await round-8 re-review. Full findings in `docs/audits/phase1-codex-20261020-round{1..7}.md` | gate stays open until a round passes |
+| GMGN live API access | PASSED | key applied 2026-10-20; `gmgn-cli config --apply` verified | live capability check | B-08 resolved |
+| Runtime host | PASSED (jinx-nyc, existing) | GMGN does not host custom code; jinx-nyc is the minimum existing environment and the GMGN-trusted IP | — | B-10. Railway not provisioned; `Dockerfile`/`railway.json` ready but unused (image not built: no Docker permission) |
+| Independent Codex review | IN PROGRESS | Codex 0.160.0 on the owner's Windows PC (logged in), read-only, clean GitHub clone | Rounds 1–7 each returned FAIL. Findings per round: 9, 7, 3, 3 (+2 low), 1+1 (+1 low), 1+1 (+1 low), 1+1. Confirmed fixed by Codex: round-1 #1, #2, #4, #5, #6, #7, #8, #9; B2–B7; R3-2, R3-3; R4-2 and both round-4 portability fixes; R5-2, R5-3; R6-1 (binding collision), R6-3. Not yet confirmed (historical replay protection for migrated databases, and the claims about it): round-1 #3, B1, R3-1, R4-1, R4-3, R5-1, R6-2, R7-1, R7-2. The builder's fixes for these are in f2eac2d with regression tests. Round 8 was started on Windows against f2eac2d; its result has not been retrieved because the kayjay-windows connection to jinx-nyc is refused (nothing listens on 127.0.0.1:18000). The GMGN additions committed after f2eac2d have not been reviewed yet. Full findings in `docs/audits/phase1-codex-20261020-round{1..7}.md` | gate stays open until a round passes |
 
 ## Phases 2–4
 
@@ -42,7 +49,7 @@ Status words: NOT STARTED / IN PROGRESS / TESTING / PASSED / FAILED / BLOCKED. E
 ## Environment notes
 
 - GitHub push from jinx-nyc verified 2026-10-20: `gh` 2.102.0 is logged in as CryptoCripLA (owner's fine-grained token, never committed).
-- Railway is the intended JINX runtime; GMGN is the API and the separate hosted copy-trading service.
+- JINX's runtime is jinx-nyc (B-10). Railway is not provisioned. GMGN is the API, the execution platform and the separate hosted copy-trading service.
 
 ## GMGN Agent API authentication (jinx-nyc)
 
@@ -54,9 +61,9 @@ Purpose: JINX's automatic trading integration. There is no manual buy/sell workf
 | GMGN skills installed | PASSED | `npx skills add GMGNAI/gmgn-skills -g -a claude-code` (skills CLI 1.7.4) | 19 `gmgn-*` skills listed | `~/.claude/skills/gmgn-*` |
 | Ed25519 request-signing key pair | PASSED | `gmgn-cli config` (official generator) | `openssl pkey` reads an ED25519 public key | `~/.config/gmgn/keypair.pem`, mode 600, dir 700. The private key never leaves jinx-nyc |
 | Trusted IP for trading | PASSED (given to owner) | jinx-nyc outbound IPv4, verified by 3 services | — | 45.77.159.191 |
-| API key created on gmgn.ai with this public key | BLOCKED | owner action | — | waiting for owner |
-| `gmgn-cli config --apply` + authenticated call | NOT STARTED | signed `track follow-wallet` and one read call | pending | — |
-| Railway secrets `GMGN_API_KEY` / `GMGN_PRIVATE_KEY` | NOT STARTED | the bridge reads both from env | pending | — |
+| API key created on gmgn.ai with this public key | PASSED | owner, 2026-10-20 (plan measured Plus) | — | key bound to 9 chains incl. Solana wallet 3CtN…HZhg |
+| `gmgn-cli config --apply` + authenticated call | PASSED | `gmgn-cli config --apply` → "Configuration verified successfully"; signed `track follow-wallet` and `portfolio holdings` OK | `scripts/gmgn_capability_check.py` | `docs/GMGN_CAPABILITY_INVENTORY.md` |
+| Railway secrets `GMGN_API_KEY` / `GMGN_PRIVATE_KEY` | NOT STARTED | not needed while the runtime is jinx-nyc (B-10); the bridge reads `~/.config/gmgn/.env` | — | `docs/SECRETS.md` |
 
 Public key registered for this host (public, not a secret):
 

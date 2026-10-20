@@ -1,7 +1,7 @@
 # harlemshakejinx
 
 JINX: one coordinated Solana trading engine built to the CHAD blueprint, **HEAR CHATTER → SIZE → FIRE → EXIT**.
-The binding rules are in `CLAUDE.md`. Build progress is in `BUILD_STATUS.md`.
+The binding rules are in `CLAUDE.md`. Build progress is in `docs/BUILD_STATUS.md`.
 
 Current stage: **Phase 1 (foundation)**. Paper mode only. There is no strategy and no live execution path yet.
 

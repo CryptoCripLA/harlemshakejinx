@@ -25,7 +25,7 @@ const READ_ONLY = new Set([
   "getWalletTokenBalance", "getTrenches", "getTrendingSwaps", "getHotSearches", "searchMarket", "getUserInfo",
   "getFollowWallet", "getFollowTokens", "getFollowGroupNames", "getKol", "getSmartMoney", "getCreatedTokens",
   "getCalloutRecord", "getCalloutGlobal", "quoteOrder", "queryOrder", "getGasPrice", "getStrategyOrders",
-  "getCookingStatistics",
+  "getCookingStatistics", "getTokenSignalV2",
 ]);
 
 function credentials() {
@@ -43,6 +43,8 @@ function credentials() {
       if (key === "GMGN_PRIVATE_KEY") privateKey = value;
     }
   }
+  // Withheld unless the adapter allows it: with the request-signing key, the API key can submit trades.
+  if (process.env.JINX_GMGN_NO_SIGNING_KEY === "1") privateKey = undefined;
   // SRC: gmgn-skills@402671e src/config.ts:62 (single-line .env values carry escaped newlines)
   if (privateKey) privateKey = privateKey.replace(/\\n/g, "\n");
   return { apiKey, privateKey };

@@ -6,6 +6,12 @@ Each entry: what is blocked, the evidence, what is needed, and one reversible op
 - Evidence: PumpPortal replied on 2026-10-20: "'subscribeTokenTrade' and 'subscribeAccountTrade' methods are only available when connecting with an API key funded with at least 0.02 SOL." Mako's `pumpportal.py` predates this and assumes free trade streams.
 - Effect now: the live feed carries token creations only (each including the creator's initial buy). Health reports `trade_stream: BLOCKED`.
 - GMGN checked first (owner directive 2026-10-20): GMGN's API is polled request/response with plan rate limits. It gives aggregates (swaps, holders, curve progress) and smart-money/KOL trade lists, but no per-buy stream with the fee-payer wallet and time. It cannot drive CHAD's "3 buys · 3 unique wallets · 30-second window" trigger. See `docs/INTEGRATION_MAP.md` §4.
+- Re-checked with the live Plus key, 2026-10-20 19:16 UTC (`docs/GMGN_CAPABILITY_INVENTORY.md` §5):
+  - Smart Money and KOL trades carry maker, transaction hash and timestamp, but only for GMGN-tagged wallets.
+  - Top traders are per-wallet aggregates.
+  - No route streams every buy.
+
+  B-01 still stands.
 - Needed: an owner decision to create a PumpPortal API key and fund it with at least 0.02 SOL. Usage then costs 0.01 SOL per 10,000 trades streamed (pumpportal.fun/fees, read 2026-10-20). This is spending, so it waits for the owner. It is the minimum additional feed and plugs into the Mako stream JINX already runs.
 - Reversible option: set `PUMPPORTAL_API_KEY`; the feed then subscribes every new mint's trades automatically. Unset it to return to creations only.
 
@@ -19,6 +25,7 @@ safety 0–100 formula and pass threshold; momentum "stall" and "sustained volum
 
 ## B-04 Position count: CHAD tiers vs the owner's standing slot rule
 - CHAD product tiers allow 3, 10 or unlimited positions. The owner's permanent directive (2026-10-17) is one global slot, two only by owner order, never three.
+- The GMGN mandate of 2026-10-20 says: "Do not hardcode a one-position limit unless that is explicitly present in the owner's approved configuration." The 2026-10-17 directive is that explicit configuration (the owner's global CLAUDE.md: "NO EXECUTION PATH MAY BYPASS THIS LIMIT"), so the limit stays. The slot count is a stored setting changed only by owner command (`jinx/ops/entry_slots.py`), not a literal in the decision code.
 - Current build: the owner rule is enforced (`jinx/ledger.py`, `jinx/ops/entry_slots.py`). Changing it needs an explicit owner order.
 
 ## B-05 X Scout has no data source among the four approved repos
@@ -31,9 +38,9 @@ safety 0–100 formula and pass threshold; momentum "stall" and "sustained volum
 - CHAD names Helius gRPC. GMGN gives curve progress only by polling (`launchpad_progress`). The PumpPortal trade stream (B-01) carries curve reserves on every trade, which covers the same data without Helius.
 - Needed: the owner's choice between Helius (paid) as CHAD names it, or B-01's stream as the source of curve data.
 
-## B-08 GMGN API key
-- Status: key pair generated on jinx-nyc, public key handed to the owner, trusted IP 45.77.159.191. Waiting for the owner to create the key; then `gmgn-cli config --apply` and live verification.
-- Effect now: the GMGN adapter is built and contract-tested against a fake GMGN server; live calls report NOT_CONFIGURED.
+## B-08 GMGN API key — RESOLVED 2026-10-20
+- The owner created the key with jinx-nyc's public key and trusted IP 45.77.159.191. `gmgn-cli config --apply` reported "Configuration verified successfully".
+- Authenticated read-only checks pass through JINX's own bridge (`docs/GMGN_CAPABILITY_INVENTORY.md`).
 
 ## B-09 Codex on jinx-nyc
 - `codex` 0.163.0 on jinx-nyc is not logged in. The Phase 1 review instead ran on the owner's Windows PC, where Codex (0.160.0) is logged in, against a clean clone of the GitHub repo plus the pinned upstreams. For future reviews from jinx-nyc, the owner runs `codex login` there once.
@@ -56,6 +63,16 @@ safety 0–100 formula and pass threshold; momentum "stall" and "sustained volum
 - If GMGN native copy trading and JINX share one GMGN wallet, copy-trade positions land in JINX's reconciliation and use up the owner's one-slot limit.
 - Needed: the owner confirms JINX gets its own GMGN wallet (the API key binds to one wallet).
 
-## B-15 GMGN plan tier sets JINX's polling budget
+## B-15 GMGN plan tier sets JINX's polling budget — RESOLVED 2026-10-20
 - GMGN rate limits per plan: Free 5/5, Plus 20/20, Pro 50/50 weight per second. 1-second candles are Pro only.
-- Needed: the plan on the owner's account, readable through `getUserInfo` once the API key exists.
+- Measured on the owner's key: **Plus**. Evidence: response header `x-ratelimit-limit: 20`, and 1-second candles refused with `PRO_PLAN_REQUIRED`.
+- The owner's message said "Pro". The owner then confirmed: "its not pro its plus who cares claude use what we have available maximize jinx with what gmgn gives us".
+- JINX paces itself to Plus (`jinx/adapters/gmgn/budget.py`). Changing plans is a one-line change (`CURRENT_PLAN`).
+
+## B-16 GMGN API key was shared in chat; owner keeps using it (risk accepted)
+- Evidence: the key was pasted into the session on 2026-10-20. The mandate said to treat it as exposed and rotate it; the owner then ordered "use the fucking key claude".
+- Current state:
+  - The key is only in jinx-nyc `~/.config/gmgn/.env` (mode 600). It is not in the repo, docs, tests or logs; `tests/test_secrets.py` checks every committable file against the configured value.
+  - Someone holding only the key can spend this account's read quota.
+  - Trading also needs the request-signing key, which never left jinx-nyc, and the trusted IP.
+- Reversible option: rotate at any time with the steps in `docs/SECRETS.md` §4. No code change is needed.

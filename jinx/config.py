@@ -22,6 +22,11 @@ PAPER_START_LAMPORTS = 2_000_000_000
 # Phase 3 reads the live values from the pump.fun global account instead.
 PUMP_CURVE_FEES = CurveFees(fee_bps=95, creator_fee_bps=5)
 
+# Owner decision 2026-10-20 ("its ok for paper we need real data"): the runtime GMGN bridge loads the
+# request-signing key so GMGN's signed reads (followed-wallet trades, wallet holdings, order status) work in
+# paper mode. Trading methods stay refused by the bridge's read-only allowlist whatever this says.
+GMGN_ALLOW_SIGNING_KEY = True
+
 # Solana base fee: 5,000 lamports per signature (protocol constant).
 # Priority fees and tips are added in Phase 3 with the execution path.
 NETWORK_FEE_LAMPORTS = 5_000

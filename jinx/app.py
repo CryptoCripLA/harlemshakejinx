@@ -67,7 +67,7 @@ class JinxApp:
                                        api_key=os.environ.get("PUMPPORTAL_API_KEY") or None,
                                        mode_provider=lambda: get_mode(self.store),
                                        held_mints_provider=lambda: {p.mint for p in self.ledger.active()})
-        self.gmgn = GmgnAdapter(s.gmgn_build_dir)
+        self.gmgn = GmgnAdapter(s.gmgn_build_dir, allow_signing_key=config.GMGN_ALLOW_SIGNING_KEY)
         self.d3ad = D3adExecutionAdapter(s.upstream_dir / "d3ad")
         self.datanomad = DataNomadResearchAdapter(s.upstream_dir / "datanomad")
         if (s.gmgn_build_dir / "dist" / "client" / "OpenApiClient.js").exists():

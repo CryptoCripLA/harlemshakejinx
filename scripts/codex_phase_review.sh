@@ -13,7 +13,7 @@ Review Phase ${PHASE} only, read-only. Do not modify files.
 
 Read: CLAUDE.md (the owner's binding contract and four-phase mandate), docs/CHAD_BLUEPRINT.md (the architecture
 bible), UPSTREAM_PINS.json and the pinned upstream code under upstream/, docs/SOURCE_FIDELITY_MATRIX.md,
-docs/BLOCKERS.md, docs/LICENSES.md, BUILD_STATUS.md, docs/evidence/PHASE${PHASE}_EVIDENCE.md, all of jinx/ and tests/.
+docs/BLOCKERS.md, docs/LICENSES.md, docs/BUILD_STATUS.md, docs/GMGN_CAPABILITY_INVENTORY.md, docs/GMGN_ADAPTER_CONTRACT.md, docs/SECRETS.md, docs/evidence/PHASE${PHASE}_EVIDENCE.md, all of jinx/ and tests/.
 
 Check, with file:line evidence for every finding:
 1. Every Phase ${PHASE} item in CLAUDE.md's mandate: implemented, tested, and honestly reported?
@@ -24,7 +24,7 @@ Check, with file:line evidence for every finding:
 5. Correctness: dedup and idempotency, ordering, the position ledger and slot limit, paper accounting,
    crash recovery, concurrency. Look for bugs the tests miss.
 6. Can any path send a real-money order in this phase?
-7. Are any claims in BUILD_STATUS.md or the evidence file unsupported by the code or test output?
+7. Are any claims in docs/BUILD_STATUS.md or the evidence file unsupported by the code or test output?
 
 Output: a verdict line "VERDICT: PASS | FAIL | BLOCKED", then findings ordered by severity
 (CRITICAL / HIGH / MEDIUM / LOW), each with file:line and the concrete failure.

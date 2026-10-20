@@ -17,6 +17,35 @@ Owner directive, 2026-10-19. New canonical repository: https://github.com/Crypto
 - **Priority: hunting logic.** The remaining work is the CHAD intelligence that recognizes opportunities before they are obvious. It runs as background capabilities supporting ONE coordinated entry-and-exit path, not separate bot runtimes. No invented CHAD strategies, weights or thresholds.
 - **Honest test labels.** Accounting-consistency checks are not trading performance. Local event-processing time is not order-execution latency. Later phases test complete CHAD decision paths against real observations, including delayed execution, available liquidity, costs, adverse moves and confirmed simulated exits. **Net profit after costs is the performance objective.** Never present paper results as realized live profit.
 
+## OWNER MANDATE — GMGN IS THE PRIMARY PLATFORM INTEGRATION; MIGRATION INTELLIGENCE IS CORE (2026-10-20)
+
+Verbatim source (key redacted): `docs/OWNER_GMGN_MANDATE_20261020.md`. Its binding points:
+
+- **GMGN is the primary source** for token intelligence, smart-money and wallet analysis, migration monitoring and trade execution. Mako, D3AD-E and DataNomad stay isolated donors where GMGN does not already supply the capability. **CHAD remains the master trading architecture; JINX is the single decision engine** (HEAR CHATTER → SIZE → FIRE → EXIT). No ten bot runtimes, no competing entry paths, no redundant execution, no fake performance claims.
+- **Do not start over, do not discard Phase 1, do not add phases.** Preserve the working foundation. Do not replace working Phase 1 mechanisms merely because GMGN overlaps.
+- **Use the pinned GMGN client**, preserving its authentication, schemas, error handling, request signing and rate-limit behavior. Do not invent endpoints, scrape GMGN's site, or hand-write HTTP calls in its place without a documented, tested reason. Contract: `docs/GMGN_ADAPTER_CONTRACT.md`. Measured capabilities: `docs/GMGN_CAPABILITY_INVENTORY.md`.
+- **Migration intelligence is a primary requirement.**
+  - One migration-aware token state machine: NEWLY DETECTED → ON BONDING CURVE → APPROACHING GRADUATION → MIGRATION OBSERVED → MIGRATION CONFIRMED → POST-MIGRATION MARKET, with exceptional unknown, stale, failed and conflicting states.
+  - Never treat a token missing from a query result as migrated. Never infer graduation from a price rise. Never manufacture a stream or callback GMGN does not provide.
+  - Migration is neither a buy signal nor a reason to abandon a position. Never duplicate a buy because two detectors report the same token.
+  - Interface: `jinx/core/lifecycle.py`.
+- **Keep the existing Pump.fun stream wherever it gives earlier event-level data.** A one-minute ranking or candle is never proof of sub-second detection. CHAD's Early Momentum (3 buys · 3 unique fee-paying wallets · 30 s) needs raw wallet events with times. Where GMGN lacks them, keep the suitable stream or name the missing feed.
+- **Whale intelligence** uses GMGN wallet data as input, but CHAD's wallet-confidence policy (50/25/25, 14-day half-life, 40 % win-rate promotion, 4 h discovery, 15 pinned wallets, three-wallet clusters) is never replaced by GMGN's own scoring formula. Distinguish a trader's own profit from what JINX could capture after latency, slippage and fees.
+- **Safety** combines GMGN evidence without an invented formula and fails closed when mandatory evidence is unknown. **Confluence** evidence carries token, signal type, source, observation time, event time, freshness, payload, blocking status and the applied component, if one is defined. No undocumented weights, thresholds or confidence values.
+- **Execution:** one JINX execution coordinator.
+  - Path: eligibility → risk/size → fresh GMGN quote → JINX execution gate → GMGN order → confirmed result → reconciled holdings.
+  - No live order merely because a read-only call succeeds. Paper only until the owner explicitly activates automated trading; no per-trade prompts after that.
+  - Measure each stage. Never call an API acknowledgement a fill.
+  - A GMGN protective order and a JINX exit must never oversell the same position.
+  - No competing D3AD sender unless tests show GMGN cannot meet a documented CHAD requirement.
+- **Sizing** reads the actual balance, accounts for pending commitments and costs, rejects insufficient funds and duplicate intents, and fails closed where CHAD's priors, buckets or caps are unresolved. "Do not hardcode a one-position limit unless that is explicitly present in the owner's approved configuration." The owner's standing global directive of 2026-10-17 (one slot, two only by owner order, never three) is that explicit configuration; see B-04.
+- **Phase 1 deliverables added by this mandate:** this section; the GMGN adapter contract; the source-fidelity matrix; the integration map; the API capability inventory; the migration lifecycle interface; secrets handling (`docs/SECRETS.md`); the GMGN-first execution ownership plan; authenticated read-only capability checks. **Do not write Phase 2 signal logic before approval. Stop at the Phase 1 review gate.**
+
+**Owner decisions the same day (they narrow the mandate):**
+1. **The plan is Plus, not Pro.** Measured: 20 weight/s, and 1-second candles are refused. The owner said: "its not pro its plus who cares claude use what we have available maximize jinx with what gmgn gives us". Design to the Plus budget (`jinx/adapters/gmgn/budget.py`) and use every Plus capability that improves detection, exits or measured profit.
+2. **Keep the pasted API key** ("use the fucking key claude"): no rotation for now. It lives only in jinx-nyc `~/.config/gmgn/.env`, never in the repo, docs, tests or logs. Risk recorded as B-16; rotation steps are in `docs/SECRETS.md`.
+3. **The signing key may load in paper runs** ("its ok for paper we need real data i dont care if it loaded whatever"). This enables GMGN's signed reads. Trading methods stay refused by the bridge allowlist until the owner activates live trading.
+
 ## PRIORITY ZERO — PROFITS. PROFITS. PROFITS.
 **JINX EXISTS TO MAKE MONEY: MAXIMUM REALIZED NET SOL PROFIT.** The number-one trading priority is identifying actual early explosive moves, entering early at executable prices, sizing intelligently, firing rapidly, riding genuine momentum, and exiting to REALIZE NET SOL. Every line of code and every engineering action must answer: **HOW DOES THIS HELP JINX MAKE MORE REALIZED NET SOL?** Paper profits, backtest winnings, submitted orders, win-rate vanity, and transaction counts are not realized profits. Show real outcomes accurately; no one can guarantee a winning trade.
 

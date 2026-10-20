@@ -131,7 +131,7 @@ Codex round 4 (`docs/audits/phase1-codex-20261020-round4.md`, on `631da32`) retu
 |---|---|
 | R4-1 HIGH: the v3 migration took legacy ids beginning `p<position>:` for modern ones | **Partial per round 5 (R5-1); superseded by the v5 provenance rule in section 10.** Schema v4. A sell fill counts as modern only if a non-legacy exit binding produced it (same position, fill id `p<position>:<intent>:sell`). Every other sell fill becomes a historical binding under its own old id, whatever the id looks like. The backfill re-runs, idempotently, on every open, which also repairs databases an earlier build marked v3. Tests: Codex's exact `p1:X` reproduction, a repaired v3 database, and a check that modern fills are never turned into legacy bindings |
 | R4-2 MED: a retried unsubscribe could drop a mint that had become held | **Partial per round 5 (R5-2); completed in section 10.** Paid subscriptions are one locked reconcile of wanted (watched creations plus held mints) against confirmed (sent on the current connection). Unsubscribes that are no longer wanted are cancelled before anything is sent. On reconnect, Mako's re-subscribed set becomes the confirmed state. Health reports `pending_unsubscribes` and `unconfirmed_subscriptions`. Test: Codex's exact 5-step sequence ends with the held mint still subscribed on the server |
-| R4-3 MED: completion claims ran ahead of the code | `BUILD_STATUS.md` and this file now separate what Codex confirmed from what awaits re-review |
+| R4-3 MED: completion claims ran ahead of the code | `docs/BUILD_STATUS.md` and this file now separate what Codex confirmed from what awaits re-review |
 | LOW: Windows test portability | The license CRLF test normalizes first. The replay network guard allows loopback, which Windows asyncio uses for its internal socketpair |
 
 ## 10. Review round 5 fixes (round 6: R5-2 confirmed; R5-1 and R5-3 partial, see section 11)
@@ -151,7 +151,7 @@ Codex round 6 (`docs/audits/phase1-codex-20261020-round6.md`, on `f270bf5`) retu
 | Finding | Fix (builder) |
 |---|---|
 | R6-1 HIGH: an existing binding under the historical intent id made the v5 backfill skip the historical fill | **Confirmed fixed for binding collisions in round 7, but its SQL scan missed ids containing NUL (R7-1); the scan is replaced in section 12.** Schema v6. Historical evidence no longer shares the binding table. Every sell fill without provenance gets a row in `historical_exits`, keyed by its own fill id, so no binding can displace it. `claim_exit` checks this evidence before any binding. An intent with historical evidence is only ever answered as a replay (exact same position and amount, or the closing fill for a whole-position request) or refused; it is never executed. Tests: Codex's exact NO_QUOTE → upgrade → replay sequence, and all 15 combinations of 5 pre-upgrade binding states × 3 requested amounts, each asserting inventory and sell count unchanged |
-| R6-2 MED: completion claims ran ahead of the code | The claims Codex cited (section 10's R5-1 row, the network-guard wording) are marked partial or superseded. `BUILD_STATUS.md` lists confirmed and unconfirmed items separately |
+| R6-2 MED: completion claims ran ahead of the code | The claims Codex cited (section 10's R5-1 row, the network-guard wording) are marked partial or superseded. `docs/BUILD_STATUS.md` lists confirmed and unconfirmed items separately |
 | R6-3 LOW: `connect_ex` bypassed the replay network guard | The guard also refuses `connect_ex` and `sendto`. Test: both are refused against a live local listener, which receives nothing |
 
 ## 12. Review round 7 fixes (awaiting re-review)
@@ -161,5 +161,24 @@ Codex round 7 (`docs/audits/phase1-codex-20261020-round7.md`, on `a2068e3`) retu
 | Finding | Fix (builder) |
 |---|---|
 | R7-1 HIGH: a historical intent id containing NUL escaped the evidence scan (SQLite's `LIKE`/`length`/`substr` stop at NUL) and could sell again | Schema v7. The evidence scan selects provenance-free sell rows in SQL but derives intent ids in Python, which handles embedded NUL. A sell whose id does not end in `:sell` is still recorded, under its full fill id, rather than skipped. New `EntryIntent`/`ExitIntent` ids and mints refuse control characters (NUL, newline, tab, ESC, DEL), so new NUL ids cannot be created. Tests: 7 awkward historical ids (NUL in several positions, newline, Unicode with a direction override, repeated `:sell`, plain `p1:X`) each recorded as evidence and never sold again at 3 requested amounts; an unclassifiable id preserved; Codex's NUL reproduction refused at the gateway boundary; control characters refused in new intents |
-| R7-2 MED: replacement claims were broader than the code | This section states the tested scope instead of "every". `BUILD_STATUS.md` lists the unconfirmed items |
+| R7-2 MED: replacement claims were broader than the code | This section states the tested scope instead of "every". `docs/BUILD_STATUS.md` lists the unconfirmed items |
 
+
+## 13. GMGN integration readiness (owner mandate 2026-10-20; not yet independently reviewed)
+
+The owner's GMGN mandate (`docs/OWNER_GMGN_MANDATE_20261020.md`) added these items to Phase 1. No Phase 2 signal logic was written.
+
+| Item | Code | Tests | Result |
+|---|---|---|---|
+| Authenticated read-only checks through JINX's own bridge | `scripts/gmgn_capability_check.py` | live run 2026-10-20 19:16:06 UTC | 26 GMGN calls: 25 OK, 1 refused by GMGN as expected on Plus (`PRO_PLAN_REQUIRED` for 1 s candles). `swap` refused locally with `METHOD_NOT_ENABLED` before any request. Redacted output: `docs/evidence/gmgn_capability_check_20261020.json`; summary: `docs/GMGN_CAPABILITY_INVENTORY.md` |
+| Plan measured | — | — | Plus: header `x-ratelimit-limit: 20`, 1 s candles refused |
+| Plus request budget | `jinx/adapters/gmgn/budget.py`, wired into `GmgnAdapter.call` | `tests/test_gmgn_plus.py` (6 budget tests) | the live run spent 84 weight over 28 calls without waiting |
+| Read allowlist derived from the pinned client | `jinx/adapters/gmgn/bridge.mjs` | `test_bridge_allows_exactly_every_non_trading_method_of_the_pinned_client` | found and fixed: `getTokenSignalV2` was missing |
+| Signing-key policy | adapter `allow_signing_key`, bridge `JINX_GMGN_NO_SIGNING_KEY`, `jinx/config.py::GMGN_ALLOW_SIGNING_KEY` | 3 tests in `tests/test_gmgn_plus.py` | excluded by default; runtime allows it by owner decision; trading still refused |
+| Migration lifecycle interface | `jinx/core/lifecycle.py` | `tests/test_lifecycle.py` (9) | normal path, repeats, confirmation needs the post-migration pool, no absence/price kinds, late evidence ignored, contradictions flagged, caller-declared stale, failures recorded, peak virtual SOL kept |
+| Secrets guard | — | `tests/test_secrets.py` (3) | no committable file holds a credential shape or the configured GMGN values |
+| Migration field semantics checked live | — | 6 tokens (3 near completion, 3 completed) read through trenches and token info | `launchpad_status` read 0 on the curve and 1 after migration, not 2 as `skills/gmgn-token/SKILL.md:166` documents. `migrated_pool` equals the trenches `pool_address` once migrated, and `migrated_timestamp` equals `complete_timestamp`. The lifecycle mapping relies on those fields, never on `launchpad_status` alone |
+
+Full suite after these changes: `246 passed` (`.venv/bin/python -m pytest -o addopts="" -q`, 10.3 s on jinx-nyc), up from 224 at f2eac2d. The 22 new tests are 10 GMGN Plus, 9 lifecycle and 3 secrets.
+
+These items are the builder's evidence. They have not been through a Codex round yet.

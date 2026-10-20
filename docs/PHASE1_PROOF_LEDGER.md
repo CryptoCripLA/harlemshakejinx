@@ -34,10 +34,10 @@ Owner-authorized Phase 1 only: install/locate the exact 11 Claude skills, bind o
 - Project hooks present: VERIFIED via GitHub API.
 - Hook runtime execution on actual Claude checkout: VERIFIED 2026-10-20 on jinx-nyc. `.claude/hooks/jinx-profit-reminder.sh session` found all 11 skill files with none missing; `superpowers:test-driven-development` resolved to the plugin cache, version 6.4.1.
 - Actual Claude session invoking/reading all eleven: VERIFIED 2026-10-20 for session `52e20eb1`. All 11 were invoked through the Skill tool and their bodies delivered; tool call ids and timestamps are in `docs/evidence/SKILLS_INVOCATION_20261020.md`. Each new session must invoke them again.
-- Independent Codex/GPT read-only phase review: round 1 FAIL (9 findings), `docs/audits/phase1-codex-20261020-round1.md`. Fixes and re-review are tracked in `BUILD_STATUS.md`.
+- Independent Codex/GPT read-only phase review: round 1 FAIL (9 findings), `docs/audits/phase1-codex-20261020-round1.md`. Fixes and re-review are tracked in `docs/BUILD_STATUS.md`.
 - Phase 1 owner acceptance: PENDING.
 - Market strategy implementation: NOT STARTED.
-- Live trading / GMGN connection: NOT CHANGED.
+- GMGN connection: authenticated read-only access verified 2026-10-20 on the Plus plan (`docs/GMGN_CAPABILITY_INVENTORY.md`). Live trading: NOT ENABLED (bridge refuses trading methods; owner activation required).
 
 ## Required independent review gate
 Compare the committed CLAUDE.md and hooks with original CHAD.txt, exact 11-skill roster and original JINX skill files. Verify no source rules changed, no unauthorized strategy invented, all hooks operate on actual Claude host, skill files are found and genuinely read, and phase stays limited to owner-authorized setup. Commit findings under docs/audits/. STOP and return the evidence to owner for approval before Phase 2.

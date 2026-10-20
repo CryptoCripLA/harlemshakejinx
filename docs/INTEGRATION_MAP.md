@@ -2,11 +2,15 @@
 
 Owner directive, 2026-10-20: "GMGN IS OUR TRADING PLATFORM. JINX IS THE INTELLIGENCE." JINX hunts, qualifies, sizes and decides when to exit (HEAR CHATTER → SIZE → FIRE → EXIT). GMGN executes, holds the wallet and reports confirmed results. Sources: GMGN's pinned `gmgn-skills@402671e` (code and SKILL docs), docs.gmgn.ai/index/gmgn-agent-api (read 2026-10-20) and pumpportal.fun/fees (read 2026-10-20).
 
+Updated 2026-10-20 for the owner's GMGN mandate (`docs/OWNER_GMGN_MANDATE_20261020.md`): GMGN is the **primary** source for token intelligence, wallet intelligence, migration monitoring and execution. The live key is verified, and the plan is measured as **Plus** (`docs/GMGN_CAPABILITY_INVENTORY.md`).
+
 ## 1. Who owns what
 
 | Function | Owner | How | Phase |
 |---|---|---|---|
-| Hunting intelligence (CHAD's ten roles as background capabilities on one path) | **JINX** | `jinx/intel/*` reads GMGN data, the live trade feed and Mako/D3AD-derived parsers | 2 |
+| Hunting intelligence (CHAD's ten roles as background capabilities on one path) | **JINX** | `jinx/intel/*` reads GMGN data first, then the live Pump.fun feed where it is earlier, then Mako/D3AD-derived parsers | 2 |
+| Token lifecycle and migration (launch → curve → graduation → migration → post-migration market) | **JINX state machine, GMGN primary evidence** | `jinx/core/lifecycle.py` (interface built in Phase 1). Fed by GMGN Trenches (`new_creation` / `near_completion` / `completed`) and token info (`migrated_pool`, `migrated_timestamp`, `launchpad_progress`), plus the Pump.fun stream's creations and reserves. Mapping: `docs/GMGN_ADAPTER_CONTRACT.md` §5 | 1 (interface) / 2 (feeds) |
+| Request pacing to the GMGN plan | **JINX** | `jinx/adapters/gmgn/budget.py`, Plus 20 weight/s | 1 |
 | Entry qualification, confluence, sizing (quarter-Kelly), exit decisions (Confluence Collapse, Negative Divergence partials) | **JINX** | one decision path into the single order gateway (`jinx/execution.py`) | 3 |
 | Order construction, routing, signing of the on-chain transaction, submission, landing | **GMGN** | `swap` (`POST /v1/trade/swap`) from the GMGN hosted wallet; JINX signs only the API request (Ed25519 request key) | 3 |
 | Order status and fill amounts | **GMGN is the source of truth** for GMGN-placed orders | `queryOrder`: `pending → processed → confirmed` or `failed` / `expired`; filled amounts in `report.input_amount` / `report.output_amount` only once confirmed | 3 |
@@ -36,7 +40,19 @@ GMGN provides an API and a hosted wallet. Its documentation describes agents run
 
 ## 4. Can GMGN alone feed CHAD's triggers?
 
-GMGN's API is request/response only (no websocket or stream in the client). Its rate limit is a leaky bucket per plan: Free 5/5, Plus 20/20, Pro 50/50 weight per second (rate/capacity). Each route has a weight, e.g. trenches 2, token security 1, token top traders 5, smart money 1, follow-wallet 10. The owner's plan is unknown until the API key exists.
+GMGN's API is request/response only (no websocket or stream in the client). Its rate limit is a leaky bucket per plan: Free 5/5, Plus 20/20, Pro 50/50 weight per second (rate/capacity). Each route has a weight, e.g. trenches 2, token security 1, token top traders 5, smart money 1, follow-wallet 10.
+
+The owner's plan is **Plus** (measured 2026-10-20), so 1-second candles are not available. Freshness measured at 19:16 UTC (newest item's age when the response arrived; one sample):
+
+| Data | Newest age |
+|---|---|
+| Trenches `new_creation` | 3.8 s |
+| Market signals | 2.0 s |
+| Smart Money | 4.2 s |
+| KOL | 5.4 s |
+| 1-minute candles | ~10 s |
+
+Request latency through the persistent bridge was 95–451 ms per call.
 
 | CHAD trigger / input | Best GMGN source | What GMGN gives | Enough? | Minimum extra |
 |---|---|---|---|---|
@@ -46,6 +62,7 @@ GMGN's API is request/response only (no websocket or stream in the client). Its 
 | **Whale discovery** (4 h cycle, 40 % win rate, 50/25/25 confidence, 14-day half-life) | wallet stats / profits (w3), activity (w3) | win rate, P&L, activity history | **Yes** (slow path) | — |
 | **Insider clusters** (3 tracked wallets, same token) | built from Layer 1 events | — | as good as Layer 1 | — |
 | **Graduation** (curve progress → 0–20 pts) | token info `launchpad_progress` (0–1), trenches near_completion | progress, polled | Usable polled | CHAD names Helius gRPC. The PumpPortal trade stream above also carries reserves on every trade. Using it instead of Helius needs the owner's OK (B-07) |
+| **Migration** (mandate §3) | trenches `completed` (`exchange: pump_amm`, `pool_address`, `complete_timestamp`, `complete_cost_time`); token info `migrated_pool`, `migrated_timestamp` | explicit migration fields, polled; no callback | **Yes**, at polling cadence plus GMGN indexing delay | — |
 | **Momentum** (15 s velocity / volume acceleration, Negative Divergence) | 1-minute candles (w2); 1-second candles Pro only | candles | Partly; CHAD names DexScreener | Mako's DexScreener client (free) at CHAD's 15 s cycle |
 | **Safety** (RugCheck, honeypot, mint/freeze) | token security (w1): honeypot, renounced, rug ratio, wash trading | security fields | Mostly; CHAD names RugCheck (not in Mako or GMGN) | RugCheck API if the owner wants it literally |
 | **Dev reputation** | created tokens (w2), gmgn-dev-score method | launch history | **Yes** (slow path) | — |
@@ -58,3 +75,34 @@ Conclusion: GMGN covers the slow-path intelligence (safety, dev history, wallet 
 
 - Phase 1's sub-millisecond figures are **local event processing inside JINX** (feed message received → stored and applied). They are not order execution latency.
 - GMGN states "end-to-end latency under 0.3 seconds" for orders. That is GMGN's claim, unmeasured by JINX. Phase 3 measures decision → GMGN submit → `confirmed` per order, separately from detection.
+
+## 6. Dependency map
+
+Each JINX capability with the source that feeds it. GMGN is listed first wherever it supplies the data.
+
+```text
+GMGN (pinned client via bridge, Plus budget)
+  ├─ Trenches new_creation / near_completion / completed ──► token registry + lifecycle (CREATED … MIGRATION_CONFIRMED)
+  ├─ token info / security / pool / holders / traders ──────► safety evidence, dev evidence, liquidity, lifecycle corroboration
+  ├─ market signals, trending 1m, 1m candles ───────────────► momentum context (never treated as sub-second events)
+  ├─ Smart Money / KOL / followed-wallet trades ────────────► whale Layer 1 (tagged wallets), polled
+  ├─ wallet stats / profits / activity, created tokens ─────► whale discovery and confidence inputs, dev reputation
+  ├─ quote, gas, SOL/USD ────────────────────────────────────► sizing inputs (Phase 3)
+  └─ swap, condition orders, queryOrder, holdings ──────────► GMGN-first execution and reconciliation (Phase 3; refused in Phases 1–2)
+Mako PumpPortalStream (built)
+  ├─ creations (free) ───────────────────────────────────────► token registry + lifecycle CREATED, peak virtual SOL
+  └─ every trade with wallet and reserves (needs B-01) ─────► Early Momentum (3 buys · 3 fee payers · 30 s), curve reserves
+D3AD-E (pinned)  ── curve math ────────────────────────────► paper fills (built); sender unwired while GMGN executes
+DataNomad (reference only) ── deployer-history method ───► dev reputation methodology (Phase 2), no code copied
+JINX core ── bus, registries, lifecycle, ledger, store, modes, recovery, budget ──► one decision path → one gateway
+```
+
+## 7. Four-phase integration map (revised for GMGN, phase count unchanged)
+
+| Phase | GMGN-first content (owner mandate §9) | State |
+|---|---|---|
+| 1. Foundation and GMGN integration readiness | Foundation as built. Additions: authenticated read-only checks, capability inventory, adapter contract, read allowlist derived from the pinned client, Plus budget, signing-key policy, secrets handling, migration lifecycle interface, this map | Built; independent review pending |
+| 2. CHAD hunting intelligence and migration | GMGN new-token discovery; migration lifecycle tracking; smart-money and wallet tracking; token security; developer and insider evidence; curve observations and reserve peaks; Early Momentum (needs B-01); whale clustering; freshness; momentum and Negative Divergence evidence; X/TG where authorized (B-05, B-06); unified confluence state | Not started; waits for Phase 1 approval |
+| 3. Size, GMGN execution, exits and P&L | quarter-Kelly (B-03 values); balance and exposure checks; GMGN quotes; GMGN order gateway behind the paper/live gate; order status; reconciliation; Confluence Collapse; Negative Divergence partials; owner-set protective orders; migration-aware exits; cost-adjusted P&L | Not started |
+| 4. Hardening, real-time paper tests, audit | freshness, migration, latency, rate limits, outages, recovery, isolation, credentials, no unauthorized live execution; panel review | Not started |
+

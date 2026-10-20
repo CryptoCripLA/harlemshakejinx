@@ -24,6 +24,12 @@ Status values: `NOT STARTED / IN PROGRESS / TESTING / PASSED / FAILED / BLOCKED`
 | F14 | Event dedup and idempotency | — | `MarketEvent.idempotency_key`, `jinx/core/dedup.py`, events table unique key, fill ids, intent ids | dedup, bus, ledger, replay duplicate tests | PASSED |
 | F15 | Source-fidelity matrix | — | this file | — | PASSED (this document) |
 | F16 | Restart/recovery and integration health | — | `jinx/core_state.py`, `jinx/recovery.py`, `jinx/health.py`, `/health` in `jinx/app.py` | `tests/test_recovery.py` incl. hard-kill test | PASSED |
+| F17 | GMGN authenticated read-only capability checks (mandate 2026-10-20 §1) | gmgn `src/client/OpenApiClient.ts` (unmodified, via the bridge) | `scripts/gmgn_capability_check.py` | live run 2026-10-20 19:16 UTC, `docs/evidence/gmgn_capability_check_20261020.json` | PASSED |
+| F18 | GMGN API capability inventory | gmgn client and skill docs | `docs/GMGN_CAPABILITY_INVENTORY.md` | — | PASSED |
+| F19 | GMGN adapter contract, incl. complete read allowlist and plan budget | gmgn `OpenApiClient.ts` method list; rate-limit tables in `skills/gmgn-{token,market,track,portfolio,swap,callout}/SKILL.md` | `docs/GMGN_ADAPTER_CONTRACT.md`, `jinx/adapters/gmgn/{bridge.mjs,adapter.py,budget.py}` | `tests/test_gmgn_plus.py` | PASSED |
+| F20 | Migration lifecycle interface (mandate §3) | — (JINX state machine; GMGN field mapping in contract §5) | `jinx/core/lifecycle.py` | `tests/test_lifecycle.py` | PASSED (interface; feeds are Phase 2) |
+| F21 | Secrets handling (mandate §1) | gmgn `src/config.ts` credential file layout | `docs/SECRETS.md`, bridge env filtering | `tests/test_secrets.py`, signing-key tests in `tests/test_gmgn_plus.py` | PASSED |
+| F22 | GMGN-first execution ownership plan | gmgn `swap`, `queryOrder`, strategy-order routes | `docs/INTEGRATION_MAP.md` §1–2, §7 | bridge refusal tests | PASSED (documented; built in Phase 3) |
 
 ## B. CHAD capabilities (Phases 2-3)
 
@@ -48,6 +54,19 @@ Status values: `NOT STARTED / IN PROGRESS / TESTING / PASSED / FAILED / BLOCKED`
 | C17 | Position/trade counts by product tier ("3 max open positions", "10", "Unlimited") | — | `jinx/ledger.py` slot limit | 1 | Owner's standing rule (1 slot, 2 by owner order) applies instead → B-04 |
 | C18 | "RPC redundancy + auto-failover"; "Helius webhook low-latency execution" | GMGN routing and submission (stated "under 0.3 seconds", unmeasured); d3ad `providers.rs`, `sender.rs`, `confirm.rs` stay pinned and unwired while GMGN executes | GMGN execution adapter | 3-4 | NOT STARTED |
 | C19 | "ConfluenceRadar Live Dashboard: 10 signal badges per token with per-signal staleness" | — | operator view | 3 | NOT STARTED |
+
+## C0. GMGN mandate capabilities (2026-10-20) mapped to GMGN routes
+
+These rows are the owner's GMGN mandate items, not new CHAD rules. The CHAD rows in section B still govern the decisions.
+
+| ID | Mandate item | GMGN route(s) and exact fields (verified live) | JINX destination | Phase | Status |
+|---|---|---|---|---|---|
+| G1 | Trenches new-token detection: `new_creation`, `near_completion`, `completed`; earliest provider timestamp | `getTrenches` (w2): `created_timestamp`, `open_timestamp`, `pool_address`, `exchange`, `progress`, `complete_timestamp` | token registry + lifecycle | 2 | NOT STARTED (route verified; newest `new_creation` 3.8 s old at read) |
+| G2 | Token intelligence: identity, creation, price/liquidity, market cap, curve status, rug/honeypot, concentration, rat traders, bundlers, insiders, fresh wallets, snipers, dev activity, smart money/KOL, volume | `getTokenInfo` (`price`, `liquidity`, `launchpad_progress`, `migrated_pool`, `wallet_tags_stat`, `stat`); `getTokenSecurity` (`is_honeypot`, `can_sell`, `renounced_mint`, `renounced_freeze_account`, `buy_tax`, `sell_tax`, `top_10_holder_rate`); Trenches (`rat_trader_amount_rate`, `bundler_trader_amount_rate`, `suspected_insider_hold_rate`, `fresh_wallet_rate`, `top70_sniper_hold_rate`, `creator_*`, `dev_team_hold_rate`, `smart_degen_count`, `fund_from_address`). Rates are fractions in [0, 1] (`skills/gmgn-contract-dd/SKILL.md:15`) | `jinx/intel/safety.py`, `jinx/intel/dev_reputation.py` | 2 | NOT STARTED (routes verified) |
+| G3 | Market signals and momentum: trending, 1-minute windows, signals, smart-money buys, large buys, candles | `getTrendingSwaps` 1m (w3), `getTokenSignalV2` (w1, `signal_type`, `trigger_at`, `trigger_mc`), `getTokenKline` 1m (w2; 1 s is Pro only) | `jinx/intel/momentum.py` | 2 | NOT STARTED. Never used as sub-second events |
+| G4 | Wallet tracking: followed wallets, Smart Money, KOL, holdings, realized P&L, history, win rate, dev tokens | `getFollowWallet` (signed, w10), `getSmartMoney`/`getKol` (w1: `maker`, `transaction_hash`, `timestamp`, `side`, `amount_usd`), `getWalletHoldings` (signed), `getWalletStats`/`getWalletProfits`/`getWalletActivity` (w3), `getCreatedTokens` (w2) | `jinx/intel/whales.py` with CHAD's own confidence policy (C04) | 2 | NOT STARTED (routes verified) |
+| G5 | Execution: quotes, market/limit/strategy orders, TP/SL, percentage exits, order status, balances | `quoteOrder` (verified, no submission), `swap`/`multiSwap`, `createStrategyOrder`/`cancelStrategyOrder`/`getStrategyOrders`, `queryOrder`, `getWalletHoldings` | GMGN execution adapter behind `ExecutionGateway` | 3 | NOT STARTED (trading refused in Phases 1–2) |
+| G6 | Migration lifecycle state machine with exceptional states | Trenches `completed` + token info `migrated_pool`/`migrated_timestamp`. Observed `launchpad_status` 1 = migrated, contrary to the doc's 2 (inventory §3) | `jinx/core/lifecycle.py` | 1 (interface) / 2 (feeds) | interface PASSED; feeds NOT STARTED |
 
 ## C. Execution ownership (owner directive 2026-10-20)
 
