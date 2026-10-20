@@ -95,7 +95,7 @@ async def _feed(pipe: _Pipeline, indexed: list[tuple[int, dict]], result: Replay
 
 
 def replay(records: list[dict], db_path: Path, shuffle_seed: int | None = None, duplicate_every: int | None = None,
-           restart_at: int | None = None, accounting_exercise: bool = False) -> ReplayResult:
+           restart_at: int | None = None, accounting_exercise: bool = False, exit_after: int = 0) -> ReplayResult:
     indexed = list(enumerate(records))
     if duplicate_every:
         indexed = [x for i, x in enumerate(indexed) for _ in range(2 if i % duplicate_every == 0 else 1)]
@@ -111,7 +111,7 @@ def replay(records: list[dict], db_path: Path, shuffle_seed: int | None = None, 
             latency += pipe.bus.latency_ns(Lane.FAST)
             pipe.store.close()
         pipe = _Pipeline(db_path)
-        exercise = _AccountingExercise(pipe) if accounting_exercise else None
+        exercise = _AccountingExercise(pipe, exit_after) if accounting_exercise else None
         if exercise:
             set_mode(pipe.store, Mode.AUTO, by="accounting-exercise")
         asyncio.run(_feed(pipe, chunk, result, exercise))
@@ -130,12 +130,13 @@ def replay(records: list[dict], db_path: Path, shuffle_seed: int | None = None, 
 
 class _AccountingExercise:
     """Mechanical paper round trips on captured reserves, one position at a time (owner's one-slot limit):
-    enter 0.01 SOL at a token's first curve trade, exit fully at that token's 20th curve trade."""
+    enter 0.01 SOL at a token's first curve observation and exit fully after `exit_after` further curve
+    trades of that token (0 = exit at the same observation, a flat-price round trip)."""
     BUDGET = 10_000_000
-    EXIT_AFTER = 20
 
-    def __init__(self, pipe: _Pipeline):
+    def __init__(self, pipe: _Pipeline, exit_after: int = 0):
         self.pipe = pipe
+        self.exit_after = exit_after
         self.position_id: int | None = None
         self.mint: str | None = None
         self.seen = 0
@@ -154,21 +155,29 @@ class _AccountingExercise:
                     self.position_id, self.mint, self.seen = r.position_id, ev.mint, 0
                 else:
                     self.refused[r.reason] = self.refused.get(r.reason, 0) + 1
+                    continue
+                if self.exit_after == 0:
+                    self._exit()
             elif ev.mint == self.mint:
                 self.seen += 1
-                if self.seen >= self.EXIT_AFTER:
-                    r = self.pipe.gateway.submit_exit(ExitIntent(f"ex-exit:{self.position_id}", self.position_id))
-                    if r.ok and self.pipe.ledger.get(self.position_id).status is Status.CLOSED:
-                        self.closed.append(self.position_id)
-                        self.position_id = self.mint = None
+                if self.seen >= self.exit_after:
+                    self._exit()
+
+    def _exit(self) -> None:
+        r = self.pipe.gateway.submit_exit(ExitIntent(f"ex-exit:{self.position_id}", self.position_id))
+        if r.ok and self.pipe.ledger.get(self.position_id).status is Status.CLOSED:
+            self.closed.append(self.position_id)
+            self.position_id = self.mint = None
 
     def summary(self) -> dict:
         positions = [self.pipe.ledger.get(p) for p in self.closed]
         realized = sum(p.realized_pnl_lamports for p in positions)
         held_cost = sum(p.cost_lamports + p.network_fees_lamports for p in self.pipe.ledger.active())
+        losses_bps = [(p.cost_lamports - p.proceeds_lamports) * 10_000 // p.cost_lamports for p in positions]
         wallet_change = self.pipe.wallet.balance() - self.start
         return {"note": "mechanical accounting check on real captured reserves; not a strategy; P&L is meaningless",
                 "closed_round_trips": len(positions), "open_positions": len(self.pipe.ledger.active()),
                 "realized_pnl_lamports": realized, "wallet_change_lamports": wallet_change,
+                "flat_round_trip_cost_bps": {"min": min(losses_bps), "max": max(losses_bps)} if losses_bps else None,
                 "wallet_change_equals_realized_minus_open_cost": wallet_change == realized - held_cost,
                 "refused": self.refused, "wallet_reconciled": self.pipe.wallet.reconcile().ok}
