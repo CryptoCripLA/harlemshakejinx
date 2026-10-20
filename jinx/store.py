@@ -122,6 +122,13 @@ CREATE TABLE IF NOT EXISTS exit_intents (
     legacy_fill_id TEXT  -- set for exits recorded before schema v2 (their only identity is the old fill id)
 );
 
+CREATE TABLE IF NOT EXISTS historical_exits (
+    fill_id TEXT PRIMARY KEY,            -- a sell fill written without provenance (before schema v5)
+    intent_id TEXT NOT NULL,             -- the exit intent id that fill implies: its id minus ":sell"
+    position_id INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS historical_exits_intent ON historical_exits(intent_id);
+
 CREATE TABLE IF NOT EXISTS paper_wallet (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     starting_lamports INTEGER NOT NULL,
@@ -136,7 +143,7 @@ CREATE TABLE IF NOT EXISTS paper_wallet_entries (
 """
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 # v1 (up to commit 1ad0d65): no entry budget, no exit_intents, no amount CHECK constraints.
 # v2: positions.entry_budget_lamports (NULL = unknown for positions created by v1), exit_intents, CHECKs.
 # v3: exit_intents.legacy_fill_id; v1 sell fills ("<intent>:sell") become historical exit bindings, so a
@@ -145,17 +152,19 @@ SCHEMA_VERSION = 5
 #     legacy intents whose id began with "p<position>:"); the backfill re-runs on every open.
 # v5: fills.exit_intent_id records provenance; sell fills without it are historical (the v4 rule trusted a
 #     binding, which a rejected attempt can leave behind).
+# v6: historical sell evidence lives in historical_exits, keyed by fill id, and is checked before any exit
+#     binding; a binding under the same intent id can no longer suppress it.
 
 V2_POSITIONS = SCHEMA[SCHEMA.index("CREATE TABLE IF NOT EXISTS positions ("):SCHEMA.index("CREATE INDEX IF NOT EXISTS positions_active")]
 V2_FILLS = SCHEMA[SCHEMA.index("CREATE TABLE IF NOT EXISTS fills ("):SCHEMA.index("CREATE TABLE IF NOT EXISTS exit_intents")]
 # Only a fill's own provenance proves which exit produced it: from schema v5 every sell fill records its
-# exit_intent_id in the same transaction. A sell fill without provenance (written before v5) is treated as
-# historical: it gets a binding under its own old id ("<intent>:sell" -> "<intent>"), so replaying that id
-# can never sell again. A binding alone proves nothing (a rejected attempt also leaves one). Idempotent;
-# runs on every open, which also repairs databases that earlier builds marked v3 or v4.
+# exit_intent_id in the same transaction. Every sell fill without provenance (written before v5) is
+# recorded as historical evidence in its own table, keyed by the fill id, so no exit binding, whatever it
+# says, can displace or hide it (the v5 rule wrote this evidence into exit_intents, where an existing row
+# for the same intent id silently won). Idempotent; runs on every open, repairing older databases.
 LEGACY_EXIT_BACKFILL = """
-INSERT OR IGNORE INTO exit_intents (intent_id, position_id, token_amount, created_ns, legacy_fill_id)
-SELECT substr(fill_id, 1, length(fill_id) - 5), position_id, NULL, ts_ns, fill_id
+INSERT OR IGNORE INTO historical_exits (fill_id, intent_id, position_id)
+SELECT fill_id, substr(fill_id, 1, length(fill_id) - 5), position_id
 FROM fills
 WHERE side = 'sell' AND exit_intent_id IS NULL AND fill_id LIKE '%:sell'
 """

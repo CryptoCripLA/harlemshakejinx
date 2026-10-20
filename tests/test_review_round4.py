@@ -84,7 +84,10 @@ def test_modern_exit_fills_are_not_turned_into_legacy_bindings_on_restart(tmp_pa
     s.close()
     s = Store(path)
     rows = s.conn.execute("SELECT intent_id, legacy_fill_id FROM exit_intents ORDER BY intent_id").fetchall()
-    assert [(r[0], r[1]) for r in rows] == [("NEW", None), ("OLD", "OLD:sell")]
+    assert [(r[0], r[1]) for r in rows] == [("NEW", None)]
+    # since schema v6 historical evidence lives in its own table; the modern NEW fill is never in it
+    hist = s.conn.execute("SELECT fill_id, intent_id FROM historical_exits ORDER BY fill_id").fetchall()
+    assert [tuple(r) for r in hist] == [("OLD:sell", "OLD")]
     s.close()
 
 

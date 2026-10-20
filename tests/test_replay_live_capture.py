@@ -77,11 +77,12 @@ def test_paper_accounting_reconciles_on_real_reserves(tmp_path):
 
 
 def install_network_guard(monkeypatch) -> list:
-    """Refuse every socket connection except the one asyncio makes inside socket.socketpair() while creating
-    its event loop (on Windows socketpair is built over a loopback TCP connection). Returns the refused list."""
+    """Refuse every socket connection (connect, connect_ex, create_connection) and every datagram send
+    (sendto), except the connection asyncio makes inside socket.socketpair() while creating its event loop
+    (on Windows socketpair is built over a loopback TCP connection). Returns the refused list."""
     import threading
     inside_socketpair = threading.local()
-    real_socketpair, real_connect = socket.socketpair, socket.socket.connect
+    real_socketpair, real_connect, real_connect_ex = socket.socketpair, socket.socket.connect, socket.socket.connect_ex
     refused = []
 
     def socketpair(*a, **k):
@@ -97,12 +98,25 @@ def install_network_guard(monkeypatch) -> list:
         refused.append(address)
         raise AssertionError(f"network access during paper replay: {address}")
 
+    def guarded_connect_ex(sock, address, *a, **k):
+        if getattr(inside_socketpair, "on", False):
+            return real_connect_ex(sock, address, *a, **k)
+        refused.append(address)
+        raise AssertionError(f"network access during paper replay: {address}")
+
     def guarded_create(address, *a, **k):
+        refused.append(address)
+        raise AssertionError(f"network access during paper replay: {address}")
+
+    def guarded_sendto(sock, data, *args):
+        address = args[-1]
         refused.append(address)
         raise AssertionError(f"network access during paper replay: {address}")
 
     monkeypatch.setattr(socket, "socketpair", socketpair)
     monkeypatch.setattr(socket.socket, "connect", guarded_connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", guarded_connect_ex)
+    monkeypatch.setattr(socket.socket, "sendto", guarded_sendto)
     monkeypatch.setattr(socket, "create_connection", guarded_create)
     return refused
 

@@ -182,10 +182,15 @@ class PositionLedger:
             pos = self.get(position_id)
             if pos is None:
                 return Result(False, position_id, "UNKNOWN_POSITION")
+            historical = c.execute("SELECT fill_id, position_id FROM historical_exits WHERE intent_id = ?",
+                                   (intent_id,)).fetchall()
+            if historical:
+                # historical evidence outranks any binding: this intent already sold before provenance existed
+                return self._historical_exit_replay(c, historical, pos, token_amount)
             row = c.execute("SELECT position_id, token_amount, legacy_fill_id FROM exit_intents WHERE intent_id = ?",
                             (intent_id,)).fetchone()
             if row is not None and row["legacy_fill_id"]:
-                return self._legacy_exit_replay(c, row, pos, token_amount)
+                return Result(False, position_id, "INTENT_CONFLICT")  # a legacy marker without evidence
             existing_fill = c.execute("SELECT exit_intent_id FROM fills WHERE fill_id = ?", (fill_id,)).fetchone()
             if row is not None:
                 if (row["position_id"], row["token_amount"]) != (position_id, token_amount):
@@ -214,16 +219,20 @@ class PositionLedger:
             return Result(True, position_id)
 
     @staticmethod
-    def _legacy_exit_replay(c, row, pos: "Position", token_amount: int | None) -> Result:
-        """An exit intent executed before schema v2. Its requested amount was never stored, so only an
-        unambiguous replay is accepted: the same position and the same amount as its recorded fill, or a
-        whole-position request when that fill is what closed the position. Anything else is refused."""
-        if row["position_id"] != pos.position_id:
+    def _historical_exit_replay(c, historical, pos: "Position", token_amount: int | None) -> Result:
+        """An exit intent whose sell happened before fills recorded provenance. Its requested amount was
+        never stored, so only an unambiguous replay is accepted: the same position and the same amount as its
+        recorded fill, or a whole-position request when that fill is what closed the position. Anything else
+        is refused, and nothing is ever sold for it again."""
+        mine = [h for h in historical if h["position_id"] == pos.position_id]
+        if len(mine) != 1:
             return Result(False, pos.position_id, "INTENT_CONFLICT")
-        fill = c.execute("SELECT token_amount, ts_ns FROM fills WHERE fill_id = ?", (row["legacy_fill_id"],)).fetchone()
-        if token_amount is not None and fill is not None and token_amount == fill["token_amount"]:
+        fill = c.execute("SELECT token_amount, ts_ns FROM fills WHERE fill_id = ?", (mine[0]["fill_id"],)).fetchone()
+        if fill is None:
+            return Result(False, pos.position_id, "INTENT_CONFLICT")
+        if token_amount is not None and token_amount == fill["token_amount"]:
             return Result(True, pos.position_id, "ALREADY_APPLIED")
-        if token_amount is None and fill is not None and pos.status is Status.CLOSED:
+        if token_amount is None and pos.status is Status.CLOSED:
             last = c.execute("SELECT MAX(ts_ns) FROM fills WHERE position_id = ? AND side = 'sell'",
                              (pos.position_id,)).fetchone()[0]
             if fill["ts_ns"] == last:
