@@ -263,4 +263,11 @@ Full suite after these fixes: `307 passed` (`.venv/bin/python -m pytest -o addop
 | R11-M1 MEDIUM: a successful creation observation could not clear FAILED or STALE, and did not refresh freshness, for a token still at its creation stage | While the token is at its creation stage, a creation observation is current evidence: it refreshes `last_accepted_ns` and clears STALE or FAILED. At a later stage it only fills in history and moves nothing | `test_a_successful_creation_observation_recovers_a_failed_newly_detected_token` (Codex reproduction), `test_a_successful_creation_observation_recovers_a_stale_newly_detected_token`, `test_a_creation_report_never_recovers_or_refreshes_a_later_stage` |
 | R11-M2 MEDIUM: a confirmation timed on JINX's receipt clock passed validation | `MIGRATION_CONFIRMED` requires `clock="provider"`; a receipt-time confirmation is refused before anything changes. `Evidence` refuses any clock other than `provider` or `receipt` | `test_a_confirmation_on_jinx_receipt_time_is_refused_before_anything_changes` (Codex reproduction), `test_an_unknown_clock_is_refused` (4 cases) |
 
-Full suite after these fixes: `315 passed` (`.venv/bin/python -m pytest -o addopts="" -q`, 16.8 s on jinx-nyc).
+**Builder's follow-up in the same slice.** Recorded values still compared event times across clocks: GMGN read times against provider times, and PumpPortal receipt times against GMGN creation times. Rounds 9–11 each found one case of this. Each kind of value now has its own rule:
+- creation facts keep their first value, but a provider-clock value replaces a receipt-clock one;
+- migration facts are set once;
+- current readings take the latest accepted report.
+
+A creation report adds readings only while the token is at its creation stage. Tests: `test_current_readings_follow_the_latest_accepted_report_not_a_cross_clock_comparison` (replaces a builder test that encoded the cross-clock comparison), `test_creation_facts_keep_the_first_value_unless_a_provider_value_replaces_a_receipt_one`, `test_a_current_creation_report_records_its_readings_but_a_historical_one_does_not`.
+
+Full suite after these fixes: `317 passed` (`.venv/bin/python -m pytest -o addopts="" -q`, 16.9 s on jinx-nyc).

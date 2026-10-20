@@ -243,11 +243,23 @@ def test_a_delayed_creation_report_keeps_its_metadata_without_moving_the_state()
     assert (lc.fields["created"].event_ns, lc.fields["launchpad"].value, lc.pre_pool) == (50, "Pump.fun", "CURVE")
 
 
-def test_an_older_value_never_replaces_a_newer_one_of_the_same_field():
+def test_current_readings_follow_the_latest_accepted_report_not_a_cross_clock_comparison():
+    """A curve read carries the read time, a migration report the provider's time: comparing them would be
+    comparing two clocks. Current readings take the latest accepted report; late reports are never accepted."""
     lc = TokenLifecycle("MINT")
     lc.observe(ev(Kind.NEAR_COMPLETION, 100, event_ns=100, progress=0.95))
-    lc.observe(ev(Kind.MIGRATION_SIGNAL, 110, event_ns=90, progress=0.9))       # accepted, but its progress is older
-    assert lc.fields["progress"].value == 0.95
+    lc.observe(ev(Kind.MIGRATION_SIGNAL, 110, event_ns=90, progress=1.0))      # older provider time, newer report
+    assert lc.fields["progress"].value == 1.0
+    lc.observe(ev(Kind.NEAR_COMPLETION, 120, event_ns=80, progress=0.5))      # curve data from before the migration
+    assert lc.fields["progress"].value == 1.0
+
+
+def test_creation_facts_keep_the_first_value_unless_a_provider_value_replaces_a_receipt_one():
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.CREATED, 100, source="mako.pumpportal", clock="receipt", pre_pool="FROM_FEED"))
+    lc.observe(ev(Kind.CREATED, 110, source="gmgn.trenches", event_ns=50, pre_pool="FROM_GMGN"))
+    lc.observe(ev(Kind.CREATED, 120, source="other", event_ns=40, pre_pool="LATER_REPORT"))
+    assert (lc.pre_pool, lc.fields["pre_pool"].clock, lc.fields["created"].value) == ("FROM_GMGN", "provider", 50)
 
 
 # ---- Codex round 10 (docs/audits/phase1-codex-20261020-round10.md) -------------------------------
@@ -332,3 +344,13 @@ def test_a_confirmation_on_jinx_receipt_time_is_refused_before_anything_changes(
 def test_an_unknown_clock_is_refused(clock):                                             # R11-M2
     with pytest.raises(ValueError):
         Evidence(kind=Kind.ON_CURVE, source="s", observed_ns=1, event_ns=1, clock=clock)
+
+
+def test_a_current_creation_report_records_its_readings_but_a_historical_one_does_not():
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.CREATED, 10, category="new_creation", progress=0.01, price=0.001))
+    assert (lc.fields["category"].value, lc.fields["progress"].value, lc.fields["price"].value) == \
+        ("new_creation", 0.01, 0.001)
+    lc.observe(ev(Kind.NEAR_COMPLETION, 20, category="near_completion", progress=0.95))
+    lc.observe(ev(Kind.CREATED, 30, event_ns=5, category="new_creation", progress=0.0))   # history now
+    assert (lc.fields["category"].value, lc.fields["progress"].value) == ("near_completion", 0.95)

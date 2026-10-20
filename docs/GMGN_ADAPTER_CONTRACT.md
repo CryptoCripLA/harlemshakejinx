@@ -119,7 +119,10 @@ The rules are tested in `tests/test_lifecycle.py`:
   - curve data no newer than the observed migration;
   - a backward curve move with older evidence than the one that set the current stage.
 - A late report never moves the state, never replaces a recorded value and never refreshes freshness. A migration indexed after a newer curve read is still recognized (round 9 H1);
-- a recorded value is replaced only by newer evidence for that value, so a delayed report can fill in what is missing;
+- recorded values follow one rule per kind of value, never a comparison of times on different clocks:
+  - creation facts (`created`, and `launchpad`/`pre_pool` from a creation report) keep their first value, except that a provider-clock value replaces a receipt-clock one;
+  - migration facts (`post_pool`, `exchange`, `first_migration_signal`) are set once;
+  - current readings (`category`, `progress`, `launchpad`, `pre_pool`, valid `price` and `liquidity`) take the latest accepted report. A creation report adds readings only while the token is still at its creation stage;
 - a creation report is merged into the record and never conflicts with the current stage; a provider creation time replaces a receipt-time one, never the reverse (round 10 M1). While the token is still at its creation stage, a successful creation observation also refreshes freshness and clears STALE or FAILED; at a later stage it only fills in history (round 11 M1);
 - a repeated report makes no second transition;
 - newer evidence that contradicts a migration becomes `CONFLICTING`;

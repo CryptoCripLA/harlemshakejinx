@@ -11,8 +11,8 @@ handling, not trading:
   accepted report of the same kind, when it is curve data no newer than the observed migration, or when it would
   move the curve stage backwards with older evidence than the one that set it. A late report never moves the
   state, never replaces a recorded value and never refreshes freshness; it still counts toward the reserve peak,
-  because a real past reading is part of the all-time high. A recorded value is only ever replaced by newer
-  evidence for that value, so a delayed report can still fill in what is missing (e.g. a late creation report).
+  because a real past reading is part of the all-time high. How recorded values are replaced is defined per kind
+  of value (see CURRENT_READINGS below), never by comparing times on different clocks.
 - A repeated report makes no second transition.
 - Migration is confirmed only with the destination pool, the destination venue and the provider's migration
   time. Post-migration market data is accepted only after that confirmation. There is deliberately no evidence
@@ -109,8 +109,15 @@ class Recorded:
     clock: str = "provider"
 
 
-# payload values copied into the record as reported (mandate §3.1); pools and venue are handled with migration
-RECORDED_AS_REPORTED = ("launchpad", "category", "progress", "pre_pool")
+# The record (mandate §3.1) holds three kinds of values, each with its own replacement rule, so no value is
+# ever chosen by comparing times taken on different clocks:
+# - creation facts (`created`, and `launchpad`/`pre_pool` from a creation report): the first value is kept,
+#   except that a value on the provider's clock replaces one on JINX's receipt clock;
+# - migration facts (`post_pool`, `exchange`, `first_migration_signal`): set once; another pool is a conflict;
+# - current readings (below, plus valid `price` and `liquidity`): the latest accepted report wins. Late reports
+#   are never accepted, so arrival order among accepted reports is the order of the readings.
+CURRENT_READINGS = ("launchpad", "category", "progress", "pre_pool")
+CREATION_FACTS = ("launchpad", "pre_pool")
 
 
 def _text(v) -> bool:
@@ -197,11 +204,12 @@ class TokenLifecycle:
         return self._enter(State.FAILED, None, source, observed_ns, observed_ns, {"reason": reason})
 
     def _observe_creation(self, e: Evidence) -> Transition | None:
-        self._record(e)
         base = self.last_consistent_state
+        self._record_creation(e)
         if base not in (State.UNKNOWN, State.NEWLY_DETECTED):
             return None   # a later stage: the report only fills in history; it never moves a token back
         # the token is (still) at its creation stage, so a successful creation observation is current evidence
+        self._record_readings(e)
         self._latest_by_kind[e.kind] = max(self._latest_by_kind.get(e.kind, e.event_ns), e.event_ns)
         self.last_accepted_ns = max(self.last_accepted_ns or 0, e.observed_ns)
         if base is State.UNKNOWN or self.state in EXCEPTIONAL:
@@ -247,27 +255,39 @@ class TokenLifecycle:
             return None   # one transition; every contradicting report is kept in `conflicts`
         return self._enter(State.CONFLICTING, e.kind, e.source, e.observed_ns, e.event_ns, e.payload)
 
-    def _record(self, e: Evidence) -> None:
-        def put(name, value):
-            current = self.fields.get(name)
-            if current is None or e.event_ns >= current.event_ns:   # only newer evidence replaces a value
-                self.fields[name] = Recorded(value, e.source, e.observed_ns, e.event_ns, e.clock)
+    def _put(self, name: str, value, e: Evidence) -> None:
+        self.fields[name] = Recorded(value, e.source, e.observed_ns, e.event_ns, e.clock)
 
-        for name in RECORDED_AS_REPORTED:
+    def _fact(self, name: str, value, e: Evidence) -> None:
+        current = self.fields.get(name)
+        if current is None or (current.clock == "receipt" and e.clock == "provider"):
+            self._put(name, value, e)
+
+    def _record_creation(self, e: Evidence) -> None:
+        self._fact("created", e.event_ns, e)
+        for name in CREATION_FACTS:
             if e.payload.get(name) is not None:
-                put(name, e.payload[name])
-        created = self.fields.get("created")
-        if e.kind is Kind.CREATED and (created is None or (created.clock == "receipt" and e.clock == "provider")):
-            self.fields["created"] = Recorded(e.event_ns, e.source, e.observed_ns, e.event_ns, e.clock)
-        if e.kind is Kind.MIGRATION_SIGNAL and "first_migration_signal" not in self.fields:
-            put("first_migration_signal", e.event_ns)
-        if e.kind is Kind.MIGRATION_CONFIRMED and "post_pool" not in self.fields:
-            put("post_pool", e.payload["post_pool"])
-            put("exchange", e.payload["exchange"])
+                self._fact(name, e.payload[name], e)
+
+    def _record_readings(self, e: Evidence) -> None:
+        names = CURRENT_READINGS if e.kind is not Kind.CREATED else tuple(
+            n for n in CURRENT_READINGS if n not in CREATION_FACTS)   # creation facts follow the fact rule
+        for name in names:
+            if e.payload.get(name) is not None:
+                self._put(name, e.payload[name], e)
         if _number(e.payload.get("price"), minimum_exclusive=0):
-            put("price", e.payload["price"])
+            self._put("price", e.payload["price"], e)
         if _number(e.payload.get("liquidity"), minimum=0):
-            put("liquidity", e.payload["liquidity"])
+            self._put("liquidity", e.payload["liquidity"], e)
+
+    def _record(self, e: Evidence) -> None:
+        """An accepted, non-creation report: current readings, then migration facts."""
+        self._record_readings(e)
+        if e.kind is Kind.MIGRATION_SIGNAL and "first_migration_signal" not in self.fields:
+            self._put("first_migration_signal", e.event_ns, e)
+        if e.kind is Kind.MIGRATION_CONFIRMED and "post_pool" not in self.fields:
+            self._put("post_pool", e.payload["post_pool"], e)
+            self._put("exchange", e.payload["exchange"], e)
 
     def _move(self, to: State, e: Evidence) -> Transition:
         t = self._enter(to, e.kind, e.source, e.observed_ns, e.event_ns, e.payload)
