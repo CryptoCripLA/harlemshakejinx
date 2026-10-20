@@ -78,7 +78,7 @@ class Result:
 class Position:
     position_id: int
     entry_intent_id: str
-    entry_budget_lamports: int
+    entry_budget_lamports: int | None  # None only for positions migrated from schema v1 without a buy fill
     exit_intent_id: str | None
     mint: str
     status: Status
@@ -122,7 +122,9 @@ class PositionLedger:
             existing = c.execute("SELECT position_id, mint, entry_budget_lamports FROM positions"
                                  " WHERE entry_intent_id = ?", (intent_id,)).fetchone()
             if existing:
-                if (existing["mint"], existing["entry_budget_lamports"]) != (mint, budget_lamports):
+                stored_budget = existing["entry_budget_lamports"]
+                # a NULL budget means the position predates schema v2; only the mint can be compared
+                if existing["mint"] != mint or (stored_budget is not None and stored_budget != budget_lamports):
                     return Result(False, existing["position_id"], "INTENT_CONFLICT")
                 return Result(True, existing["position_id"], "SAME_INTENT")
             if not entries_allowed(get_mode(self.store)):
@@ -172,6 +174,35 @@ class PositionLedger:
                           " VALUES (?,?,?,?)", (intent_id, position_id, token_amount, self.clock_ns()))
                 return "NEW"
             return "SAME" if (row["position_id"], row["token_amount"]) == (position_id, token_amount) else "CONFLICT"
+
+    def claim_exit(self, intent_id: str, position_id: int, token_amount: int | None, fill_id: str) -> Result:
+        """Atomically: check the intent binding, validate the amount, and take exit ownership.
+        Nothing is bound or locked unless every check passes."""
+        with self.store.transaction() as c:
+            pos = self.get(position_id)
+            if pos is None:
+                return Result(False, position_id, "UNKNOWN_POSITION")
+            row = c.execute("SELECT position_id, token_amount FROM exit_intents WHERE intent_id = ?",
+                            (intent_id,)).fetchone()
+            if row is not None:
+                if (row["position_id"], row["token_amount"]) != (position_id, token_amount):
+                    return Result(False, position_id, "INTENT_CONFLICT")
+                if self.has_fill(fill_id):
+                    return Result(True, position_id, "ALREADY_APPLIED")
+            if token_amount is not None and token_amount > pos.token_amount:
+                return Result(False, position_id, "EXCEEDS_POSITION")
+            if pos.status is Status.PENDING_CLOSE:
+                if pos.exit_intent_id == intent_id:
+                    return Result(True, position_id, "ALREADY_EXITING")
+                return Result(False, position_id, "EXIT_IN_PROGRESS")
+            if pos.status is not Status.OPEN:
+                return Result(False, position_id, f"NOT_OPEN:{pos.status}")
+            if row is None:
+                c.execute("INSERT INTO exit_intents (intent_id, position_id, token_amount, created_ns)"
+                          " VALUES (?,?,?,?)", (intent_id, position_id, token_amount, self.clock_ns()))
+            c.execute("UPDATE positions SET status=?, exit_intent_id=? WHERE position_id=?",
+                      (Status.PENDING_CLOSE.value, intent_id, position_id))
+            return Result(True, position_id)
 
     def has_fill(self, fill_id: str) -> bool:
         return self.store.conn.execute("SELECT 1 FROM fills WHERE fill_id = ?", (fill_id,)).fetchone() is not None

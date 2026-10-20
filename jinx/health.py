@@ -26,7 +26,7 @@ def percentiles_ms(samples_ns: list[int]) -> dict | None:
 
 def build_health(store: Store, ledger: PositionLedger, wallet: PaperWallet, adapters: list[dict],
                  bus_stats: dict, now_ns: int, latency_ns: list[int] | None = None,
-                 feed_stale_after_ns: int | None = None) -> dict:
+                 feed_stale_after_ns: int | None = None, receive_latency_ns: list[int] | None = None) -> dict:
     rec = wallet.reconcile()
     store_ok = store.journal_mode() == "wal" and store.quick_check()
     feeds = [a for a in adapters if a.get("adapter") == "mako"]
@@ -53,5 +53,7 @@ def build_health(store: Store, ledger: PositionLedger, wallet: PaperWallet, adap
         "store": {"ok": store_ok, "events": store.event_count(), "unapplied": unapplied},
         "adapters": adapters,
         "bus": bus_stats,
-        "ingest_to_state_ms": percentiles_ms(latency_ns or []),
+        # local processing inside JINX, not order-execution latency
+        "admission_to_state_ms": percentiles_ms(latency_ns or []),
+        "receive_to_state_ms": percentiles_ms(receive_latency_ns or []),
     }

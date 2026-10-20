@@ -4,7 +4,7 @@ Host `jinx-nyc` (outbound IP 45.77.159.191), Python 3.12.3, Node 22.23.3, rustc 
 
 **How to read this file.**
 - The paper round trips establish **accounting consistency**: wallet, ledger and fees agree exactly on real captured prices. Entries were mechanical, not CHAD signals, so they say nothing about profitable entry or exit behavior.
-- Every millisecond figure is **local event processing inside JINX** (feed message received → stored and applied). None of them is order-execution latency, which is measured from Phase 3 on against GMGN's confirmed orders.
+- Every millisecond figure is **local event processing inside JINX**, never order-execution latency (measured from Phase 3 on against GMGN's confirmed orders). Codex round 2 (B6) found that figures recorded before its fix started *after* the durable write. They are marked below as "post-write" and understate local processing. Section 7 has the corrected measurement, from feed receive to state applied with the write included.
 - The live feed carried token creations only. It contains no external-wallet trades and **cannot** support CHAD's three-wallet momentum trigger (see `docs/INTEGRATION_MAP.md` §4).
 
 ## 1. Test suite
@@ -31,7 +31,7 @@ Mutation checks (each change was reverted afterwards):
 
 | Run | Result |
 |---|---|
-| 45 s smoke (`python -m jinx run --seconds 45`) | status ok; 9 creations → 16 events; no malformed or duplicate events; ingest→state p50 0.49 ms, max 0.68 ms |
+| 45 s smoke (`python -m jinx run --seconds 45`) | status ok; 9 creations → 16 events; no malformed or duplicate events; post-write queue→applied p50 0.49 ms, max 0.68 ms (excludes the durable write) |
 | Trade subscription probe | PumpPortal replied: "'subscribeTokenTrade' and 'subscribeAccountTrade' methods are only available when connecting with an API key funded with at least 0.02 SOL." → B-01 |
 | `/health` on the running engine | HTTP 200, status ok, store ok, unapplied 0; unknown path → 404 |
 | GMGN bridge killed (`kill -9`) during the live run | health then showed GMGN `down`; ingestion continued (84 → 92 events); unapplied 0; no handler errors; status stayed ok |
@@ -41,7 +41,7 @@ Mutation checks (each change was reverted afterwards):
 **Capture:** `python -m jinx run --seconds 900 --capture data/captures/live-20261020.jsonl.gz`, 03:01:14–03:16:14 UTC on 2026-10-20. Committed as `tests/fixtures/pumpportal-live-20261020.jsonl.gz`.
 - 234 genuine pump.fun token creations; 122 of them carried a creator initial buy. That gives 356 events.
 - 0 malformed, 0 duplicates; status ok every minute; 0 unapplied at shutdown.
-- Live ingest→state latency over 330 events: p50 0.22 ms, p95 0.36 ms, p99 0.48 ms, max 2.36 ms.
+- Post-write queue→applied latency over 330 events: p50 0.22 ms, p95 0.36 ms, p99 0.48 ms, max 2.36 ms. This excludes the durable write; see section 7 for the corrected measurement.
 - Trades by other wallets are absent because PumpPortal withholds them without a funded key (B-01).
 
 **Replays** (`python -m jinx replay <fixture> …`; `tests/test_replay_live_capture.py`, 9 passed):
@@ -69,14 +69,35 @@ Replay latency differs by mode. The batch modes push all 356 events at once, so 
 
 ## 6. Final state
 
-- Full suite at the round-1 fix head: **154 passed, 0 failed, 0 skipped** (`.venv/bin/python -m pytest`). This includes `tests/test_review_round1.py`, which reproduces each Codex round-1 failure, and `tests/test_licenses.py`. The rustc differential ran; it was not skipped.
+- Full suite at the round-2 fix head: **165 passed, 0 failed, 0 skipped** (`.venv/bin/python -m pytest`). This includes the round-1 and round-2 regression files and `tests/test_licenses.py`. The rustc differential ran; it was not skipped.
 - 30-second live smoke run on the fixed code: status ok, 11 events stored and applied, 0 malformed, 0 write retries, ingestion not stalled, wallet reconciled. Local processing p50 0.29 ms.
 - `scripts/upstream_sync.py --verify`: all four upstreams OK, now including clean Windows CRLF checkouts.
 - Independent review:
   - Round 1 (Codex, `1ad0d65`): FAIL, 9 findings, all fixed (`docs/audits/phase1-codex-20261020-round1.md`).
-  - Round 2: see `docs/audits/`.
+  - Round 2 (Codex, `69111a2`): FAIL, 7 new findings, all fixed (section 7).
+  - Round 3: see `docs/audits/`.
 - Not verified, with reasons:
   - Docker image build: no Docker permission on jinx-nyc.
   - Live GMGN API calls: no API key yet (B-08).
   - Other wallets' live trades: PumpPortal key not funded (B-01).
 - Nothing was deployed. No real-money order was or could be sent.
+
+## 7. Review round 2 fixes and corrected measurements
+
+Codex round 2 (`docs/audits/phase1-codex-20261020-round2.md`, on `69111a2`) returned FAIL. Of the round-1 findings, 6 were confirmed fixed and 3 were partial; 7 findings were new. Each item below has a failing regression test first (`tests/test_review_round2.py`, `tests/test_adapters.py`, `tests/test_licenses.py`).
+
+| Finding | Fix |
+|---|---|
+| B1 HIGH: v1 databases could not upgrade | Versioned schema (`PRAGMA user_version` = 2) with a one-time, transactional v1→v2 migration that keeps every row. Budgets are rebuilt from buy fills; with no buy fill the budget stays NULL (unknown), not invented. Tested on the exact `1ad0d65` schema with an open and a failed position, and on a real copy of the live-capture database (372 events, 243 tokens kept, quick_check ok) |
+| B2 HIGH: a rejected oversell locked the position | `PositionLedger.claim_exit` checks the intent, validates the amount and takes exit ownership in one transaction (`EXCEEDS_POSITION` locks nothing). Any rejected paper sell returns the position to OPEN |
+| B3 MED: a failed COMMIT wedged the connection | COMMIT failures roll back, and the next write succeeds |
+| B4 MED: concurrent GMGN restarts | One lock serializes start, restart and stop. Each bridge process owns its pending requests and readers. Concurrent callers trigger exactly one restart, no request is lost, and stop leaves no child behind |
+| B5 MED: OFF kept paid trade subscriptions | Paid PumpPortal trade subscriptions follow the mode: OFF subscribes no new mint and drops existing ones, except mints JINX holds (exit observation). Re-synced every status tick |
+| B6 MED: latency excluded the durable write | The bus now reports admission→state (dedup, durable write, queue, apply) and receive→state (wall clock from feed receipt). Earlier figures are relabelled "post-write" |
+| B7 LOW: license tests failed on Windows | Canonical LF comparison, POSIX paths, and `.gitattributes` keeping vendored licenses LF |
+
+Corrected live measurement after the fixes (`python -m jinx run --seconds 120`, 2026-10-20, 26 events, local processing only):
+- **Receive→state:** p50 0.59 ms, p95 0.90 ms, max 0.97 ms.
+- **Admission→state:** p50 0.44 ms, p95 0.67 ms.
+- Status ok; 0 malformed; 0 write retries; mode OFF with no paid subscriptions.
+

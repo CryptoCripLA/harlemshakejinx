@@ -1,0 +1,4 @@
+# Vendored license texts must keep their exact upstream bytes (LF) on every platform.
+third_party/** text eol=lf
+tests/fixtures/*.sql text eol=lf
+*.jsonl.gz binary

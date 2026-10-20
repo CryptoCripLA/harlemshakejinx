@@ -266,8 +266,8 @@ def test_gmgn_bridge_crash_is_reported_not_propagated(tmp_path):
     async def main():
         a = GmgnAdapter(ROOT / "build" / "gmgn", env={"GMGN_API_KEY": "k"}, home=tmp_path, auto_restart=False)
         await a.start()
-        a._proc.kill()
-        await a._proc.wait()
+        a._gen.proc.kill()
+        await a._gen.proc.wait()
         with pytest.raises(GmgnUnavailable):
             await a.call("getTokenInfo", "sol", "M")
         h = await a.health()
@@ -343,6 +343,26 @@ def test_gmgn_oversized_response_fails_cleanly_and_the_bridge_recovers(fake_gmgn
             await a.stop()
     small, stats = asyncio.run(main())
     assert small == {"address": "SMALL"} and stats["oversized"] == 1 and stats["restarts"] == 1
+
+
+@needs_bridge
+def test_concurrent_calls_after_bridge_death_restart_it_exactly_once(fake_gmgn, tmp_path):
+    from jinx.adapters.gmgn.adapter import GmgnAdapter
+
+    async def main():
+        a = GmgnAdapter(ROOT / "build" / "gmgn", env={"GMGN_API_KEY": "k", "JINX_GMGN_HOST": fake_gmgn}, home=tmp_path)
+        await a.start()
+        first = a._gen.proc
+        first.kill()
+        await first.wait()
+        results = await asyncio.gather(*(a.call("getTokenInfo", "sol", f"M{i}") for i in range(4)))
+        live = a._gen.proc
+        await a.stop()
+        return results, dict(a.stats), first, live
+    results, stats, first, live = asyncio.run(main())
+    assert [r["address"] for r in results] == ["M0", "M1", "M2", "M3"]   # no request lost
+    assert stats["restarts"] == 1 and stats["spawned"] == 2              # one replacement, not one per caller
+    assert first.returncode is not None and live.returncode is not None  # stop() leaves no child behind
 
 
 def test_gmgn_adapter_passes_only_its_own_variables_to_the_bridge(tmp_path, monkeypatch):

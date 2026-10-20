@@ -84,12 +84,8 @@ class ExecutionGateway:
             return ExecResult(False, intent.position_id, "UNKNOWN_POSITION")
         if not pos.simulated and self.live is None:
             raise LiveExecutionUnavailable("a live position exists but no live executor is wired")
-        binding = self.ledger.bind_exit_intent(intent.intent_id, intent.position_id, intent.token_amount)
-        if binding == "CONFLICT":
-            return ExecResult(False, intent.position_id, "INTENT_CONFLICT")
-        if binding == "SAME" and self.ledger.has_fill(sell_fill_id(intent.position_id, intent.intent_id)):
-            return ExecResult(True, intent.position_id, "ALREADY_APPLIED")
-        r = self.ledger.begin_exit(intent.position_id, intent.intent_id)
-        if not r.ok:
-            return ExecResult(False, intent.position_id, r.reason)
+        r = self.ledger.claim_exit(intent.intent_id, intent.position_id, intent.token_amount,
+                                   sell_fill_id(intent.position_id, intent.intent_id))
+        if not r.ok or r.reason == "ALREADY_APPLIED":
+            return ExecResult(r.ok, intent.position_id, r.reason)
         return self.paper.sell(intent.position_id, intent.intent_id, intent.token_amount)

@@ -23,7 +23,7 @@ import time
 from dataclasses import dataclass
 
 from jinx.core.events import Side
-from jinx.ledger import Fill, PositionLedger
+from jinx.ledger import Fill, FillConflict, PositionLedger
 from jinx.registry import TokenRegistry
 from jinx.store import Store
 
@@ -175,6 +175,10 @@ class PaperExecutor:
         except InsufficientBalance:
             self.ledger.abort_exit(position_id, "INSUFFICIENT_BALANCE_FOR_FEE")
             return ExecResult(False, position_id, "INSUFFICIENT_BALANCE_FOR_FEE")
+        except (ValueError, FillConflict) as e:
+            # a definitively rejected sell must leave the position open and retryable, never locked
+            self.ledger.abort_exit(position_id, f"SELL_REJECTED: {e}")
+            return ExecResult(False, position_id, f"SELL_REJECTED: {e}")
         return ExecResult(True, position_id)
 
     def _fail_open(self, position_id: int, reason: str) -> ExecResult:

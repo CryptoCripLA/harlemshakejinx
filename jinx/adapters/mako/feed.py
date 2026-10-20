@@ -6,9 +6,12 @@ trades are subscribed through Mako's subscribe_token; the watch list is bounded
 and the oldest mint is unsubscribed first.
 
 PumpPortal only streams token trades to connections that carry an API key
-funded with at least 0.02 SOL (server reply observed 2026-10-20). Without a
-key the feed delivers token creations only (which include the creator's
-initial buy) and does not send trade subscriptions that would be rejected.
+funded with at least 0.02 SOL (server reply observed 2026-10-20), and charges
+for streamed trades. Without a key the feed delivers token creations only
+(which include the creator's initial buy) and sends no trade subscriptions.
+With a key, paid trade subscriptions follow the operating mode: in OFF no new
+mint is subscribed and existing subscriptions are dropped, except mints JINX
+still holds, whose exits must keep being observed.
 """
 from __future__ import annotations
 
@@ -30,7 +33,8 @@ class MakoPumpPortalFeed:
 
     def __init__(self, bus: EventBus, upstream_root: Path, ws_url: str | None = None,
                  max_watched_tokens: int = 300, clock_ns=time.time_ns, tap=None, api_key: str | None = None,
-                 subscribe_trades: bool | None = None, retry_initial_s: float = 0.05, retry_max_s: float = 5.0) -> None:
+                 subscribe_trades: bool | None = None, retry_initial_s: float = 0.05, retry_max_s: float = 5.0,
+                 mode_provider=None, held_mints_provider=None) -> None:
         mods = load_mako(upstream_root)
         base = ws_url or mods.default_ws_url
         # PumpPortalStream.connect() reads this module global; tests point it at a local server.
@@ -45,6 +49,8 @@ class MakoPumpPortalFeed:
         self.stream.on_new_token(self._on_message)
         self.stream.on_token_trade(self._on_message)
         self.retry_initial_s, self.retry_max_s = retry_initial_s, retry_max_s
+        self.mode_provider = mode_provider                    # () -> Mode; None means no mode gating
+        self.held_mints_provider = held_mints_provider or (lambda: set())
         self._watched: OrderedDict[str, None] = OrderedDict()
         self.stats = {"received": 0, "malformed": 0, "published": 0, "duplicates": 0, "publish_retries": 0,
                       "ingest_stalled": False, "subscribed": 0, "unsubscribed": 0, "last_message_ns": None}
@@ -65,7 +71,7 @@ class MakoPumpPortalFeed:
             return
         for ev in events:
             await self._publish_durably(ev)
-        if data.get("txType") == "create" and self.subscribe_trades:
+        if data.get("txType") == "create" and self._paid_subscriptions_allowed():
             await self._watch(events[0].mint)
 
     async def _publish_durably(self, ev) -> None:
@@ -86,15 +92,38 @@ class MakoPumpPortalFeed:
             self.stats["published" if admitted else "duplicates"] += 1
             return
 
-    async def _watch(self, mint: str) -> None:
+    def _paid_subscriptions_allowed(self) -> bool:
+        if not self.subscribe_trades:
+            return False
+        return self.mode_provider is None or str(self.mode_provider()) != "OFF"
+
+    async def sync_subscriptions(self) -> None:
+        """Bring paid trade subscriptions in line with the mode: held mints always stay watched (exit
+        observation); everything else is dropped while the mode is OFF."""
+        if not self.subscribe_trades:
+            return
+        held = set(self.held_mints_provider())
+        for mint in held - set(self._watched):
+            await self._watch(mint, protected=True)
+        if not self._paid_subscriptions_allowed():
+            for mint in [m for m in self._watched if m not in held]:
+                del self._watched[mint]
+                await self.stream.unsubscribe_token(mint)
+                self.stats["unsubscribed"] += 1
+
+    async def _watch(self, mint: str, protected: bool = False) -> None:
         if mint in self._watched:
             return
         self._watched[mint] = None
         await self.stream.subscribe_token(mint)
         self.stats["subscribed"] += 1
+        held = set(self.held_mints_provider())
         while len(self._watched) > self.max_watched:
-            oldest, _ = self._watched.popitem(last=False)
-            await self.stream.unsubscribe_token(oldest)
+            evictable = next((m for m in self._watched if m not in held), None)
+            if evictable is None:
+                break  # every watched mint is a held position; never stop observing those
+            del self._watched[evictable]
+            await self.stream.unsubscribe_token(evictable)
             self.stats["unsubscribed"] += 1
 
     def health(self) -> dict:

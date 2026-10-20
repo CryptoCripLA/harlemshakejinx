@@ -2,7 +2,7 @@
 
 **Current stage: Phase 1 built; owner provisionally accepted the foundation (2026-10-20). The gate stays open until the independent review passes. No Phase 2 work starts without owner approval.**
 
-How to read the numbers here: paper round trips prove **accounting consistency**, not trading performance. Sub-millisecond figures are **local event processing inside JINX** (feed message received → stored and applied), not order-execution latency. Execution latency is measured in Phase 3 against GMGN's confirmed orders.
+How to read the numbers here: paper round trips prove **accounting consistency**, not trading performance. Sub-millisecond figures are **local event processing inside JINX**, never order-execution latency. Since review round 2 the live figure runs from feed receive to state applied, durable write included. Figures recorded earlier (0.22 ms, 0.49 ms) started *after* the durable write and understate local processing. Execution latency is measured in Phase 3 against GMGN's confirmed orders.
 
 Status words: NOT STARTED / IN PROGRESS / TESTING / PASSED / FAILED / BLOCKED. Every PASSED row links to a test or recorded result. Evidence: `docs/evidence/PHASE1_EVIDENCE.md`. Mapping: `docs/SOURCE_FIDELITY_MATRIX.md`. Owner decisions: `docs/BLOCKERS.md`.
 
@@ -25,11 +25,11 @@ Status words: NOT STARTED / IN PROGRESS / TESTING / PASSED / FAILED / BLOCKED. E
 | GMGN-first execution ownership | PASSED (documented) | owner directive 2026-10-20 | — | `CLAUDE.md` section, `docs/INTEGRATION_MAP.md`, matrix section C. GMGN executes; JINX decides and reconciles; D3AD sender unwired |
 | Paper wallet and paper execution | PASSED | D3AD curve math (SRC lines) | `test_paper.py` incl. rustc differential (2,002 cases) | accounting consistency only: 122 mechanical round trips on real captured reserves reconcile to the lamport. They are not trading performance |
 | Restart recovery and health | PASSED | JINX | `test_recovery.py` (9) incl. hard kill | live restart: 0 replayed, sequence resumed at 357; `/health` 200 |
-| Live market ingestion | PASSED (creations only) | Mako `PumpPortalStream` | live runs | 234 creations / 15 min, 0 malformed; local processing p50 0.22 ms (not execution latency). The creation-only feed cannot detect three-wallet momentum |
+| Live market ingestion | PASSED (creations only) | Mako `PumpPortalStream` | live runs | 234 creations / 15 min, 0 malformed; local receive→state p50 0.59 ms, p95 0.90 ms (re-measured after the round-2 fix, durable write included; the earlier 0.22 ms excluded the write). Not execution latency. The creation-only feed cannot detect three-wallet momentum |
 | Live trades from other wallets | BLOCKED | PumpPortal needs a key funded with 0.02 SOL | — | B-01 |
 | GMGN live API access | BLOCKED | owner creating the API key | fake-server contract tests PASSED | B-08 |
 | Runtime host | jinx-nyc (existing) | GMGN does not host custom code; jinx-nyc is the minimum existing environment and the GMGN-trusted IP | — | B-10. Railway not provisioned; `Dockerfile`/`railway.json` ready but unused (image not built: no Docker permission) |
-| Independent Codex review | IN PROGRESS | Codex 0.160.0 on the owner's Windows PC (logged in), read-only, clean GitHub clone | round 1 on `1ad0d65`: FAIL, 9 findings | `docs/audits/phase1-codex-20261020-round1.md`; all 9 fixed with regression tests (`tests/test_review_round1.py`, `tests/test_licenses.py`); round 2 re-review pending |
+| Independent Codex review | IN PROGRESS | Codex 0.160.0 on the owner's Windows PC (logged in), read-only, clean GitHub clone | round 1 (`1ad0d65`): FAIL, 9 findings, all fixed. Round 2 (`69111a2`): FAIL, 6 of 9 confirmed fixed, 3 partial, plus 7 new findings (B1–B7), all fixed with regression tests (`tests/test_review_round2.py`) | `docs/audits/phase1-codex-20261020-round1.md`, `…-round2.md`; round 3 pending |
 
 ## Phases 2–4
 

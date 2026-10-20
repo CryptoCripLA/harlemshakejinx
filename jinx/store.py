@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS wallets (
 CREATE TABLE IF NOT EXISTS positions (
     position_id INTEGER PRIMARY KEY AUTOINCREMENT,
     entry_intent_id TEXT NOT NULL UNIQUE,
-    entry_budget_lamports INTEGER NOT NULL CHECK (entry_budget_lamports > 0),
+    entry_budget_lamports INTEGER CHECK (entry_budget_lamports IS NULL OR entry_budget_lamports > 0),
     exit_intent_id TEXT,
     mint TEXT NOT NULL,
     status TEXT NOT NULL,
@@ -134,6 +134,18 @@ CREATE TABLE IF NOT EXISTS paper_wallet_entries (
 """
 
 
+SCHEMA_VERSION = 2
+# v1 (up to commit 1ad0d65): no entry budget, no exit_intents, no amount CHECK constraints.
+# v2: positions.entry_budget_lamports (NULL = unknown for positions created by v1), exit_intents, CHECKs.
+
+V2_POSITIONS = SCHEMA[SCHEMA.index("CREATE TABLE IF NOT EXISTS positions ("):SCHEMA.index("CREATE INDEX IF NOT EXISTS positions_active")]
+V2_FILLS = SCHEMA[SCHEMA.index("CREATE TABLE IF NOT EXISTS fills ("):SCHEMA.index("CREATE TABLE IF NOT EXISTS exit_intents")]
+
+
+class SchemaTooNew(RuntimeError):
+    pass
+
+
 class Store:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
@@ -144,9 +156,64 @@ class Store:
         self.conn.execute("PRAGMA synchronous=NORMAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.execute("PRAGMA busy_timeout=5000")
-        self.conn.executescript(SCHEMA)
         self._lock = threading.RLock()
         self._depth = 0
+        self._migrate()
+
+    # ---- schema versions ----------------------------------------------
+    def schema_version(self) -> int:
+        return self.conn.execute("PRAGMA user_version").fetchone()[0]
+
+    def _columns(self, table: str) -> set[str]:
+        return {r[1] for r in self.conn.execute(f"PRAGMA table_info({table})")}
+
+    def _migrate(self) -> None:
+        version = self.schema_version()
+        if version > SCHEMA_VERSION:
+            raise SchemaTooNew(f"database schema v{version} is newer than this build (v{SCHEMA_VERSION})")
+        if version < 2 and "positions" in self._tables() and "entry_budget_lamports" not in self._columns("positions"):
+            self._migrate_v1_to_v2()
+        self.conn.executescript(SCHEMA)
+        self.conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+
+    def _tables(self) -> set[str]:
+        return {r[0] for r in self.conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+
+    def _migrate_v1_to_v2(self) -> None:
+        """Rebuild positions and fills with the v2 definitions, keeping every row. A v1 position's entry budget
+        is reconstructed from its paper buy fills (the paper buy fill is the whole budget); a position with no
+        buy fill keeps NULL, meaning unknown, rather than an invented value."""
+        self.conn.execute("PRAGMA foreign_keys=OFF")
+        try:
+            self.conn.execute("BEGIN IMMEDIATE")
+            try:
+                c = self.conn
+                c.execute("ALTER TABLE positions RENAME TO positions_v1")
+                c.execute("ALTER TABLE fills RENAME TO fills_v1")
+                for stmt in (V2_POSITIONS, V2_FILLS):
+                    c.execute(stmt)
+                c.execute("""INSERT INTO positions (position_id, entry_intent_id, entry_budget_lamports, exit_intent_id,
+                             mint, status, token_amount, cost_lamports, proceeds_lamports, protocol_fees_lamports,
+                             network_fees_lamports, realized_pnl_lamports, simulated, opened_ns, closed_ns, note)
+                             SELECT p.position_id, p.entry_intent_id,
+                                    (SELECT SUM(f.sol_lamports) FROM fills_v1 f
+                                     WHERE f.position_id = p.position_id AND f.side = 'buy'),
+                                    p.exit_intent_id, p.mint, p.status, p.token_amount, p.cost_lamports,
+                                    p.proceeds_lamports, p.protocol_fees_lamports, p.network_fees_lamports,
+                                    p.realized_pnl_lamports, p.simulated, p.opened_ns, p.closed_ns, p.note
+                             FROM positions_v1 p""")
+                c.execute("INSERT INTO fills SELECT * FROM fills_v1")
+                c.execute("DROP TABLE fills_v1")
+                c.execute("DROP TABLE positions_v1")
+                if c.execute("PRAGMA foreign_key_check").fetchall():
+                    raise RuntimeError("foreign key check failed after migration")
+                c.execute("PRAGMA user_version = 2")
+                c.execute("COMMIT")
+            except BaseException:
+                self.conn.execute("ROLLBACK")
+                raise
+        finally:
+            self.conn.execute("PRAGMA foreign_keys=ON")
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
@@ -165,7 +232,13 @@ class Store:
                 raise
             self._depth -= 1
             if outer:
-                self.conn.execute("COMMIT")
+                try:
+                    self.conn.execute("COMMIT")
+                except BaseException:
+                    # a failed COMMIT can leave SQLite inside the transaction; roll back so the next write starts clean
+                    if self.conn.in_transaction:
+                        self.conn.execute("ROLLBACK")
+                    raise
 
     # ---- events -------------------------------------------------------
     def record_event(self, ev: MarketEvent) -> bool:

@@ -54,6 +54,7 @@ class EventBus:
         self._dedup = dedup or Deduplicator()
         self._persist = persist
         self._latency = {lane: deque(maxlen=latency_window) for lane in Lane}
+        self._receive_latency: deque[int] = deque(maxlen=latency_window)
         self._seq = itertools.count(1)
         self.clock_ns = clock_ns
         self._handler_errors: dict[str, int] = defaultdict(int)
@@ -71,6 +72,7 @@ class EventBus:
 
     async def publish(self, event: MarketEvent) -> bool:
         """Admit an event. Returns False when it is a duplicate."""
+        admitted_at = time.perf_counter_ns()  # latency covers dedup, the durable write, queueing and handlers
         if not self._dedup.first_time(event.idempotency_key):
             self._counts["duplicates"] += 1
             return False
@@ -85,10 +87,9 @@ class EventBus:
                 self._counts["duplicates"] += 1
                 return False
         self._counts["published"] += 1
-        enq = time.perf_counter_ns()
-        await self._queues[Lane.FAST].put((event, enq))
+        await self._queues[Lane.FAST].put((event, admitted_at))
         try:
-            self._queues[Lane.BACKGROUND].put_nowait((event, enq))
+            self._queues[Lane.BACKGROUND].put_nowait((event, admitted_at))
         except asyncio.QueueFull:
             self._counts["background_dropped"] += 1
         return True
@@ -115,12 +116,20 @@ class EventBus:
                         self._handler_errors[name] += 1
                         log.exception("handler %s failed on %s", name, event.idempotency_key)
                 self._latency[lane].append(time.perf_counter_ns() - enq)
+                if lane is Lane.FAST:
+                    # wall-clock receive -> state applied; only meaningful for live events (recv_ns = now)
+                    self._receive_latency.append(self.clock_ns() - event.recv_ns)
                 self._counts[f"dispatched_{lane}"] += 1
             finally:
                 queue.task_done()
 
     def latency_ns(self, lane: Lane) -> list[int]:
+        """Admission (publish called) -> all handlers on this lane done: dedup, durable write, queue, apply."""
         return list(self._latency[lane])
+
+    def receive_latency_ns(self) -> list[int]:
+        """Feed receive time -> fast-lane state applied, wall clock. Includes normalization."""
+        return list(self._receive_latency)
 
     def queue_depth(self, lane: Lane) -> int:
         return self._queues[lane].qsize()

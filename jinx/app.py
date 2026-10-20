@@ -26,6 +26,7 @@ from jinx.core_state import CoreState
 from jinx.execution import ExecutionGateway
 from jinx.health import build_health
 from jinx.ledger import PositionLedger
+from jinx.modes import get_mode
 from jinx.paper import PaperExecutor, PaperWallet
 from jinx.recovery import recover
 from jinx.registry import TokenRegistry, WalletRegistry
@@ -63,7 +64,9 @@ class JinxApp:
             self._capture = gzip.open(self.capture_path, "at")
         self.feed = MakoPumpPortalFeed(self.bus, s.upstream_dir / "mako", ws_url=self.ws_url,
                                        max_watched_tokens=s.max_watched_tokens, tap=self._tap if self._capture else None,
-                                       api_key=os.environ.get("PUMPPORTAL_API_KEY") or None)
+                                       api_key=os.environ.get("PUMPPORTAL_API_KEY") or None,
+                                       mode_provider=lambda: get_mode(self.store),
+                                       held_mints_provider=lambda: {p.mint for p in self.ledger.active()})
         self.gmgn = GmgnAdapter(s.gmgn_build_dir)
         self.d3ad = D3adExecutionAdapter(s.upstream_dir / "d3ad")
         self.datanomad = DataNomadResearchAdapter(s.upstream_dir / "datanomad")
@@ -82,7 +85,8 @@ class JinxApp:
         adapters = [self.feed.health(), await self.gmgn.health(), self.d3ad.health(), self.datanomad.health()]
         return build_health(self.store, self.ledger, self.wallet, adapters, self.bus.stats, time.time_ns(),
                             latency_ns=self.bus.latency_ns(Lane.FAST),
-                            feed_stale_after_ns=self.s.feed_stale_after_s * 1_000_000_000)
+                            feed_stale_after_ns=self.s.feed_stale_after_s * 1_000_000_000,
+                            receive_latency_ns=self.bus.receive_latency_ns())
 
     async def _http(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
@@ -113,6 +117,7 @@ class JinxApp:
 
     async def _status_tick(self) -> None:
         self._supervise()
+        await self.feed.sync_subscriptions()  # OFF drops paid trade subscriptions except held positions
         healed = self.core.apply_pending()  # retries events whose apply failed; exactly-once guarded
         if healed:
             log.warning("re-applied %s stored events that had failed to apply", healed)
@@ -120,7 +125,7 @@ class JinxApp:
         log.info("status=%s events=%s unapplied=%s tokens=%s feed=%s latency=%s", h["status"], h["store"]["events"],
                  h["store"]["unapplied"], len(self.core.tokens),
                  {k: h["adapters"][0].get(k) for k in ("connected", "received", "malformed", "ingest_stalled")},
-                 h["ingest_to_state_ms"])
+                 h["receive_to_state_ms"])
 
     def _supervise(self) -> None:
         """Restart the bus or feed task if it ended unexpectedly (an exception, not a cancel)."""
