@@ -28,9 +28,7 @@ class RecoveryReport:
 
 
 def recover(store: Store, core: CoreState, ledger: PositionLedger, wallet: PaperWallet, bus=None) -> RecoveryReport:
-    pending = store.unapplied_events()
-    for row in pending:
-        core.apply(store.row_to_event(row))
+    replayed = core.apply_pending()
     last_seq = store.max_seq()
     if bus is not None:
         bus.resume_after(last_seq)
@@ -44,4 +42,4 @@ def recover(store: Store, core: CoreState, ledger: PositionLedger, wallet: Paper
         elif pos.status is Status.PENDING_CLOSE:
             ledger.abort_exit(pos.position_id, "RECOVERED_UNFINISHED_EXIT")
             reopened += 1
-    return RecoveryReport(len(pending), last_seq, released, reopened, len(ledger.active()), wallet.reconcile().ok)
+    return RecoveryReport(replayed, last_seq, released, reopened, len(ledger.active()), wallet.reconcile().ok)

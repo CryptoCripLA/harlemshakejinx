@@ -102,6 +102,9 @@ class JinxApp:
     async def _status_loop(self) -> None:
         while True:
             await asyncio.sleep(60)
+            healed = self.core.apply_pending()  # retries events whose apply failed; exactly-once guarded
+            if healed:
+                log.warning("re-applied %s stored events that had failed to apply", healed)
             h = await self.health()
             log.info("status=%s events=%s tokens=%s feed=%s latency=%s", h["status"], h["store"]["events"],
                      len(self.core.tokens), {k: h["adapters"][0].get(k) for k in ("connected", "received", "malformed")},

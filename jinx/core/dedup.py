@@ -27,5 +27,9 @@ class Deduplicator:
             self._keys.popitem(last=False)
         return True
 
+    def forget(self, key: str) -> None:
+        """Undo first_time() for a key whose event could not be stored, so a resend is accepted."""
+        self._keys.pop(key, None)
+
     def __len__(self) -> int:
         return len(self._keys)

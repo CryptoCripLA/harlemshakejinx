@@ -74,9 +74,16 @@ class EventBus:
         if not self._dedup.first_time(event.idempotency_key):
             self._counts["duplicates"] += 1
             return False
-        if self._persist is not None and not self._persist(event):
-            self._counts["duplicates"] += 1
-            return False
+        if self._persist is not None:
+            try:
+                stored = self._persist(event)
+            except Exception:
+                self._dedup.forget(event.idempotency_key)
+                self._counts["persist_errors"] += 1
+                raise
+            if not stored:
+                self._counts["duplicates"] += 1
+                return False
         self._counts["published"] += 1
         enq = time.perf_counter_ns()
         await self._queues[Lane.FAST].put((event, enq))
@@ -127,5 +134,6 @@ class EventBus:
             "dispatched_background": self._counts["dispatched_background"],
             "fast_dropped": 0,
             "background_dropped": self._counts["background_dropped"],
+            "persist_errors": self._counts["persist_errors"],
             "handler_errors": dict(self._handler_errors),
         }

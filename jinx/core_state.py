@@ -16,10 +16,14 @@ class CoreState:
     def __init__(self, store: Store, tokens: TokenRegistry, wallets: WalletRegistry) -> None:
         self.store, self.tokens, self.wallets = store, tokens, wallets
         self.applied = 0
+        self.skipped_already_applied = 0
 
     def apply(self, ev: MarketEvent) -> None:
         try:
             with self.store.transaction():
+                if self.store.is_applied(ev.idempotency_key):
+                    self.skipped_already_applied += 1
+                    return
                 self.tokens.apply(ev)
                 self.wallets.apply(ev)
                 self.store.mark_applied(ev.idempotency_key)
@@ -29,3 +33,10 @@ class CoreState:
             self.wallets.reload()
             raise
         self.applied += 1
+
+    def apply_pending(self) -> int:
+        """Apply stored events that are still unapplied (after a handler failure). Safe to repeat."""
+        rows = self.store.unapplied_events()
+        for row in rows:
+            self.apply(self.store.row_to_event(row))
+        return len(rows)

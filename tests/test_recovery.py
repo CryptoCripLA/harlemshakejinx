@@ -151,3 +151,13 @@ def test_health_is_ok_only_when_store_wallet_and_feed_are_healthy(tmp_path):
     s.conn.execute("UPDATE paper_wallet SET balance_lamports = 1 WHERE id = 1")
     assert build_health(s, led, w, adapters=[feed_up], bus_stats={}, now_ns=2)["status"] == "failed"
     s.close()
+
+
+def test_applying_the_same_stored_event_twice_counts_it_once(tmp_path):
+    s, core = open_state(tmp_path / "j.db")
+    ev = make_trade(mint="A", trader="W1")
+    s.record_event(ev)
+    core.apply(ev)
+    core.apply(ev)  # e.g. recovery replay racing the live bus
+    assert core.tokens.get("A").buys == 1 and core.wallets.get("W1").buys == 1
+    s.close()

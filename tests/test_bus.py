@@ -156,3 +156,27 @@ def test_ingest_to_handled_latency_is_sampled_per_event():
     samples = run(main())
     assert len(samples) == 4
     assert all(s >= 0 for s in samples)
+
+
+def test_event_whose_durable_write_failed_is_accepted_when_resent():
+    async def main():
+        calls = {"n": 0}
+        def flaky_persist(e):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise OSError("disk full")
+            return True
+        bus = EventBus(persist=flaky_persist)
+        seen = []
+        bus.subscribe(Lane.FAST, lambda e: seen.append(e.signature))
+        task = asyncio.create_task(bus.run())
+        first = ev(bus, sig="RETRY")
+        try:
+            await bus.publish(first)
+        except OSError:
+            pass
+        assert await bus.publish(ev(bus, sig="RETRY")) is True
+        await bus.drain()
+        task.cancel()
+        return seen
+    assert run(main()) == ["RETRY"]

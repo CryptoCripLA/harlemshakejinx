@@ -174,6 +174,10 @@ class Store:
             )
             return cur.rowcount == 1
 
+    def is_applied(self, idempotency_key: str) -> bool:
+        row = self.conn.execute("SELECT applied FROM events WHERE idempotency_key = ?", (idempotency_key,)).fetchone()
+        return bool(row and row[0])
+
     def mark_applied(self, idempotency_key: str) -> None:
         self.conn.execute("UPDATE events SET applied = 1 WHERE idempotency_key = ?", (idempotency_key,))
 
