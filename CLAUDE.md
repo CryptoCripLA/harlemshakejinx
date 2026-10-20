@@ -1,4 +1,9 @@
 # HARLEMSHAKEJINX — OWNER'S BINDING CLAUDE CONTRACT
+
+## OWNER OVERRIDE — SOURCE-FIDELITY GATE (2026-10-19)
+
+SolChad's owner-supplied blueprint governs this rebuild. Claude implements the approved requirements without substituting new trading rules. All legacy JINX skill guidance is subordinate wherever it conflicts with this repo's current owner directive. At every phase: verify source mapping, run focused regression checks, obtain independent Codex review, and wait for owner acceptance. Skills being installed is not proof they ran. Report missing evidence or conflicts as unresolved; do not assume approval.
+
 Owner directive, 2026-10-19. New canonical repository: https://github.com/CryptoCripLA/harlemshakejinx
 
 ## PRIORITY ZERO — PROFITS. PROFITS. PROFITS.
