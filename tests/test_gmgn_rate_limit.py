@@ -1,8 +1,8 @@
 """GMGN rate-limit bans are honored, not extended (owner mandate 2026-10-20 §2: preserve the client's rate-limit
 behavior). GMGN: "repeated requests during the cooldown can extend the ban by 5 seconds each time, up to 5
 minutes"; on RATE_LIMIT_BANNED_MAX "Stop all GMGN calls ... any request before reset_at resets the ban"
-(skills/gmgn-token/SKILL.md:68-76). The pinned client retries once only when the reset is under 5 s
-(OpenApiClient.ts getRateLimitRetryDelayMs); otherwise JINX must stop sending until the reset time."""
+(skills/gmgn-token/SKILL.md:68-76). The pinned client's own short-ban retry is switched off (and never fires in
+the pinned build), so every ban reaches JINX, which stops sending on the key until the reset time."""
 import asyncio
 import json
 import shutil
@@ -22,7 +22,8 @@ needs_bridge = pytest.mark.skipif(not (BRIDGE_BUILT and shutil.which("node")),
 
 class LimitedGmgn(BaseHTTPRequestHandler):
     seen: list = []
-    reset_at: int | None = None
+    reset_at: int | None = None        # sent as the X-RateLimit-Reset header
+    body_reset_at: int | None = None   # sent only in the JSON body, as GMGN documents for bans
     error = "RATE_LIMIT_BANNED"
 
     def do_GET(self):
@@ -30,6 +31,8 @@ class LimitedGmgn(BaseHTTPRequestHandler):
         LimitedGmgn.seen.append(address)
         if address == "LIMITED":
             status, body = 429, {"code": 429, "error": LimitedGmgn.error, "message": "rate limited"}
+            if LimitedGmgn.body_reset_at is not None:
+                body["reset_at"] = LimitedGmgn.body_reset_at
         elif address == "PRO":
             status, body = 403, {"code": 403, "error": "PRO_PLAN_REQUIRED", "message": "pro only"}
         else:
@@ -52,6 +55,7 @@ class LimitedGmgn(BaseHTTPRequestHandler):
 @pytest.fixture
 def limited_gmgn():
     LimitedGmgn.seen, LimitedGmgn.reset_at, LimitedGmgn.error = [], None, "RATE_LIMIT_BANNED"
+    LimitedGmgn.body_reset_at = None
     srv = ThreadingHTTPServer(("127.0.0.1", 0), LimitedGmgn)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{srv.server_address[1]}"
@@ -104,8 +108,10 @@ def test_a_ban_pauses_every_gmgn_call_until_the_reset_time(limited_gmgn, tmp_pat
 
 
 @needs_bridge
-def test_a_ban_without_a_reset_time_pauses_for_gmgns_documented_5_second_step(limited_gmgn, tmp_path):
-    from jinx.adapters.gmgn.adapter import BAN_STEP_S, GmgnRateLimited
+def test_a_ban_without_any_reset_time_pauses_for_gmgns_documented_maximum(limited_gmgn, tmp_path):
+    """Round 9 M2: GMGN's 5 s is the ban *step*, not its length. With no reset time at all, JINX waits out the
+    documented maximum ban ("up to 5 minutes", skills/gmgn-token/SKILL.md:73-76) rather than guess shorter."""
+    from jinx.adapters.gmgn.adapter import UNKNOWN_BAN_PAUSE_S, GmgnRateLimited
     now = 1_800_000_000
     wall = Wall(now)
 
@@ -118,8 +124,70 @@ def test_a_ban_without_a_reset_time_pauses_for_gmgns_documented_5_second_step(li
             return e.value
         finally:
             await a.stop()
-    assert BAN_STEP_S == 5
-    assert asyncio.run(main()).reset_at == now + 5
+    assert UNKNOWN_BAN_PAUSE_S == 300
+    assert asyncio.run(main()).reset_at == now + 300
+
+
+@needs_bridge
+def test_a_reset_time_given_only_in_the_body_is_honored(limited_gmgn, tmp_path):
+    """Round 9 M2: GMGN documents `reset_at` in the 429 body (skills/gmgn-token/SKILL.md:73); the pinned client
+    reads only the X-RateLimit-Reset header, so the bridge carries the body value into that header."""
+    from jinx.adapters.gmgn.adapter import GmgnRateLimited
+    now = int(time.time())
+    LimitedGmgn.body_reset_at = now + 240
+
+    async def main():
+        a = adapter(limited_gmgn, tmp_path, Wall(now))
+        await a.start()
+        try:
+            with pytest.raises(GmgnRateLimited) as e:
+                await a.call("getTokenInfo", "sol", "LIMITED")
+            return e.value
+        finally:
+            await a.stop()
+    assert asyncio.run(main()).reset_at == now + 240
+
+
+def test_a_call_waiting_for_the_bridge_is_not_sent_once_a_ban_has_started():
+    """Round 9 M1: the ban is checked again after the bridge is ready, immediately before the write."""
+    from jinx.adapters.gmgn.adapter import GmgnAdapter, GmgnRateLimited
+
+    class Stdin:
+        writes = []
+
+        def write(self, data):
+            Stdin.writes.append(data)
+
+        async def drain(self):
+            pass
+
+    class Proc:
+        stdin = Stdin()
+        returncode = None
+
+    class Gen:
+        proc = Proc()
+        pending = {}
+        alive = True
+
+    wall = Wall(1_000)
+    a = GmgnAdapter(ROOT / "build" / "gmgn", env={}, wall=wall)
+
+    async def main():
+        ready = asyncio.Event()
+
+        async def ensure_running():
+            await ready.wait()           # this caller is queued behind a bridge (re)start
+            return Gen()
+        a._ensure_running = ensure_running
+        call = asyncio.create_task(a.call("getTokenInfo", "sol", "M"))
+        await asyncio.sleep(0)           # the call has passed its first ban checks and is waiting
+        a.paused_until = 1_400           # another response registers a ban meanwhile
+        ready.set()
+        with pytest.raises(GmgnRateLimited):
+            await call
+    asyncio.run(main())
+    assert Stdin.writes == []
 
 
 @needs_bridge

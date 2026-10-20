@@ -207,3 +207,43 @@ def test_a_creation_report_never_moves_a_token_back_to_newly_detected():
     lc = TokenLifecycle("MINT")
     lc.observe(ev(Kind.ON_CURVE, 1))
     assert lc.observe(ev(Kind.CREATED, 2)) is None and lc.state is State.ON_BONDING_CURVE
+
+
+# ---- Codex round 9 (docs/audits/phase1-codex-20261020-round9.md) ---------------------------------
+def test_a_migration_indexed_after_a_newer_curve_read_is_still_recognized():   # R9-H1 (Codex reproduction)
+    """Curve reads carry the read time; confirmations carry the provider's migration time. They are different
+    clocks, so a confirmation is not 'late' just because a curve read happened after the migration."""
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.NEAR_COMPLETION, 100, event_ns=100))
+    t = lc.observe(ev(Kind.MIGRATION_CONFIRMED, 110, event_ns=90, post_pool="P", exchange="pump_amm"))
+    assert t is not None and lc.state is State.MIGRATION_CONFIRMED and lc.post_pool == "P"
+    assert lc.fields["post_pool"].event_ns == 90
+
+
+def test_a_migration_signal_indexed_late_is_still_recognized():                # R9-H1
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.NEAR_COMPLETION, 100, event_ns=100))
+    assert lc.observe(ev(Kind.MIGRATION_SIGNAL, 110, event_ns=90)).to_state is State.MIGRATION_OBSERVED
+
+
+def test_curve_data_older_than_the_migration_is_history_not_a_conflict():      # R9-H1
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.MIGRATION_CONFIRMED, 100, event_ns=90, post_pool="P", exchange="pump_amm"))
+    assert lc.observe(ev(Kind.ON_CURVE, 105, event_ns=80, progress=0.5)) is None
+    assert lc.state is State.MIGRATION_CONFIRMED and lc.conflicts == [] and "progress" not in lc.fields
+    assert lc.observe(ev(Kind.ON_CURVE, 130, event_ns=120)).to_state is State.CONFLICTING   # newer: a conflict
+
+
+def test_a_delayed_creation_report_keeps_its_metadata_without_moving_the_state():   # R9-H1 / M3
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.ON_CURVE, 100, event_ns=100))
+    assert lc.observe(ev(Kind.CREATED, 105, event_ns=50, launchpad="Pump.fun", pre_pool="CURVE")) is None
+    assert lc.state is State.ON_BONDING_CURVE
+    assert (lc.fields["created"].event_ns, lc.fields["launchpad"].value, lc.pre_pool) == (50, "Pump.fun", "CURVE")
+
+
+def test_an_older_value_never_replaces_a_newer_one_of_the_same_field():
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.NEAR_COMPLETION, 100, event_ns=100, progress=0.95))
+    lc.observe(ev(Kind.MIGRATION_SIGNAL, 110, event_ns=90, progress=0.9))       # accepted, but its progress is older
+    assert lc.fields["progress"].value == 0.95

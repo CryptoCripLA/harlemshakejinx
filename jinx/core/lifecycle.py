@@ -6,14 +6,18 @@ token info, the Pump.fun stream; mapping in docs/GMGN_ADAPTER_CONTRACT.md §5). 
 handling, not trading:
 - Every transition keeps its source, observation time, event time and evidence payload. The mandated lifecycle
   record (§3.1) is kept in `fields`, each value with the source and times of the evidence that set it.
-- A report older than the latest accepted event (by provider event time) is late: it never moves the state,
-  never replaces a recorded value and never refreshes freshness. It still counts toward the reserve peak,
-  because a real past reading is part of the all-time high.
+- Ordering is per fact, because reports carry different clocks: curve reads carry the read (or trade) time,
+  migration reports carry the provider's migration time. A report is late when it is older than the latest
+  accepted report of the same kind, when it is curve data no newer than the observed migration, or when it would
+  move the curve stage backwards with older evidence than the one that set it. A late report never moves the
+  state, never replaces a recorded value and never refreshes freshness; it still counts toward the reserve peak,
+  because a real past reading is part of the all-time high. A recorded value is only ever replaced by newer
+  evidence for that value, so a delayed report can still fill in what is missing (e.g. a late creation report).
 - A repeated report makes no second transition.
 - Migration is confirmed only with the destination pool, the destination venue and the provider's migration
   time. Post-migration market data is accepted only after that confirmation. There is deliberately no evidence
   kind for price or for a token missing from a query result.
-- Newer evidence that contradicts the observed migration (curve data, another pool) moves the token to
+- Evidence newer than the observed migration that contradicts it (curve data, another pool) moves the token to
   CONFLICTING once; every contradicting report is kept in `conflicts`.
 - STALE (caller's age limit) and FAILED (a failed observation) are exceptional states. The last consistent
   state is kept, and the next accepted consistent evidence returns the token to it.
@@ -119,8 +123,10 @@ class TokenLifecycle:
         self.peak_v_sol_lamports: int | None = None
         self.late_reports = 0
         self.last_received_ns: int | None = None     # any report, late ones included
-        self.last_accepted_ns: int | None = None     # reports not older than the latest accepted event
-        self._latest_event_ns: int | None = None
+        self.last_accepted_ns: int | None = None     # reports that were not late
+        self._latest_by_kind: dict[Kind, int] = {}    # per-kind ordering watermark (event time)
+        self._migration_event_ns: int | None = None   # earliest accepted migration fact time
+        self._state_event_ns: int | None = None       # event time of the evidence that set the current stage
 
     @property
     def pre_pool(self) -> str | None:
@@ -138,15 +144,16 @@ class TokenLifecycle:
         v_sol = e.payload.get("v_sol_lamports")
         if _number(v_sol, minimum=0):
             self.peak_v_sol_lamports = max(self.peak_v_sol_lamports or 0, v_sol)
-        if self._latest_event_ns is not None and e.event_ns < self._latest_event_ns:
-            self.late_reports += 1
-            return None
-        self._latest_event_ns = e.event_ns
-        self.last_accepted_ns = max(self.last_accepted_ns or 0, e.observed_ns)
-
         target = e.kind.value
         base = self.last_consistent_state
         migrated = base.value >= State.MIGRATION_OBSERVED.value
+        if self._is_late(e, base, migrated):
+            self.late_reports += 1
+            return None
+        self._latest_by_kind[e.kind] = max(self._latest_by_kind.get(e.kind, e.event_ns), e.event_ns)
+        self.last_accepted_ns = max(self.last_accepted_ns or 0, e.observed_ns)
+        if e.kind in (Kind.MIGRATION_SIGNAL, Kind.MIGRATION_CONFIRMED):
+            self._migration_event_ns = min(self._migration_event_ns or e.event_ns, e.event_ns)
         if self._contradicts(e, migrated):
             return self._conflict(e)
         self._record(e)
@@ -186,6 +193,18 @@ class TokenLifecycle:
                 self.last_consistent_state.value >= State.MIGRATION_CONFIRMED.value and self.post_pool):
             raise MissingEvidence("post-migration market data is accepted only after a confirmed migration")
 
+    def _is_late(self, e: Evidence, base: State, migrated: bool) -> bool:
+        latest = self._latest_by_kind.get(e.kind)
+        if latest is not None and e.event_ns < latest:
+            return True   # older than the latest accepted report of the same kind
+        curve = e.kind in (Kind.ON_CURVE, Kind.NEAR_COMPLETION)
+        if curve and migrated and self._migration_event_ns is not None and e.event_ns <= self._migration_event_ns:
+            return True   # curve data from before the migration: history, not a contradiction
+        if curve and not migrated and e.kind.value.value < base.value and self._state_event_ns is not None \
+                and e.event_ns < self._state_event_ns:
+            return True   # would move the curve stage backwards with older evidence
+        return False
+
     def _contradicts(self, e: Evidence, migrated: bool) -> bool:
         if migrated and e.kind.value.value < State.MIGRATION_OBSERVED.value:
             return True   # curve-stage data after a migration was observed
@@ -203,7 +222,9 @@ class TokenLifecycle:
 
     def _record(self, e: Evidence) -> None:
         def put(name, value):
-            self.fields[name] = Recorded(value, e.source, e.observed_ns, e.event_ns)
+            current = self.fields.get(name)
+            if current is None or e.event_ns >= current.event_ns:   # only newer evidence replaces a value
+                self.fields[name] = Recorded(value, e.source, e.observed_ns, e.event_ns)
 
         for name in RECORDED_AS_REPORTED:
             if e.payload.get(name) is not None:
@@ -223,6 +244,7 @@ class TokenLifecycle:
     def _move(self, to: State, e: Evidence) -> Transition:
         t = self._enter(to, e.kind, e.source, e.observed_ns, e.event_ns, e.payload)
         self.last_consistent_state = to
+        self._state_event_ns = e.event_ns
         return t
 
     def _enter(self, to: State, kind: Kind | None, source: str, observed_ns: int, event_ns: int,

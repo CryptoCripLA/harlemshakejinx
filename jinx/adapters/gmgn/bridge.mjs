@@ -57,12 +57,23 @@ const { apiKey, privateKey } = credentials();
 let lastRateLimit = null;
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (...fetchArgs) => {
-  const res = await realFetch(...fetchArgs);
+  let res = await realFetch(...fetchArgs);
   const seen = {};
   res.headers.forEach((value, name) => {
     if (name.toLowerCase().startsWith("x-ratelimit-")) seen[name.toLowerCase()] = value;
   });
   if (Object.keys(seen).length) lastRateLimit = seen;
+  // GMGN documents a ban's end as `reset_at` in the 429 body (skills/gmgn-token/SKILL.md:73), but the pinned
+  // client reads only the X-RateLimit-Reset header (OpenApiClient.ts parseResponse). When only the body has it,
+  // carry it into that header so the client reports it; the body itself is passed on unchanged.
+  if (res.status === 429 && !res.headers.get("x-ratelimit-reset")) {
+    const text = await res.text();
+    let resetAt;
+    try { resetAt = JSON.parse(text)?.reset_at; } catch { resetAt = undefined; }
+    const headers = new Headers(res.headers);
+    if (Number.isFinite(resetAt) && resetAt > 0) headers.set("x-ratelimit-reset", String(Math.trunc(resetAt)));
+    res = new Response(text, { status: res.status, statusText: res.statusText, headers });
+  }
   return res;
 };
 

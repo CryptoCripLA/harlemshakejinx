@@ -241,9 +241,13 @@ class PositionLedger:
         if token_amount is not None and token_amount == fill["token_amount"]:
             return Result(True, pos.position_id, "ALREADY_APPLIED")
         if token_amount is None and pos.status is Status.CLOSED:
+            # the closing sell must be established uniquely: tied timestamps prove nothing (no ordering invented)
+            closing = c.execute("SELECT COUNT(*) FROM fills WHERE position_id = ? AND side = 'sell' AND ts_ns ="
+                                " (SELECT MAX(ts_ns) FROM fills WHERE position_id = ? AND side = 'sell')",
+                                (pos.position_id, pos.position_id)).fetchone()[0]
             last = c.execute("SELECT MAX(ts_ns) FROM fills WHERE position_id = ? AND side = 'sell'",
                              (pos.position_id,)).fetchone()[0]
-            if fill["ts_ns"] == last:
+            if closing == 1 and fill["ts_ns"] == last:
                 return Result(True, pos.position_id, "ALREADY_APPLIED")
         return Result(False, pos.position_id, "INTENT_CONFLICT")
 

@@ -60,3 +60,35 @@ def test_a_position_with_unclassified_sell_history_refuses_new_exits(tmp_path, v
 def test_new_fills_must_have_text_ids(bad):
     with pytest.raises(ValueError):
         Fill(bad, Side.SELL, 1, 0, 0, 0, True, 1)
+
+
+# ---- Codex round 9 (docs/audits/phase1-codex-20261020-round9.md) ---------------------------------
+def v1_closed_by_two_tied_sells(path) -> None:
+    """A v1 position of 10 tokens closed by two historical 5-token sells recorded at the same time."""
+    from tests.test_review_round4 import FIXTURES
+    c = sqlite3.connect(path)
+    c.executescript((FIXTURES / "schema_v1_1ad0d65.sql").read_text())
+    c.execute("INSERT INTO positions (entry_intent_id, exit_intent_id, mint, status, token_amount, cost_lamports,"
+              " proceeds_lamports, simulated, opened_ns) VALUES ('E1','B','A','CLOSED',0,10000000,4000000,1,1)")
+    c.execute("INSERT INTO fills VALUES ('E1:buy', 1, 'buy', 10, 10000000, 99009, 5000, 1, 1)")
+    c.execute("INSERT INTO fills VALUES ('A:sell', 1, 'sell', 5, 2000000, 20000, 5000, 1, 7)")
+    c.execute("INSERT INTO fills VALUES ('B:sell', 1, 'sell', 5, 2000000, 20000, 5000, 1, 7)")
+    c.execute("INSERT INTO settings VALUES ('mode','AUTO',1,'owner')")
+    c.commit()
+    c.close()
+
+
+def test_whole_position_replay_needs_a_uniquely_established_closing_sell(tmp_path):    # R9-M3
+    from jinx.ledger import PositionLedger
+    from jinx.paper import sell_fill_id
+    path = tmp_path / "db"
+    v1_closed_by_two_tied_sells(path)
+    s = Store(path)
+    ledger = PositionLedger(s)
+    for intent in ("A", "B"):
+        r = ledger.claim_exit(intent, 1, None, sell_fill_id(1, intent))
+        assert (r.ok, r.reason) == (False, "INTENT_CONFLICT")          # tied timestamps: not provable
+        r = ledger.claim_exit(intent, 1, 5, sell_fill_id(1, intent))
+        assert (r.ok, r.reason) == (True, "ALREADY_APPLIED")            # the exact amount still matches
+    assert s.conn.execute("SELECT COUNT(*) FROM fills WHERE side = 'sell'").fetchone()[0] == 2
+    s.close()

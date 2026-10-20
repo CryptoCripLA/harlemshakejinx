@@ -28,7 +28,7 @@ PYTHONPATH=. .venv/bin/python scripts/gmgn_capability_check.py docs/evidence/gmg
 | Market signals | **PASSED** | `getTokenSignalV2` OK, 50 signals spanning 49 s; `getTrendingSwaps` 1m OK |
 | Quote without submission | **PASSED** | `quoteOrder` 0.001 SOL → token. Fields: `input_amount`, `output_amount`, `min_output_amount`, `slippage`, `tx`. The unsigned transaction is returned; nothing is sent |
 | Response timestamps and freshness | **MEASURED** | §4 |
-| Wallet holdings / balances | **PASSED** | `getWalletHoldings` (signed) OK, 4 holdings. Balance of the bound Solana wallet at 19:04 UTC: 0.8186 SOL + 2.06 USDC ≈ **$88.70** (SOL at $105.84 from GMGN `getGasPrice.native_token_usd_price`, read 19:04 UTC) |
+| Wallet holdings / balances | **PASSED** | `getWalletHoldings` (signed) OK; the evidence files record the call and its 4 holdings, not the amounts. The repository is public, so wallet balances are reported to the owner directly and not committed |
 | Automated execution controls | **DOCUMENTED, NOT EXERCISED** | §6 |
 
 ## 2. Endpoint inventory (pinned client; weights from GMGN's skill rate-limit tables)
@@ -71,8 +71,8 @@ Trenches categories match GMGN's documented lifecycle `new_creation → near_com
 | `migrated_pool` | token info | empty | **empty** for the two recent ones; present for the older one, equal to its trenches `pool_address` |
 
 What this shows (6 tokens, one read; not a distribution):
-- **`launchpad_status` is not a stable migration indicator.** `skills/gmgn-token/SKILL.md:166` documents `0` not opened, `1` live, `2` migrated. Token info read `2` shortly after completion and `1` a few minutes later, while trenches read `1`.
-- **The new pool can appear in token info later than the completion time.** Here it was missing 39–54 s after completion and present at 232 s.
+- **`launchpad_status` is not a stable migration indicator.** `skills/gmgn-token/SKILL.md:166` documents `0` not opened, `1` live, `2` migrated. In this cross-sectional sample (three different tokens, each read once), token info showed `2` for the two completed 39 s and 54 s earlier and `1` for the one completed 232 s earlier, while trenches showed `1` for all three. No same-token sequence was observed.
+- **The new pool can appear in token info later than the completion time.** It was missing for the two tokens read 39–54 s after completion, and present for the one read 232 s after.
 - **What the lifecycle interface requires.** `jinx/core/lifecycle.py`, tested, enforces this:
   - A migration is confirmed only with the destination pool, the destination venue and the provider's migration time.
   - Post-migration market data is accepted only after that confirmation.
@@ -127,6 +127,6 @@ GMGN's limit is a leaky bucket per API key: 20 weight refilled per second, at mo
 
 This run spent 84 weight over 28 calls with no waiting.
 
-If GMGN still answers with a rate-limit ban, the adapter stops sending on the key until GMGN's reset time instead of extending the ban (`docs/GMGN_ADAPTER_CONTRACT.md` §4, "Bans").
+If GMGN still answers with a rate-limit ban, the adapter stops sending new requests on the key until GMGN's reset time (or GMGN's documented 5-minute maximum when no reset time is given) instead of extending the ban (`docs/GMGN_ADAPTER_CONTRACT.md` §4, "Bans").
 
 Budget arithmetic (cost per second of polling one route once per second): trenches 2, signals 1, Smart Money 1, KOL 1, trending 3, follow-wallet 10. For example, trenches + signals + Smart Money + KOL every second costs 5/s and leaves 15/s for per-token lookups (info/security/pool cost 1 each, holders/traders 5 each). The actual allocation is a Phase 2 plan item for owner approval, not a Phase 1 decision.

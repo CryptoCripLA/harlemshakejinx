@@ -30,8 +30,10 @@ MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 # GMGN rate-limit errors that cover the whole API key (skills/gmgn-token/SKILL.md:68-76). Requests sent during the
 # cooldown extend the ban, so after one of these JINX sends nothing until the reset time.
 RATE_LIMIT_ERRORS = {"RATE_LIMIT_EXCEEDED", "RATE_LIMIT_BANNED", "RATE_LIMIT_BANNED_MAX", "ERROR_RATE_LIMIT_BLOCKED"}
-# When GMGN gives no reset time: its documented ban step, "extend the ban by 5 seconds each time".
-BAN_STEP_S = 5
+# When GMGN gives no reset time at all (neither the X-RateLimit-Reset header nor the body's reset_at): wait out
+# its documented maximum ban, "up to 5 minutes" (skills/gmgn-token/SKILL.md:73-76). GMGN's 5 s is the step a
+# request sent during a ban adds, not the ban's length, so a shorter guess could extend the ban.
+UNKNOWN_BAN_PAUSE_S = 300
 
 
 class GmgnError(Exception):
@@ -166,7 +168,7 @@ class GmgnAdapter:
             err = msg.get("error") or {}
             text = f"{err.get('code')}: {err.get('message')}"
             if err.get("api_error") in RATE_LIMIT_ERRORS:
-                reset = err.get("reset_at") or self._wall() + BAN_STEP_S
+                reset = err.get("reset_at") or self._wall() + UNKNOWN_BAN_PAUSE_S
                 self.paused_until = max(self.paused_until or 0, reset)
                 self.stats["rate_limited"] += 1
                 raise GmgnRateLimited(f"{err.get('api_error')}: {text}", self.paused_until)
@@ -181,6 +183,8 @@ class GmgnAdapter:
 
     async def _send(self, method: str, args) -> dict:
         gen = await self._ensure_running()
+        if not method.startswith("__"):
+            self._refuse_while_banned()   # last check, with no await between it and the write below
         req_id = next(self._ids)
         fut = asyncio.get_running_loop().create_future()
         gen.pending[req_id] = fut

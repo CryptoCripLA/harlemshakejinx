@@ -97,19 +97,29 @@ await adapter.stop()
 
 **Bans:**
 - GMGN documents that requests sent during a rate-limit cooldown extend the ban by 5 s each, up to 5 minutes. On `RATE_LIMIT_BANNED_MAX` it says to stop all calls until the reset time (`skills/gmgn-token/SKILL.md:68-76`).
-- The pinned client retries once by itself only when the reset is under 5 s (`OpenApiClient.ts::getRateLimitRetryDelayMs`).
-- For any longer ban the adapter records `paused_until`: GMGN's `X-RateLimit-Reset`, or now + 5 s, GMGN's documented ban step, when no reset time is given. Every call on the key, any route, then raises `GmgnRateLimited` without sending until that time.
+- The pinned client's own retry is not used. The bridge runs it with GMGN's setting `GMGN_RATE_LIMIT_AUTO_RETRY_MAX_WAIT_MS=0`. In the pinned build the retry never fires anyway, because `executePreparedRequest` returns `parseResponse` without `await` inside its `try`.
+- On any ban the adapter records `paused_until`. Its value, in order of preference:
+  - GMGN's `X-RateLimit-Reset` header;
+  - the body's `reset_at`, which the bridge copies into that header when only the body has it;
+  - with neither, now + 300 s, GMGN's documented maximum ban. GMGN's 5 s is the extension step, not the ban's length.
+- Every call on the key, any route, then raises `GmgnRateLimited` until that time. The ban is checked before the budget wait, after it, and again after the bridge is ready, immediately before the request is written with no await in between.
+- A request already written to the bridge when the ban arrives cannot be recalled.
 - Tested against GMGN's real compiled client and a fake server: `tests/test_gmgn_rate_limit.py`.
 
 **Health:** `bridge` (`up`/`down`), `configured`, `signing`, call/error/restart/oversize/rate-limited counters, `plan`, `budget` (`weight_spent`, `waited_s`, `calls`), `paused_until`, and `rate_limit` (GMGN's own headers).
 
 ## 5. Lifecycle evidence mapping (interface in Phase 1, translation built in Phase 2)
 
-`jinx/core/lifecycle.py` keeps one state machine per mint: `UNKNOWN → NEWLY_DETECTED → ON_BONDING_CURVE → APPROACHING_GRADUATION → MIGRATION_OBSERVED → MIGRATION_CONFIRMED → POST_MIGRATION_MARKET`, plus the exceptional states `STALE` and `CONFLICTING`. Failures are recorded without a state change.
+`jinx/core/lifecycle.py` keeps one state machine per mint: `UNKNOWN → NEWLY_DETECTED → ON_BONDING_CURVE → APPROACHING_GRADUATION → MIGRATION_OBSERVED → MIGRATION_CONFIRMED → POST_MIGRATION_MARKET`, plus the exceptional states `STALE`, `FAILED` and `CONFLICTING`. A failed observation moves the token to `FAILED` once; every failure is listed in `failures`, and the next accepted consistent evidence returns the token to its last consistent state.
 
 The rules are tested in `tests/test_lifecycle.py`:
-- every transition keeps its source, observation time and event time;
-- a late report of an earlier fact never moves the state;
+- every transition keeps its source, observation time, event time and evidence payload;
+- ordering is per fact, because reports carry different clocks (curve reads carry the read time, migration reports the provider's migration time). A report is late when it is:
+  - older than the latest accepted report of its own kind;
+  - curve data no newer than the observed migration;
+  - a backward curve move with older evidence than the one that set the current stage.
+- A late report never moves the state, never replaces a recorded value and never refreshes freshness. A migration indexed after a newer curve read is still recognized (round 9 H1);
+- a recorded value is replaced only by newer evidence for that value, so a delayed report can fill in what is missing;
 - a repeated report makes no second transition;
 - newer evidence that contradicts a migration becomes `CONFLICTING`;
 - `STALE` is declared by the caller's own age limit;
@@ -129,7 +139,7 @@ Phase 2 translates provider data into `Evidence` exactly as below. The categorie
 | GMGN error, timeout or 429 | `record_failure` | — | reason |
 | token missing from a query result | nothing | — | there is deliberately no evidence kind for absence or for price |
 
-`launchpad_status` alone never confirms a migration. In the recorded sample it read `2` shortly after completion and `1` minutes later, while the trenches route read `1` (inventory §3). It is recorded as payload only.
+`launchpad_status` alone never confirms a migration. In the recorded sample (different tokens, read once), token info showed `2` for tokens completed under a minute earlier and `1` for one completed about four minutes earlier, while the trenches route showed `1` for all three (inventory §3). It is recorded as payload only.
 
 `migrated_pool` can still be empty after `complete_timestamp` is set. Until it appears, the token stays MIGRATION_OBSERVED.
 
