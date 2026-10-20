@@ -118,8 +118,8 @@ def test_unfilled_paper_reservation_is_released_and_unfinished_exit_returns_to_o
     set_mode(s, Mode.AUTO)
     set_entry_slots(s, 2, owner_order=True)
     led = PositionLedger(s)
-    stuck_open = led.reserve_entry("I1", "A").position_id
-    exiting = led.reserve_entry("I2", "B").position_id
+    stuck_open = led.reserve_entry("I1", "A", budget_lamports=100).position_id
+    exiting = led.reserve_entry("I2", "B", budget_lamports=100).position_id
     led.record_buy_fill(exiting, Fill("F2", Side.BUY, 10, 100, 1, 5, True, 1))
     led.begin_exit(exiting, "X2")
     report = recover(s, core, led, PaperWallet(s, 1_000))

@@ -32,6 +32,17 @@ class Status(StrEnum):
 ACTIVE = (Status.PENDING_OPEN, Status.OPEN, Status.PENDING_CLOSE)
 
 
+class FillConflict(Exception):
+    """A fill id was reused with different contents: an id collision, not a replay."""
+
+
+def _check_int(name: str, value, minimum: int) -> None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{name} must be an int, got {type(value).__name__}")
+    if value < minimum:
+        raise ValueError(f"{name} must be >= {minimum}, got {value}")
+
+
 @dataclass(frozen=True)
 class Fill:
     fill_id: str
@@ -42,6 +53,18 @@ class Fill:
     network_fee_lamports: int
     simulated: bool
     ts_ns: int
+
+    def __post_init__(self) -> None:
+        if not self.fill_id:
+            raise ValueError("fill needs an id")
+        _check_int("token_amount", self.token_amount, 1)
+        _check_int("sol_lamports", self.sol_lamports, 0)
+        _check_int("protocol_fee_lamports", self.protocol_fee_lamports, 0)
+        _check_int("network_fee_lamports", self.network_fee_lamports, 0)
+
+    def row(self, position_id: int) -> tuple:
+        return (position_id, self.side.value, self.token_amount, self.sol_lamports, self.protocol_fee_lamports,
+                self.network_fee_lamports, int(self.simulated))
 
 
 @dataclass(frozen=True)
@@ -55,6 +78,7 @@ class Result:
 class Position:
     position_id: int
     entry_intent_id: str
+    entry_budget_lamports: int
     exit_intent_id: str | None
     mint: str
     status: Status
@@ -92,12 +116,15 @@ class PositionLedger:
         return self.store.conn.execute(q, [s.value for s in ACTIVE]).fetchone()[0]
 
     # ---- entry --------------------------------------------------------
-    def reserve_entry(self, intent_id: str, mint: str, simulated: bool = True) -> Result:
+    def reserve_entry(self, intent_id: str, mint: str, budget_lamports: int, simulated: bool = True) -> Result:
+        _check_int("budget_lamports", budget_lamports, 1)
         with self.store.transaction() as c:
-            existing = c.execute("SELECT position_id FROM positions WHERE entry_intent_id = ?",
-                                 (intent_id,)).fetchone()
+            existing = c.execute("SELECT position_id, mint, entry_budget_lamports FROM positions"
+                                 " WHERE entry_intent_id = ?", (intent_id,)).fetchone()
             if existing:
-                return Result(True, existing[0], "SAME_INTENT")
+                if (existing["mint"], existing["entry_budget_lamports"]) != (mint, budget_lamports):
+                    return Result(False, existing["position_id"], "INTENT_CONFLICT")
+                return Result(True, existing["position_id"], "SAME_INTENT")
             if not entries_allowed(get_mode(self.store)):
                 return Result(False, None, "MODE_OFF")
             limit = self.max_slots()
@@ -109,18 +136,20 @@ class PositionLedger:
                 return Result(False, None, "DUPLICATE_POSITION")
             if self.active_slots() >= limit:
                 return Result(False, None, "SLOT_LIMIT")
-            cur = c.execute("INSERT INTO positions (entry_intent_id, mint, status, simulated, opened_ns)"
-                            " VALUES (?,?,?,?,?)", (intent_id, mint, Status.PENDING_OPEN.value, int(simulated),
-                                                    self.clock_ns()))
+            cur = c.execute("INSERT INTO positions (entry_intent_id, entry_budget_lamports, mint, status, simulated,"
+                            " opened_ns) VALUES (?,?,?,?,?,?)", (intent_id, budget_lamports, mint,
+                                                                 Status.PENDING_OPEN.value, int(simulated),
+                                                                 self.clock_ns()))
             return Result(True, cur.lastrowid)
 
     def record_buy_fill(self, position_id: int, fill: Fill) -> None:
         if fill.side is not Side.BUY:
             raise ValueError("record_buy_fill needs a BUY fill")
         with self.store.transaction() as c:
-            pos = self._require(position_id, (Status.PENDING_OPEN, Status.OPEN))
-            if not self._insert_fill(c, position_id, fill):
+            if self._is_replay(c, position_id, fill):
                 return
+            pos = self._require(position_id, (Status.PENDING_OPEN, Status.OPEN))
+            self._insert_fill(c, position_id, fill)
             c.execute("UPDATE positions SET status=?, token_amount=token_amount+?, cost_lamports=cost_lamports+?,"
                       " protocol_fees_lamports=protocol_fees_lamports+?, network_fees_lamports=network_fees_lamports+?"
                       " WHERE position_id=?", (Status.OPEN.value, fill.token_amount, fill.sol_lamports,
@@ -133,14 +162,30 @@ class PositionLedger:
                       (Status.FAILED.value, self.clock_ns(), reason, position_id))
 
     # ---- exit ---------------------------------------------------------
+    def bind_exit_intent(self, intent_id: str, position_id: int, token_amount: int | None) -> str:
+        """Bind an exit intent id to one position and amount: NEW, SAME (a replay) or CONFLICT."""
+        with self.store.transaction() as c:
+            row = c.execute("SELECT position_id, token_amount FROM exit_intents WHERE intent_id = ?",
+                            (intent_id,)).fetchone()
+            if row is None:
+                c.execute("INSERT INTO exit_intents (intent_id, position_id, token_amount, created_ns)"
+                          " VALUES (?,?,?,?)", (intent_id, position_id, token_amount, self.clock_ns()))
+                return "NEW"
+            return "SAME" if (row["position_id"], row["token_amount"]) == (position_id, token_amount) else "CONFLICT"
+
+    def has_fill(self, fill_id: str) -> bool:
+        return self.store.conn.execute("SELECT 1 FROM fills WHERE fill_id = ?", (fill_id,)).fetchone() is not None
+
     def begin_exit(self, position_id: int, intent_id: str) -> Result:
-        """Take exit ownership. Never blocked by mode or slot limits."""
+        """Take exit ownership. Never blocked by mode or slot limits; one exit owner at a time."""
         with self.store.transaction() as c:
             pos = self.get(position_id)
             if pos is None:
                 return Result(False, position_id, "UNKNOWN_POSITION")
             if pos.status is Status.PENDING_CLOSE:
-                return Result(True, position_id, "ALREADY_EXITING")
+                if pos.exit_intent_id == intent_id:
+                    return Result(True, position_id, "ALREADY_EXITING")
+                return Result(False, position_id, "EXIT_IN_PROGRESS")
             if pos.status is not Status.OPEN:
                 return Result(False, position_id, f"NOT_OPEN:{pos.status}")
             c.execute("UPDATE positions SET status=?, exit_intent_id=? WHERE position_id=?",
@@ -158,9 +203,9 @@ class PositionLedger:
         if fill.side is not Side.SELL:
             raise ValueError("record_sell_fill needs a SELL fill")
         with self.store.transaction() as c:
-            pos = self._require(position_id, (Status.PENDING_CLOSE,))
-            if c.execute("SELECT 1 FROM fills WHERE fill_id = ?", (fill.fill_id,)).fetchone():
+            if self._is_replay(c, position_id, fill):
                 return
+            pos = self._require(position_id, (Status.PENDING_CLOSE,))
             if fill.token_amount > pos.token_amount:
                 raise ValueError(f"sell of {fill.token_amount} exceeds held {pos.token_amount}")
             self._insert_fill(c, position_id, fill)
@@ -174,10 +219,11 @@ class PositionLedger:
                           (Status.CLOSED.value, proceeds, fill.protocol_fee_lamports, network,
                            proceeds - pos.cost_lamports - network, self.clock_ns(), position_id))
             else:
-                c.execute("UPDATE positions SET token_amount=?, proceeds_lamports=?,"
+                # a partial sell completes this exit intent; the position is OPEN again for the next exit
+                c.execute("UPDATE positions SET status=?, exit_intent_id=NULL, token_amount=?, proceeds_lamports=?,"
                           " protocol_fees_lamports=protocol_fees_lamports+?, network_fees_lamports=?"
                           " WHERE position_id=?",
-                          (remaining, proceeds, fill.protocol_fee_lamports, network, position_id))
+                          (Status.OPEN.value, remaining, proceeds, fill.protocol_fee_lamports, network, position_id))
 
     # ---- reads --------------------------------------------------------
     def get(self, position_id: int) -> Position | None:
@@ -201,7 +247,20 @@ class PositionLedger:
         return pos
 
     @staticmethod
-    def _insert_fill(c, position_id: int, fill: Fill) -> bool:
+    def _is_replay(c, position_id: int, fill: Fill) -> bool:
+        """True if this exact fill was already applied; FillConflict if the id was used for something else."""
+        row = c.execute("SELECT position_id, side, token_amount, sol_lamports, protocol_fee_lamports,"
+                        " network_fee_lamports, simulated FROM fills WHERE fill_id = ?", (fill.fill_id,)).fetchone()
+        if row is None:
+            return False
+        if tuple(row) != fill.row(position_id):
+            raise FillConflict(f"fill id {fill.fill_id} already used with different contents")
+        return True
+
+    @classmethod
+    def _insert_fill(cls, c, position_id: int, fill: Fill) -> bool:
+        if cls._is_replay(c, position_id, fill):
+            return False
         cur = c.execute("INSERT OR IGNORE INTO fills (fill_id, position_id, side, token_amount, sol_lamports,"
                         " protocol_fee_lamports, network_fee_lamports, simulated, ts_ns) VALUES (?,?,?,?,?,?,?,?,?)",
                         (fill.fill_id, position_id, fill.side.value, fill.token_amount, fill.sol_lamports,

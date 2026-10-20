@@ -68,6 +68,14 @@ def sell_proceeds(v_sol: int, v_tokens: int, amount: int, total_fee_bps: int) ->
     return max(gross - fee, 0), fee
 
 
+def buy_fill_id(position_id: int, intent_id: str) -> str:
+    return f"p{position_id}:{intent_id}:buy"
+
+
+def sell_fill_id(position_id: int, intent_id: str) -> str:
+    return f"p{position_id}:{intent_id}:sell"
+
+
 class InsufficientBalance(Exception):
     pass
 
@@ -137,7 +145,7 @@ class PaperExecutor:
         tokens = curve_tokens_out(tok.v_sol_lamports, tok.v_tokens, curve_sol)
         if tokens == 0:
             return self._fail_open(position_id, "ZERO_FILL")
-        fill = Fill(f"{intent_id}:buy", Side.BUY, tokens, budget_lamports, budget_lamports - curve_sol,
+        fill = Fill(buy_fill_id(position_id, intent_id), Side.BUY, tokens, budget_lamports, budget_lamports - curve_sol,
                     self.network_fee, simulated=True, ts_ns=self.clock_ns())
         with self.store.transaction():
             self.wallet.apply(fill.fill_id, -(budget_lamports + self.network_fee), f"paper buy {mint}", fill.ts_ns)
@@ -152,7 +160,7 @@ class PaperExecutor:
             return ExecResult(False, position_id, "NO_QUOTE")
         amount = pos.token_amount if token_amount is None else token_amount
         net, fee = sell_proceeds(tok.v_sol_lamports, tok.v_tokens, amount, self.fees.total_bps)
-        fill = Fill(f"{intent_id}:sell", Side.SELL, amount, net, fee, self.network_fee, simulated=True,
+        fill = Fill(sell_fill_id(position_id, intent_id), Side.SELL, amount, net, fee, self.network_fee, simulated=True,
                     ts_ns=self.clock_ns())
         try:
             with self.store.transaction():

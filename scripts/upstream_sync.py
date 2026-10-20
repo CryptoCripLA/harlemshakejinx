@@ -64,10 +64,12 @@ def verify(name: str, pin: dict) -> list[str]:
     if _git(dest, "status", "--porcelain", "--untracked-files=no"):
         problems.append(f"{name}: tracked upstream files were modified")
     if pin["license_file"]:
-        lic = dest / pin["license_file"]
-        if not lic.exists():
+        # Hash the committed bytes, not the working copy: git may check text out with CRLF (Windows).
+        blob = subprocess.run(["git", "-C", str(dest), "show", f"HEAD:{pin['license_file']}"],
+                              capture_output=True)
+        if blob.returncode != 0:
             problems.append(f"{name}: license file {pin['license_file']} missing")
-        elif hashlib.sha256(lic.read_bytes()).hexdigest() != pin["license_sha256"]:
+        elif hashlib.sha256(blob.stdout).hexdigest() != pin["license_sha256"]:
             problems.append(f"{name}: license file changed from the pinned hash")
     return problems
 

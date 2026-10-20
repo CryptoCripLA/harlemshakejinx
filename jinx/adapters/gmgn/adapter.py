@@ -17,6 +17,9 @@ from typing import Any
 
 BRIDGE = Path(__file__).with_name("bridge.mjs")
 PASSED_VARS = ("GMGN_API_KEY", "GMGN_PRIVATE_KEY", "JINX_GMGN_HOST")
+# Response-size contract: one JSON reply per line, at most this many bytes. A larger reply fails that request
+# with RESPONSE_TOO_LARGE and the bridge is restarted on the next call.
+MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 
 
 class GmgnError(Exception):
@@ -31,18 +34,23 @@ class GmgnAdapter:
     name = "gmgn"
 
     def __init__(self, build_dir: Path, env: dict[str, str] | None = None, home: Path | None = None,
-                 node: str = "node", timeout_s: float = 15.0) -> None:
+                 node: str = "node", timeout_s: float = 15.0, max_response_bytes: int = MAX_RESPONSE_BYTES,
+                 auto_restart: bool = True) -> None:
         self.build_dir = Path(build_dir)
         self.env = env
         self.home = home
         self.node = node
         self.timeout_s = timeout_s
+        self.max_response_bytes = max_response_bytes
+        self.auto_restart = auto_restart
+        self._started = False
+        self._reader_failed = False
         self._proc: asyncio.subprocess.Process | None = None
         self._pending: dict[int, asyncio.Future] = {}
         self._ids = itertools.count(1)
         self._stderr_tail: deque[str] = deque(maxlen=20)
         self._tasks: list[asyncio.Task] = []
-        self.stats = {"calls": 0, "errors": 0, "unavailable": 0}
+        self.stats = {"calls": 0, "errors": 0, "unavailable": 0, "oversized": 0, "restarts": 0}
 
     def child_env(self) -> dict[str, str]:
         source = self.env if self.env is not None else os.environ
@@ -52,16 +60,20 @@ class GmgnAdapter:
         return env
 
     async def start(self) -> None:
+        self._reader_failed = False
         self._proc = await asyncio.create_subprocess_exec(
             self.node, str(BRIDGE), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE, env=self.child_env())
+            stderr=asyncio.subprocess.PIPE, env=self.child_env(), limit=self.max_response_bytes)
         self._tasks = [asyncio.create_task(self._read_stdout()), asyncio.create_task(self._read_stderr())]
+        self._started = True
 
     @property
     def running(self) -> bool:
-        return self._proc is not None and self._proc.returncode is None
+        return self._proc is not None and self._proc.returncode is None and not self._reader_failed
 
     async def call(self, method: str, *args: Any) -> Any:
+        if not self.running and self.auto_restart and self._started:
+            await self._restart()
         if not self.running:
             self.stats["unavailable"] += 1
             raise GmgnUnavailable("GMGN bridge is not running")
@@ -104,9 +116,32 @@ class GmgnAdapter:
         for t in self._tasks:
             t.cancel()
 
+    async def _restart(self) -> None:
+        if self._proc is not None and self._proc.returncode is None:
+            self._proc.kill()
+            await self._proc.wait()
+        for t in self._tasks:
+            t.cancel()
+        self.stats["restarts"] += 1
+        await self.start()
+
+    def _fail_pending(self, exc: Exception) -> None:
+        for fut in self._pending.values():
+            if not fut.done():
+                fut.set_exception(exc)
+
     async def _read_stdout(self) -> None:
+        proc = self._proc
         while True:
-            line = await self._proc.stdout.readline()
+            try:
+                line = await proc.stdout.readline()
+            except (ValueError, asyncio.LimitOverrunError):
+                # a reply longer than the size contract: fail what is waiting and retire this bridge
+                self.stats["oversized"] += 1
+                self._reader_failed = True
+                self._fail_pending(GmgnError(f"RESPONSE_TOO_LARGE: reply exceeded {self.max_response_bytes} bytes"))
+                proc.kill()
+                return
             if not line:
                 break
             try:
@@ -116,9 +151,7 @@ class GmgnAdapter:
             fut = self._pending.get(msg.get("id"))
             if fut and not fut.done():
                 fut.set_result(msg)
-        for fut in self._pending.values():
-            if not fut.done():
-                fut.set_exception(GmgnUnavailable("GMGN bridge exited"))
+        self._fail_pending(GmgnUnavailable("GMGN bridge exited"))
 
     async def _read_stderr(self) -> None:
         while True:

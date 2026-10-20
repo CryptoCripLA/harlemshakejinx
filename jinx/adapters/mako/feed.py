@@ -12,6 +12,8 @@ initial buy) and does not send trade subscriptions that would be rejected.
 """
 from __future__ import annotations
 
+import asyncio
+import logging
 import time
 from collections import OrderedDict
 from pathlib import Path
@@ -20,13 +22,15 @@ from jinx.adapters.mako.loader import load_mako
 from jinx.adapters.mako.normalize import SOURCE, MalformedMessage, normalize
 from jinx.core.bus import EventBus
 
+log = logging.getLogger(__name__)
+
 
 class MakoPumpPortalFeed:
     name = SOURCE
 
     def __init__(self, bus: EventBus, upstream_root: Path, ws_url: str | None = None,
                  max_watched_tokens: int = 300, clock_ns=time.time_ns, tap=None, api_key: str | None = None,
-                 subscribe_trades: bool | None = None) -> None:
+                 subscribe_trades: bool | None = None, retry_initial_s: float = 0.05, retry_max_s: float = 5.0) -> None:
         mods = load_mako(upstream_root)
         base = ws_url or mods.default_ws_url
         # PumpPortalStream.connect() reads this module global; tests point it at a local server.
@@ -40,9 +44,10 @@ class MakoPumpPortalFeed:
         self.stream = mods.pumpportal.PumpPortalStream()
         self.stream.on_new_token(self._on_message)
         self.stream.on_token_trade(self._on_message)
+        self.retry_initial_s, self.retry_max_s = retry_initial_s, retry_max_s
         self._watched: OrderedDict[str, None] = OrderedDict()
-        self.stats = {"received": 0, "malformed": 0, "published": 0, "duplicates": 0,
-                      "subscribed": 0, "unsubscribed": 0, "last_message_ns": None}
+        self.stats = {"received": 0, "malformed": 0, "published": 0, "duplicates": 0, "publish_retries": 0,
+                      "ingest_stalled": False, "subscribed": 0, "unsubscribed": 0, "last_message_ns": None}
 
     async def run(self) -> None:
         await self.stream.connect()
@@ -59,12 +64,27 @@ class MakoPumpPortalFeed:
             self.stats["malformed"] += 1
             return
         for ev in events:
-            if await self.bus.publish(ev):
-                self.stats["published"] += 1
-            else:
-                self.stats["duplicates"] += 1
+            await self._publish_durably(ev)
         if data.get("txType") == "create" and self.subscribe_trades:
             await self._watch(events[0].mint)
+
+    async def _publish_durably(self, ev) -> None:
+        """Keep retrying until the event is durably admitted. Mako's dispatcher swallows handler errors, so
+        giving up here would lose the event; holding here backpressures the feed instead, and health shows it."""
+        delay = self.retry_initial_s
+        while True:
+            try:
+                admitted = await self.bus.publish(ev)
+            except Exception:
+                self.stats["publish_retries"] += 1
+                self.stats["ingest_stalled"] = True
+                log.exception("could not store %s; retrying in %.2fs", ev.idempotency_key, delay)
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, self.retry_max_s)
+                continue
+            self.stats["ingest_stalled"] = False
+            self.stats["published" if admitted else "duplicates"] += 1
+            return
 
     async def _watch(self, mint: str) -> None:
         if mint in self._watched:

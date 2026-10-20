@@ -40,8 +40,10 @@ class JinxApp:
         self.capture_path = capture_path
         self.ws_url = ws_url
         self._capture = None
-        self._tasks: list[asyncio.Task] = []
+        self._tasks: dict[str, asyncio.Task] = {}
         self._server = None
+        self.status_errors = 0
+        self.task_restarts: dict[str, int] = {}
 
     async def start(self) -> None:
         s = self.s
@@ -67,9 +69,9 @@ class JinxApp:
         self.datanomad = DataNomadResearchAdapter(s.upstream_dir / "datanomad")
         if (s.gmgn_build_dir / "dist" / "client" / "OpenApiClient.js").exists():
             await self.gmgn.start()
-        self._tasks = [asyncio.create_task(self.bus.run(), name="bus"),
-                       asyncio.create_task(self.feed.run(), name="mako-feed"),
-                       asyncio.create_task(self._status_loop(), name="status")]
+        self._tasks = {"bus": asyncio.create_task(self.bus.run(), name="bus"),
+                       "mako-feed": asyncio.create_task(self.feed.run(), name="mako-feed"),
+                       "status": asyncio.create_task(self._status_loop(), name="status")}
         self._server = await asyncio.start_server(self._http, "0.0.0.0", s.http_port)
         log.info("JINX up: db=%s port=%s mode=%s", s.db_path, s.http_port, (await self.health())["mode"])
 
@@ -99,26 +101,47 @@ class JinxApp:
         finally:
             writer.close()
 
-    async def _status_loop(self) -> None:
+    async def _status_loop(self, interval_s: float = 60) -> None:
+        """Retry failed applies, supervise runtime tasks and log status. A failing tick never ends the loop."""
         while True:
-            await asyncio.sleep(60)
-            healed = self.core.apply_pending()  # retries events whose apply failed; exactly-once guarded
-            if healed:
-                log.warning("re-applied %s stored events that had failed to apply", healed)
-            h = await self.health()
-            log.info("status=%s events=%s tokens=%s feed=%s latency=%s", h["status"], h["store"]["events"],
-                     len(self.core.tokens), {k: h["adapters"][0].get(k) for k in ("connected", "received", "malformed")},
-                     h["ingest_to_state_ms"])
+            await asyncio.sleep(interval_s)
+            try:
+                await self._status_tick()
+            except Exception:
+                self.status_errors += 1
+                log.exception("status tick failed; will retry next interval")
+
+    async def _status_tick(self) -> None:
+        self._supervise()
+        healed = self.core.apply_pending()  # retries events whose apply failed; exactly-once guarded
+        if healed:
+            log.warning("re-applied %s stored events that had failed to apply", healed)
+        h = await self.health()
+        log.info("status=%s events=%s unapplied=%s tokens=%s feed=%s latency=%s", h["status"], h["store"]["events"],
+                 h["store"]["unapplied"], len(self.core.tokens),
+                 {k: h["adapters"][0].get(k) for k in ("connected", "received", "malformed", "ingest_stalled")},
+                 h["ingest_to_state_ms"])
+
+    def _supervise(self) -> None:
+        """Restart the bus or feed task if it ended unexpectedly (an exception, not a cancel)."""
+        starters = {"bus": lambda: self.bus.run(), "mako-feed": lambda: self.feed.run()}
+        for name, start in starters.items():
+            task = self._tasks.get(name)
+            if task is None or not task.done() or task.cancelled():
+                continue
+            log.error("task %s ended unexpectedly (%r); restarting", name, task.exception())
+            self._tasks[name] = asyncio.create_task(start(), name=name)
+            self.task_restarts[name] = self.task_restarts.get(name, 0) + 1
 
     async def stop(self) -> None:
-        for t in self._tasks:
-            if t.get_name() != "bus":
+        for name, t in self._tasks.items():
+            if name != "bus":
                 t.cancel()
         try:
             await asyncio.wait_for(self.bus.drain(), 10)
         except asyncio.TimeoutError:
             log.warning("bus did not drain in 10s; unapplied events will be replayed on next start")
-        for t in self._tasks:
+        for t in self._tasks.values():
             t.cancel()
         if self._server:
             self._server.close()

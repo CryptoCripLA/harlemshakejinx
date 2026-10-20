@@ -6,6 +6,17 @@ SolChad's owner-supplied blueprint governs this rebuild. Claude implements the a
 
 Owner directive, 2026-10-19. New canonical repository: https://github.com/CryptoCripLA/harlemshakejinx
 
+## OWNER DIRECTIVE — GMGN IS THE TRADING PLATFORM, JINX IS THE INTELLIGENCE (2026-10-20)
+
+**GMGN IS OUR TRADING PLATFORM. JINX IS THE INTELLIGENCE.** JINX hunts, qualifies, sizes and decides when to exit (HEAR CHATTER → SIZE → FIRE → EXIT). GMGN supplies its supported token intelligence, smart-money and wallet data, execution routing, orders, hosted wallet and protective order functions. Full map: `docs/INTEGRATION_MAP.md`.
+- **Two separate arrangements.** (1) GMGN native copy trading runs on GMGN's platform for wallet-following; do not rebuild it in JINX. (2) The JINX CHAD engine decides token, entry, allocation and exit, and sends supported trading instructions through GMGN's execution interface.
+- **No duplicated execution infrastructure.** Before building any execution component, verify what GMGN already provides. Reuse GMGN for order construction, routing, submission, percentage sells, protective orders and confirmation. D3AD-E stays an isolated, pinned donor only for components GMGN does not provide. Never build two competing live execution controllers. Never place duplicate protective sells through both JINX and GMGN.
+- **Records.** JINX keeps its own authoritative decision and reconciliation records. For GMGN-placed orders, GMGN's confirmed execution results are the external source of truth.
+- **Runtime.** GMGN does not run arbitrary custom code; JINX needs its own runtime. Use the minimum suitable existing environment (currently jinx-nyc, whose IP is on GMGN's trusted list). Do not provision additional services without a demonstrated need and owner approval.
+- **Data first from GMGN.** Before asking the owner to buy PumpPortal, Helius or ShredStream access, check whether GMGN supplies the signal data at sufficient speed and granularity. Where it cannot, document the exact limitation and the minimum additional feed. Never claim the token-creation feed supports three-wallet momentum detection.
+- **Priority: hunting logic.** The remaining work is the CHAD intelligence that recognizes opportunities before they are obvious. It runs as background capabilities supporting ONE coordinated entry-and-exit path, not separate bot runtimes. No invented CHAD strategies, weights or thresholds.
+- **Honest test labels.** Accounting-consistency checks are not trading performance. Local event-processing time is not order-execution latency. Later phases test complete CHAD decision paths against real observations, including delayed execution, available liquidity, costs, adverse moves and confirmed simulated exits. **Net profit after costs is the performance objective.** Never present paper results as realized live profit.
+
 ## PRIORITY ZERO — PROFITS. PROFITS. PROFITS.
 **JINX EXISTS TO MAKE MONEY: MAXIMUM REALIZED NET SOL PROFIT.** The number-one trading priority is identifying actual early explosive moves, entering early at executable prices, sizing intelligently, firing rapidly, riding genuine momentum, and exiting to REALIZE NET SOL. Every line of code and every engineering action must answer: **HOW DOES THIS HELP JINX MAKE MORE REALIZED NET SOL?** Paper profits, backtest winnings, submitted orders, win-rate vanity, and transaction counts are not realized profits. Show real outcomes accurately; no one can guarantee a winning trade.
 

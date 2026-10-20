@@ -5,7 +5,8 @@ Each entry: what is blocked, the evidence, what is needed, and one reversible op
 ## B-01 PumpPortal trade stream needs a funded API key (blocks live trades in Phase 1 capture; needed for Phase 2 signals)
 - Evidence: PumpPortal replied on 2026-10-20: "'subscribeTokenTrade' and 'subscribeAccountTrade' methods are only available when connecting with an API key funded with at least 0.02 SOL." Mako's `pumpportal.py` predates this and assumes free trade streams.
 - Effect now: the live feed carries token creations only (each including the creator's initial buy). Health reports `trade_stream: BLOCKED`.
-- Needed: an owner decision to create a PumpPortal API key and fund it with 0.02 SOL. This is spending, so it waits for the owner.
+- GMGN checked first (owner directive 2026-10-20): GMGN's API is polled request/response with plan rate limits. It gives aggregates (swaps, holders, curve progress) and smart-money/KOL trade lists, but no per-buy stream with the fee-payer wallet and time. It cannot drive CHAD's "3 buys · 3 unique wallets · 30-second window" trigger. See `docs/INTEGRATION_MAP.md` §4.
+- Needed: an owner decision to create a PumpPortal API key and fund it with at least 0.02 SOL. Usage then costs 0.01 SOL per 10,000 trades streamed (pumpportal.fun/fees, read 2026-10-20). This is spending, so it waits for the owner. It is the minimum additional feed and plugs into the Mako stream JINX already runs.
 - Reversible option: set `PUMPPORTAL_API_KEY`; the feed then subscribes every new mint's trades automatically. Unset it to return to creations only.
 
 ## B-02 CHAD contradicts itself on the Early Momentum curve gate
@@ -27,17 +28,20 @@ safety 0–100 formula and pass threshold; momentum "stall" and "sustained volum
 - Needed: a Telegram account/API credentials for JINX and the owner's list of alpha groups.
 
 ## B-07 Helius gRPC (CHAD Bot 5 and Bot 10 "on-chain gRPC stream")
-- Needed: a Helius plan with gRPC access (paid). Alternative trade source: B-01.
+- CHAD names Helius gRPC. GMGN gives curve progress only by polling (`launchpad_progress`). The PumpPortal trade stream (B-01) carries curve reserves on every trade, which covers the same data without Helius.
+- Needed: the owner's choice between Helius (paid) as CHAD names it, or B-01's stream as the source of curve data.
 
 ## B-08 GMGN API key
 - Status: key pair generated on jinx-nyc, public key handed to the owner, trusted IP 45.77.159.191. Waiting for the owner to create the key; then `gmgn-cli config --apply` and live verification.
 - Effect now: the GMGN adapter is built and contract-tested against a fake GMGN server; live calls report NOT_CONFIGURED.
 
-## B-09 Codex review cannot run from jinx-nyc yet
-- `codex` 0.163.0 is installed but not logged in. Needed: the owner runs `codex login` on jinx-nyc once.
+## B-09 Codex on jinx-nyc
+- `codex` 0.163.0 on jinx-nyc is not logged in. The Phase 1 review instead ran on the owner's Windows PC, where Codex (0.160.0) is logged in, against a clean clone of the GitHub repo plus the pinned upstreams. For future reviews from jinx-nyc, the owner runs `codex login` there once.
 
-## B-10 Railway provisioning
-- The repo has a Dockerfile, and the engine serves `/health` on `$PORT`. No Railway project, service or volume has been created. Needed: owner confirmation to create them (it costs money). For JINX to trade through GMGN from Railway, the service also needs static outbound IPs (Railway Pro) added to GMGN's trusted IP list.
+## B-10 Runtime host
+- GMGN does not host custom code (its docs describe agents running on the customer's machine and calling the API), so JINX needs its own runtime.
+- Under the owner's "minimum suitable existing environment" rule, that is jinx-nyc. It already runs the engine and holds the GMGN request key, and 45.77.159.191 is the trusted IP given to GMGN.
+- Railway is not provisioned. It would need a demonstrated need, owner approval, and paid static outbound IPs (Pro) added to GMGN's trusted list. The repo's Dockerfile and `railway.json` stay ready but unused.
 
 ## B-11 DataNomad license
 - No license file at the pinned commit; README names none. Code stays reference-only unless the author grants permission.
@@ -45,5 +49,13 @@ safety 0–100 formula and pass threshold; momentum "stall" and "sustained volum
 ## B-12 Live pump.fun fee rates (Phase 3)
 - Paper fills use D3AD's recorded mainnet values (95 + 5 bps). Phase 3 must read the live values from the pump.fun global account.
 
-## B-13 D3AD fast path prerequisites (Phase 3)
-- D3AD's shred-sniper consumes Jito ShredStream through its proxy. Needed in Phase 3: ShredStream access and a funded trading wallet, both owner decisions.
+## B-13 D3AD fast path (superseded 2026-10-20)
+- GMGN executes orders, so D3AD's ShredStream-based sender is not wired and ShredStream access is not requested. D3AD stays a pinned donor for pieces GMGN does not provide.
+
+## B-14 Separate GMGN wallets for native copy trading and JINX
+- If GMGN native copy trading and JINX share one GMGN wallet, copy-trade positions land in JINX's reconciliation and use up the owner's one-slot limit.
+- Needed: the owner confirms JINX gets its own GMGN wallet (the API key binds to one wallet).
+
+## B-15 GMGN plan tier sets JINX's polling budget
+- GMGN rate limits per plan: Free 5/5, Plus 20/20, Pro 50/50 weight per second. 1-second candles are Pro only.
+- Needed: the plan on the owner's account, readable through `getUserInfo` once the API key exists.

@@ -181,7 +181,9 @@ class FakeGmgn(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         FakeGmgn.seen.append({"path": u.path, "query": parse_qs(u.query), "apikey": self.headers.get("X-APIKEY"),
                               "signature": self.headers.get("X-Signature")})
-        body = json.dumps({"code": 0, "data": {"address": parse_qs(u.query).get("address", [None])[0]}}).encode()
+        address = parse_qs(u.query).get("address", [None])[0]
+        data = {"address": address, "blob": "x" * 70_000} if address == "BIG" else {"address": address}
+        body = json.dumps({"code": 0, "data": data}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
@@ -262,7 +264,7 @@ def test_gmgn_bridge_crash_is_reported_not_propagated(tmp_path):
     from jinx.adapters.gmgn.adapter import GmgnAdapter, GmgnUnavailable
 
     async def main():
-        a = GmgnAdapter(ROOT / "build" / "gmgn", env={"GMGN_API_KEY": "k"}, home=tmp_path)
+        a = GmgnAdapter(ROOT / "build" / "gmgn", env={"GMGN_API_KEY": "k"}, home=tmp_path, auto_restart=False)
         await a.start()
         a._proc.kill()
         await a._proc.wait()
@@ -308,6 +310,39 @@ def test_pumpportal_key_is_used_for_the_connection_but_never_reported():
     from jinx.adapters.mako.loader import load_mako
     assert load_mako(ROOT / "upstream" / "mako").pumpportal.PUMPPORTAL_WS_URL.endswith("?api-key=SECRETKEY")
     MakoPumpPortalFeed(EventBus(), ROOT / "upstream" / "mako")  # reset the module URL for later tests
+
+
+@needs_bridge
+def test_gmgn_large_response_is_delivered(fake_gmgn, tmp_path):
+    from jinx.adapters.gmgn.adapter import GmgnAdapter
+
+    async def main():
+        a = GmgnAdapter(ROOT / "build" / "gmgn", env={"GMGN_API_KEY": "k", "JINX_GMGN_HOST": fake_gmgn}, home=tmp_path)
+        await a.start()
+        try:
+            return await a.call("getTokenInfo", "sol", "BIG")
+        finally:
+            await a.stop()
+    assert len(asyncio.run(main())["blob"]) == 70_000
+
+
+@needs_bridge
+def test_gmgn_oversized_response_fails_cleanly_and_the_bridge_recovers(fake_gmgn, tmp_path):
+    from jinx.adapters.gmgn.adapter import GmgnAdapter, GmgnError
+
+    async def main():
+        a = GmgnAdapter(ROOT / "build" / "gmgn", env={"GMGN_API_KEY": "k", "JINX_GMGN_HOST": fake_gmgn},
+                        home=tmp_path, max_response_bytes=4096, timeout_s=10)
+        await a.start()
+        try:
+            with pytest.raises(GmgnError, match="RESPONSE_TOO_LARGE"):
+                await a.call("getTokenInfo", "sol", "BIG")
+            small = await a.call("getTokenInfo", "sol", "SMALL")   # the bridge restarts on demand
+            return small, a.stats
+        finally:
+            await a.stop()
+    small, stats = asyncio.run(main())
+    assert small == {"address": "SMALL"} and stats["oversized"] == 1 and stats["restarts"] == 1
 
 
 def test_gmgn_adapter_passes_only_its_own_variables_to_the_bridge(tmp_path, monkeypatch):

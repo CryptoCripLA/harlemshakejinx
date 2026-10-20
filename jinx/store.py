@@ -86,14 +86,15 @@ CREATE TABLE IF NOT EXISTS wallets (
 CREATE TABLE IF NOT EXISTS positions (
     position_id INTEGER PRIMARY KEY AUTOINCREMENT,
     entry_intent_id TEXT NOT NULL UNIQUE,
+    entry_budget_lamports INTEGER NOT NULL CHECK (entry_budget_lamports > 0),
     exit_intent_id TEXT,
     mint TEXT NOT NULL,
     status TEXT NOT NULL,
-    token_amount INTEGER NOT NULL DEFAULT 0,
-    cost_lamports INTEGER NOT NULL DEFAULT 0,
-    proceeds_lamports INTEGER NOT NULL DEFAULT 0,
-    protocol_fees_lamports INTEGER NOT NULL DEFAULT 0,
-    network_fees_lamports INTEGER NOT NULL DEFAULT 0,
+    token_amount INTEGER NOT NULL DEFAULT 0 CHECK (token_amount >= 0),
+    cost_lamports INTEGER NOT NULL DEFAULT 0 CHECK (cost_lamports >= 0),
+    proceeds_lamports INTEGER NOT NULL DEFAULT 0 CHECK (proceeds_lamports >= 0),
+    protocol_fees_lamports INTEGER NOT NULL DEFAULT 0 CHECK (protocol_fees_lamports >= 0),
+    network_fees_lamports INTEGER NOT NULL DEFAULT 0 CHECK (network_fees_lamports >= 0),
     realized_pnl_lamports INTEGER,
     simulated INTEGER NOT NULL,
     opened_ns INTEGER NOT NULL,
@@ -105,12 +106,18 @@ CREATE TABLE IF NOT EXISTS fills (
     fill_id TEXT PRIMARY KEY,
     position_id INTEGER NOT NULL REFERENCES positions(position_id),
     side TEXT NOT NULL,
-    token_amount INTEGER NOT NULL,
-    sol_lamports INTEGER NOT NULL,
-    protocol_fee_lamports INTEGER NOT NULL,
-    network_fee_lamports INTEGER NOT NULL,
+    token_amount INTEGER NOT NULL CHECK (token_amount > 0),
+    sol_lamports INTEGER NOT NULL CHECK (sol_lamports >= 0),
+    protocol_fee_lamports INTEGER NOT NULL CHECK (protocol_fee_lamports >= 0),
+    network_fee_lamports INTEGER NOT NULL CHECK (network_fee_lamports >= 0),
     simulated INTEGER NOT NULL,
     ts_ns INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS exit_intents (
+    intent_id TEXT PRIMARY KEY,
+    position_id INTEGER NOT NULL REFERENCES positions(position_id),
+    token_amount INTEGER CHECK (token_amount IS NULL OR token_amount > 0),
+    created_ns INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS paper_wallet (

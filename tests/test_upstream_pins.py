@@ -62,3 +62,14 @@ def test_verify_detects_wrong_commit_and_changed_license(tmp_path, monkeypatch):
     assert any("pinned" in p for p in upstream_sync.verify("fake", wrong))
     changed = dict(pin, license_sha256="0" * 64)
     assert any("license" in p for p in upstream_sync.verify("fake", changed))
+
+
+def test_license_check_uses_committed_content_not_platform_line_endings(tmp_path, monkeypatch):
+    # On Windows, git checks text files out with CRLF; the pinned license is still unchanged.
+    repo, pin = _fake_upstream(tmp_path)
+    monkeypatch.setattr(upstream_sync, "UPSTREAM_DIR", tmp_path / "upstream")
+    subprocess.run(["git", "-C", str(repo), "config", "core.autocrlf", "true"], check=True)
+    (repo / "LICENSE").unlink()
+    subprocess.run(["git", "-C", str(repo), "checkout", "--", "LICENSE"], check=True)  # a real CRLF checkout
+    assert (repo / "LICENSE").read_bytes() == b"MIT License\r\n"
+    assert upstream_sync.verify("fake", pin) == []

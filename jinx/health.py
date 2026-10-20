@@ -1,7 +1,8 @@
 """Integration health: one JSON document describing whether JINX is fit to run.
 
 failed   - the store is unhealthy or the paper wallet does not reconcile. Do not trade.
-degraded - running, but the live feed is down or stale, or the slot setting is unreadable.
+degraded - running, but the live feed is down, stale or stalled on writes, stored events are waiting
+           to be applied, or the slot setting is unreadable.
 ok       - everything checked is healthy.
 """
 from __future__ import annotations
@@ -32,10 +33,13 @@ def build_health(store: Store, ledger: PositionLedger, wallet: PaperWallet, adap
     feed_ok = bool(feeds) and all(f.get("connected") for f in feeds)
     if feed_ok and feed_stale_after_ns is not None:
         feed_ok = all(f.get("last_message_ns") and now_ns - f["last_message_ns"] <= feed_stale_after_ns for f in feeds)
+    if any(f.get("ingest_stalled") for f in feeds):
+        feed_ok = False
+    unapplied = len(store.unapplied_events())
     max_slots = ledger.max_slots()
     if not (store_ok and rec.ok):
         status = "failed"
-    elif feed_ok and max_slots is not None:
+    elif feed_ok and max_slots is not None and unapplied == 0:
         status = "ok"
     else:
         status = "degraded"
@@ -46,7 +50,7 @@ def build_health(store: Store, ledger: PositionLedger, wallet: PaperWallet, adap
         "slots": {"max": max_slots, "active": ledger.active_slots()},
         "paper_wallet": {"reconciled": rec.ok, "starting_lamports": rec.starting_lamports,
                          "balance_lamports": rec.balance_lamports},
-        "store": {"ok": store_ok, "events": store.event_count(), "unapplied": len(store.unapplied_events())},
+        "store": {"ok": store_ok, "events": store.event_count(), "unapplied": unapplied},
         "adapters": adapters,
         "bus": bus_stats,
         "ingest_to_state_ms": percentiles_ms(latency_ns or []),
