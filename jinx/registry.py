@@ -47,9 +47,12 @@ class TokenRegistry:
     def __init__(self, store: Store) -> None:
         self.store = store
         self.late_events = 0
-        self._tokens: dict[str, TokenState] = {}
-        for row in store.conn.execute(f"SELECT {', '.join(_TOKEN_COLS)} FROM tokens"):
-            self._tokens[row["mint"]] = TokenState(**dict(row))
+        self.reload()
+
+    def reload(self) -> None:
+        """Rebuild the in-memory view from committed state (after a restart or a rolled-back apply)."""
+        self._tokens = {row["mint"]: TokenState(**dict(row))
+                        for row in self.store.conn.execute(f"SELECT {', '.join(_TOKEN_COLS)} FROM tokens")}
 
     def get(self, mint: str) -> TokenState | None:
         return self._tokens.get(mint)
@@ -109,9 +112,11 @@ _WALLET_COLS = [f for f in WalletState.__dataclass_fields__]
 class WalletRegistry:
     def __init__(self, store: Store) -> None:
         self.store = store
-        self._wallets: dict[str, WalletState] = {}
-        for row in store.conn.execute(f"SELECT {', '.join(_WALLET_COLS)} FROM wallets"):
-            self._wallets[row["address"]] = WalletState(**dict(row))
+        self.reload()
+
+    def reload(self) -> None:
+        self._wallets = {row["address"]: WalletState(**dict(row))
+                         for row in self.store.conn.execute(f"SELECT {', '.join(_WALLET_COLS)} FROM wallets")}
 
     def get(self, address: str) -> WalletState | None:
         return self._wallets.get(address)

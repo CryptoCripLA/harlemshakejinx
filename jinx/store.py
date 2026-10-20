@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from jinx.core.events import MarketEvent
+from jinx.core.events import EventKind, MarketEvent, Side
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -180,6 +180,18 @@ class Store:
     def unapplied_events(self) -> list[sqlite3.Row]:
         return self.conn.execute(
             "SELECT * FROM events WHERE applied = 0 ORDER BY event_time_ns, seq").fetchall()
+
+    @staticmethod
+    def row_to_event(row: sqlite3.Row) -> MarketEvent:
+        return MarketEvent(kind=EventKind(row["kind"]), source=row["source"], mint=row["mint"],
+                           signature=row["signature"], recv_ns=row["recv_ns"], seq=row["seq"], trader=row["trader"],
+                           side=Side(row["side"]) if row["side"] else None, sol_lamports=row["sol_lamports"],
+                           token_amount=row["token_amount"], v_sol_lamports=row["v_sol_lamports"],
+                           v_tokens=row["v_tokens"], slot=row["slot"], block_time=row["block_time"],
+                           raw=json.loads(row["raw_json"]))
+
+    def quick_check(self) -> bool:
+        return self.conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
 
     def event_count(self) -> int:
         return self.conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]

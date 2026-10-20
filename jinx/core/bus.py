@@ -62,6 +62,10 @@ class EventBus:
     def next_seq(self) -> int:
         return next(self._seq)
 
+    def resume_after(self, last_seq: int) -> None:
+        """After a restart, continue numbering after the last stored event."""
+        self._seq = itertools.count(last_seq + 1)
+
     def subscribe(self, lane: Lane, handler: Handler, name: str | None = None) -> None:
         self._subs[lane].append((name or getattr(handler, "__qualname__", repr(handler)), handler))
 
