@@ -6,12 +6,12 @@ JINX reuses code only from upstreams whose license permits it. Upstream code sta
 |---|---|---|---|---|---|
 | GMGNAI/gmgn-skills | `402671e2ab8d` | MIT | (c) 2025 GMGN | Code. `src/client/OpenApiClient.ts` and `signer.ts` run unmodified behind `jinx/adapters/gmgn/` | none |
 | SalahMessaoud/mako | `45dadc03f84d` | MIT | (c) 2026 Mako Contributors | Code. `src/pumpportal.py::PumpPortalStream` (with `src/config.py`) runs unmodified behind `jinx/adapters/mako/` | none |
-| D3AD-E/Solana-sniper-bot | `a91ca33695ff` | Apache-2.0 (root and `shred-sniper/`) | not stated beyond the license template | Code, Phase 3 (execution). Phase 1 only pins and isolates it | none at this commit |
+| D3AD-E/Solana-sniper-bot | `a91ca33695ff` | Apache-2.0 (root and `shred-sniper/`) | not stated beyond the license template | Code. Phase 1 translates its bonding-curve math into `jinx/paper.py` (see `THIRD_PARTY_NOTICES.md`). Its sender/confirmation stack stays pinned and unwired while GMGN executes orders | none at this commit |
 | datanomadhq/kaggle-solana-sniper-bot | `b79c9bd147b4` | **None** (no license file; README names no license) | — | **Reference only.** No code copied until the author grants permission | — |
 
 Obligations:
-- MIT (GMGN, Mako): keep the copyright and permission notice with any copied or redistributed portion. The Docker image ships the upstream trees together with their `LICENSE` files.
-- Apache-2.0 (D3AD): keep the license, state changes to any modified file, and carry any NOTICE file (none exists at this commit).
+- MIT (GMGN, Mako): keep the copyright and permission notice with any copied or redistributed portion. The Docker image ships the upstream trees together with their `LICENSE` files. GMGN lines re-expressed in `bridge.mjs` are covered by `third_party/gmgn/LICENSE` and `THIRD_PARTY_NOTICES.md`.
+- Apache-2.0 (D3AD): keep the license, state changes to any modified file, and carry any NOTICE file (none exists at this commit). Done: `third_party/d3ad/LICENSE`, the change notice in `jinx/paper.py`, and `THIRD_PARTY_NOTICES.md`. All three ship in the Docker image. Checked by `tests/test_licenses.py`.
 - No license (DataNomad): all rights reserved by default. JINX may read it for methodology but must not copy or ship its code.
 
 ## JINX's own Python dependencies (`requirements.txt`)

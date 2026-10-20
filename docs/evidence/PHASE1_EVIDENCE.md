@@ -2,6 +2,11 @@
 
 Host `jinx-nyc` (outbound IP 45.77.159.191), Python 3.12.3, Node 22.23.3, rustc 1.99.0. All runs are paper mode. No real-money order path exists in this build.
 
+**How to read this file.**
+- The paper round trips establish **accounting consistency**: wallet, ledger and fees agree exactly on real captured prices. Entries were mechanical, not CHAD signals, so they say nothing about profitable entry or exit behavior.
+- Every millisecond figure is **local event processing inside JINX** (feed message received → stored and applied). None of them is order-execution latency, which is measured from Phase 3 on against GMGN's confirmed orders.
+- The live feed carried token creations only. It contains no external-wallet trades and **cannot** support CHAD's three-wallet momentum trigger (see `docs/INTEGRATION_MAP.md` §4).
+
 ## 1. Test suite
 
 `.venv/bin/python -m pytest` → see section 6 for the final count at the Phase 1 head.
@@ -64,12 +69,14 @@ Replay latency differs by mode. The batch modes push all 356 events at once, so 
 
 ## 6. Final state
 
-- Full suite at the commit that adds this section: **117 passed, 0 failed, 0 skipped** (`.venv/bin/python -m pytest`, 5.25 s). The rustc differential ran; it was not skipped.
-- `scripts/upstream_sync.py --verify`: all four upstreams OK.
+- Full suite at the round-1 fix head: **154 passed, 0 failed, 0 skipped** (`.venv/bin/python -m pytest`). This includes `tests/test_review_round1.py`, which reproduces each Codex round-1 failure, and `tests/test_licenses.py`. The rustc differential ran; it was not skipped.
+- 30-second live smoke run on the fixed code: status ok, 11 events stored and applied, 0 malformed, 0 write retries, ingestion not stalled, wallet reconciled. Local processing p50 0.29 ms.
+- `scripts/upstream_sync.py --verify`: all four upstreams OK, now including clean Windows CRLF checkouts.
+- Independent review:
+  - Round 1 (Codex, `1ad0d65`): FAIL, 9 findings, all fixed (`docs/audits/phase1-codex-20261020-round1.md`).
+  - Round 2: see `docs/audits/`.
 - Not verified, with reasons:
-  - Docker image build: atlasops has no Docker socket permission on jinx-nyc.
-  - Railway deploy: not authorized (B-10).
+  - Docker image build: no Docker permission on jinx-nyc.
   - Live GMGN API calls: no API key yet (B-08).
-  - Codex review: not logged in (B-09).
   - Other wallets' live trades: PumpPortal key not funded (B-01).
 - Nothing was deployed. No real-money order was or could be sent.

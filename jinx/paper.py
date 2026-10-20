@@ -10,6 +10,12 @@ belong to Phase 3.
 Known limitation: the PumpPortal feed carries only virtual reserves, not the
 curve's real token reserves, so the real-reserve cap in D3AD's
 `initial_buy_price` is not applied here (it only matters near graduation).
+
+Portions translated from D3AD-E/Solana-sniper-bot @ a91ca336 (Apache License 2.0;
+license in third_party/d3ad/LICENSE; see THIRD_PARTY_NOTICES.md). Changes from
+the original: translated from Rust to Python; `initial_buy_price` applied to the
+current reserves instead of the curve's initial reserves; the real-token cap
+made optional; `sell_proceeds` also returns the fee.
 """
 from __future__ import annotations
 

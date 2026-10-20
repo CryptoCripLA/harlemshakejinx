@@ -1,6 +1,8 @@
 # BUILD STATUS — harlemshakejinx
 
-**Current stage: Phase 1 built and tested. STOPPED at the Phase 1 approval gate.** No Phase 2 work starts without owner approval.
+**Current stage: Phase 1 built; owner provisionally accepted the foundation (2026-10-20). The gate stays open until the independent review passes. No Phase 2 work starts without owner approval.**
+
+How to read the numbers here: paper round trips prove **accounting consistency**, not trading performance. Sub-millisecond figures are **local event processing inside JINX** (feed message received → stored and applied), not order-execution latency. Execution latency is measured in Phase 3 against GMGN's confirmed orders.
 
 Status words: NOT STARTED / IN PROGRESS / TESTING / PASSED / FAILED / BLOCKED. Every PASSED row links to a test or recorded result. Evidence: `docs/evidence/PHASE1_EVIDENCE.md`. Mapping: `docs/SOURCE_FIDELITY_MATRIX.md`. Owner decisions: `docs/BLOCKERS.md`.
 
@@ -10,23 +12,24 @@ Status words: NOT STARTED / IN PROGRESS / TESTING / PASSED / FAILED / BLOCKED. E
 |---|---|---|---|---|
 | Application structure | PASSED | JINX | full suite | `jinx/`, `pyproject.toml` |
 | CLAUDE.md four-phase contract | PASSED | owner directive | — | `CLAUDE.md` |
-| 11 required skills | PASSED | user-global + repo `.claude/skills/` | — | loaded with the Skill tool on 2026-10-20; the repo hook finds all 11 files on jinx-nyc |
+| 11 required skills | PASSED | user-global + repo `.claude/skills/` | — | `docs/evidence/SKILLS_INVOCATION_20261020.md`: 11 Skill tool calls with ids, results and delivered bodies, parsed from the session transcript; the repo hook finds all 11 files on jinx-nyc |
 | Four upstreams pinned | PASSED | gmgn 402671e, mako 45dadc0, d3ad a91ca33, datanomad b79c9bd | `test_upstream_pins.py` | `UPSTREAM_PINS.json`; `upstream_sync.py --verify` OK |
 | License and dependency audit | PASSED | all four | `test_pins_cover_exactly_the_four_approved_repos` | `docs/LICENSES.md` (DataNomad unlicensed → reference only) |
 | Source isolation (four adapters) | PASSED | GMGN client, Mako stream; D3AD/DataNomad pinned | `test_adapters.py` (35) | live GMGN-bridge kill left ingestion running |
 | Typed events, dedup, idempotency | PASSED | JINX | `test_events.py`, `test_bus.py`, replay duplicate test | 113 injected duplicates refused on real data |
-| Event bus (fast + background lanes) | PASSED | JINX | `test_bus.py` (9) | no fast-lane drops; ~5,166 events/s capacity (synthetic) |
+| Event bus (fast + background lanes) | PASSED | JINX | `test_bus.py` | no fast-lane drops; local capacity ~5,166 events/s (synthetic load) |
 | Token and wallet registries | PASSED | JINX | `test_store_registry.py` (8) | shuffled real capture → identical state |
 | One authoritative position ledger | PASSED | JINX; owner one-slot rule | `test_ledger.py` (15) | slot 1 default, 2 by owner order, never 3 |
 | Persistent event and trade storage | PASSED | JINX (SQLite WAL) | store, ledger, recovery tests | live restart reloaded all 234 tokens |
 | AUTO/COPY/OFF | PASSED | owner contract | mode tests | default OFF; OFF never blocks exits |
-| Paper wallet and paper execution | PASSED | D3AD curve math (SRC lines) | `test_paper.py` (15) incl. rustc differential (2,002 cases) | 122 real-reserve round trips reconcile exactly |
+| GMGN-first execution ownership | PASSED (documented) | owner directive 2026-10-20 | — | `CLAUDE.md` section, `docs/INTEGRATION_MAP.md`, matrix section C. GMGN executes; JINX decides and reconciles; D3AD sender unwired |
+| Paper wallet and paper execution | PASSED | D3AD curve math (SRC lines) | `test_paper.py` incl. rustc differential (2,002 cases) | accounting consistency only: 122 mechanical round trips on real captured reserves reconcile to the lamport. They are not trading performance |
 | Restart recovery and health | PASSED | JINX | `test_recovery.py` (9) incl. hard kill | live restart: 0 replayed, sequence resumed at 357; `/health` 200 |
-| Live market ingestion | PASSED (creations only) | Mako `PumpPortalStream` | live runs | 234 creations / 15 min, 0 malformed, p50 0.22 ms |
+| Live market ingestion | PASSED (creations only) | Mako `PumpPortalStream` | live runs | 234 creations / 15 min, 0 malformed; local processing p50 0.22 ms (not execution latency). The creation-only feed cannot detect three-wallet momentum |
 | Live trades from other wallets | BLOCKED | PumpPortal needs a key funded with 0.02 SOL | — | B-01 |
 | GMGN live API access | BLOCKED | owner creating the API key | fake-server contract tests PASSED | B-08 |
-| Railway deploy | BLOCKED | needs owner approval; image not built (no Docker permission on jinx-nyc) | — | B-10; `Dockerfile`, `railway.json` |
-| Independent Codex review | BLOCKED | `codex login` not done on jinx-nyc | `scripts/codex_phase_review.sh 1` ready | B-09 |
+| Runtime host | jinx-nyc (existing) | GMGN does not host custom code; jinx-nyc is the minimum existing environment and the GMGN-trusted IP | — | B-10. Railway not provisioned; `Dockerfile`/`railway.json` ready but unused (image not built: no Docker permission) |
+| Independent Codex review | IN PROGRESS | Codex 0.160.0 on the owner's Windows PC (logged in), read-only, clean GitHub clone | round 1 on `1ad0d65`: FAIL, 9 findings | `docs/audits/phase1-codex-20261020-round1.md`; all 9 fixed with regression tests (`tests/test_review_round1.py`, `tests/test_licenses.py`); round 2 re-review pending |
 
 ## Phases 2–4
 

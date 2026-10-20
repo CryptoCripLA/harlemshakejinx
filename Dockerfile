@@ -17,7 +17,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Upstream trees ship with their LICENSE files (MIT obligations, see docs/LICENSES.md).
 COPY --from=upstream /app/upstream ./upstream
 COPY --from=upstream /app/build/gmgn ./build/gmgn
-COPY UPSTREAM_PINS.json ./
+COPY UPSTREAM_PINS.json THIRD_PARTY_NOTICES.md ./
+COPY third_party/ ./third_party/
 COPY jinx/ ./jinx/
 ENV JINX_DATA_DIR=/data PYTHONUNBUFFERED=1
 VOLUME /data

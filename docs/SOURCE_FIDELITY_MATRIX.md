@@ -10,7 +10,7 @@ Status values: `NOT STARTED / IN PROGRESS / TESTING / PASSED / FAILED / BLOCKED`
 |---|---|---|---|---|---|
 | F1 | Initialize application structure | — | `jinx/`, `pyproject.toml`, `requirements.txt` | full suite | PASSED |
 | F2 | Update CLAUDE.md | — | `CLAUDE.md` (four-phase mandate; stale Phase 1 line corrected) | — | PASSED |
-| F3 | Verify all eleven skills | — | session log, 2026-10-20 (all 11 loaded with the Skill tool; repo hook finds all 11 files on jinx-nyc) | — | PASSED |
+| F3 | Verify all eleven skills | — | `docs/evidence/SKILLS_INVOCATION_20261020.md` (11 Skill tool calls, results and delivered bodies from the session transcript); repo hook finds all 11 files on jinx-nyc | — | PASSED |
 | F4 | Clone and pin four source repos | all four | `UPSTREAM_PINS.json`, `scripts/upstream_sync.py` | `tests/test_upstream_pins.py` | PASSED |
 | F5 | Audit licensing and dependencies | all four | `docs/LICENSES.md` | `test_pins_cover_exactly_the_four_approved_repos` | PASSED (DataNomad: no license, reference only) |
 | F6 | Four isolated source adapters | gmgn `src/client/OpenApiClient.ts`, `signer.ts`; mako `src/pumpportal.py::PumpPortalStream`, `src/config.py`; d3ad and datanomad pinned only | `jinx/adapters/{gmgn,mako,d3ad,datanomad}/` | `tests/test_adapters.py` (isolation, fake-GMGN contract, local-websocket Mako run, crash containment) | PASSED |

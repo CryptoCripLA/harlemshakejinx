@@ -4,6 +4,10 @@
 //   {"id": 1, "method": "getTokenInfo", "args": ["sol", "<mint>"]}
 // Only read methods are enabled. Trading and state-changing methods are refused
 // before any request is made.
+//
+// Portions translated from GMGNAI/gmgn-skills @ 402671e (MIT License, Copyright (c) 2025 GMGN;
+// license in third_party/gmgn/LICENSE; see THIRD_PARTY_NOTICES.md): the escaped-newline handling
+// of the private key and the default API host, both from src/config.ts.
 import { createInterface } from "node:readline";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";

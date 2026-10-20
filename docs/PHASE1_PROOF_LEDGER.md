@@ -32,9 +32,9 @@ Owner-authorized Phase 1 only: install/locate the exact 11 Claude skills, bind o
 ## Review / release state
 - Source/commit inventory: VERIFIED via GitHub API.
 - Project hooks present: VERIFIED via GitHub API.
-- Hook runtime execution on actual Claude checkout: NOT YET TESTED.
-- Actual new Claude session invoking/reading all eleven: NOT YET TESTED.
-- Independent Codex/GPT read-only phase review: PENDING.
+- Hook runtime execution on actual Claude checkout: VERIFIED 2026-10-20 on jinx-nyc. `.claude/hooks/jinx-profit-reminder.sh session` found all 11 skill files with none missing; `superpowers:test-driven-development` resolved to the plugin cache, version 6.4.1.
+- Actual Claude session invoking/reading all eleven: VERIFIED 2026-10-20 for session `52e20eb1`. All 11 were invoked through the Skill tool and their bodies delivered; tool call ids and timestamps are in `docs/evidence/SKILLS_INVOCATION_20261020.md`. Each new session must invoke them again.
+- Independent Codex/GPT read-only phase review: round 1 FAIL (9 findings), `docs/audits/phase1-codex-20261020-round1.md`. Fixes and re-review are tracked in `BUILD_STATUS.md`.
 - Phase 1 owner acceptance: PENDING.
 - Market strategy implementation: NOT STARTED.
 - Live trading / GMGN connection: NOT CHANGED.
