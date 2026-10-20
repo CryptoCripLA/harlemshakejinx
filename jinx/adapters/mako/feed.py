@@ -3,7 +3,7 @@
 JINX registers only the new-token and token-trade handlers (not account-trade,
 which Mako fires for the same messages and would double them). Each new mint's
 trades are subscribed through Mako's subscribe_token; the watch list is bounded
-and the oldest mint is unsubscribed first.
+and the oldest mint that JINX does not hold is unsubscribed first.
 
 PumpPortal only streams token trades to connections that carry an API key
 funded with at least 0.02 SOL (server reply observed 2026-10-20), and charges
@@ -52,10 +52,12 @@ class MakoPumpPortalFeed:
         self.mode_provider = mode_provider                    # () -> Mode; None means no mode gating
         self.held_mints_provider = held_mints_provider or (lambda: set())
         self._watched: OrderedDict[str, None] = OrderedDict()
-        self._pending_unsub: set[str] = set()  # unsubscribes not yet confirmed sent; retried every sync
+        self._confirmed: set[str] = set()
+        self._pending_unsub: set[str] = set()
+        self._sub_lock = asyncio.Lock()
         self.stream.on_reconnect(self._on_reconnect)
         self.stats = {"received": 0, "malformed": 0, "published": 0, "duplicates": 0, "publish_retries": 0,
-                      "unsubscribe_failures": 0,
+                      "subscribe_failures": 0, "unsubscribe_failures": 0,
                       "ingest_stalled": False, "subscribed": 0, "unsubscribed": 0, "last_message_ns": None}
 
     async def run(self) -> None:
@@ -100,26 +102,42 @@ class MakoPumpPortalFeed:
             return False
         return self.mode_provider is None or str(self.mode_provider()) != "OFF"
 
+    # ---- paid trade subscriptions: reconcile wanted against confirmed ----------------------
+    # _watched    wanted creation mints, oldest first (bounded; only while paid subscriptions are allowed)
+    # held        mints with an open position: always wanted, never evicted (exit observation)
+    # _confirmed  mints whose subscribe was sent on the current connection and not since unsubscribed
+    # _pending_unsub  confirmed mints that are no longer wanted and whose unsubscribe has not been sent yet
+    # Every change goes through one locked reconcile, so a stale unsubscribe can never remove a mint that is
+    # wanted again: obsolete unsubscribes are cancelled before anything is sent.
+
     async def sync_subscriptions(self) -> None:
-        """Bring paid trade subscriptions in line with the mode: held mints always stay watched (exit
-        observation); everything else is dropped while the mode is OFF."""
         if not self.subscribe_trades:
             return
-        await self._flush_unsubscribes()
+        async with self._sub_lock:
+            await self._reconcile()
+
+    async def _reconcile(self) -> None:
         held = set(self.held_mints_provider())
-        for mint in held - set(self._watched):
-            await self._watch(mint, protected=True)
         if not self._paid_subscriptions_allowed():
             for mint in [m for m in self._watched if m not in held]:
-                await self._unwatch(mint)
-
-    async def _unwatch(self, mint: str) -> None:
-        self._watched.pop(mint, None)
-        self._pending_unsub.add(mint)
-        await self._flush_unsubscribes()
-
-    async def _flush_unsubscribes(self) -> None:
-        for mint in list(self._pending_unsub):
+                del self._watched[mint]
+        while len(self._watched) > self.max_watched:
+            evictable = next((m for m in self._watched if m not in held), None)
+            if evictable is None:
+                break  # every watched mint is a held position; never stop observing those
+            del self._watched[evictable]
+        wanted = set(self._watched) | held
+        self._pending_unsub = (self._pending_unsub | (self._confirmed - wanted)) - wanted
+        for mint in sorted(wanted - self._confirmed):
+            try:
+                await self.stream.subscribe_token(mint)
+            except Exception:
+                self.stats["subscribe_failures"] += 1
+                log.exception("subscribe of %s failed; will retry", mint)
+                continue
+            self._confirmed.add(mint)
+            self.stats["subscribed"] += 1
+        for mint in sorted(self._pending_unsub):
             try:
                 await self.stream.unsubscribe_token(mint)
             except Exception:
@@ -127,30 +145,28 @@ class MakoPumpPortalFeed:
                 log.exception("unsubscribe of %s failed; will retry", mint)
                 continue
             self._pending_unsub.discard(mint)
+            self._confirmed.discard(mint)
             self.stats["unsubscribed"] += 1
 
     async def _on_reconnect(self) -> None:
-        # a new connection carries only what Mako re-subscribed; nothing is left to unsubscribe from the old
-        # one, and the subscriptions are reconciled with the current mode and held positions
-        self._pending_unsub.clear()
-        await self.sync_subscriptions()
+        # Mako re-subscribed exactly its own token set on the new connection: that is now what is confirmed.
+        # Nothing is left to unsubscribe from the old connection; then reconcile with mode and held positions.
+        async with self._sub_lock:
+            self._confirmed = set(self.stream._watched_tokens)
+            self._pending_unsub = set()
+            await self._reconcile()
 
-    async def _watch(self, mint: str, protected: bool = False) -> None:
-        if mint in self._watched:
-            return
-        self._watched[mint] = None
-        await self.stream.subscribe_token(mint)
-        self.stats["subscribed"] += 1
-        held = set(self.held_mints_provider())
-        while len(self._watched) > self.max_watched:
-            evictable = next((m for m in self._watched if m not in held), None)
-            if evictable is None:
-                break  # every watched mint is a held position; never stop observing those
-            await self._unwatch(evictable)
+    async def _watch(self, mint: str) -> None:
+        async with self._sub_lock:
+            if mint not in self._watched:
+                self._watched[mint] = None
+            await self._reconcile()
 
     def health(self) -> dict:
         ws = self.stream.ws
         connected = ws is not None and getattr(ws, "close_code", None) is None
         return {"adapter": "mako", "source": SOURCE, "connected": connected, "ws_url": self.ws_url,
                 "trade_stream": "on" if self.subscribe_trades else "BLOCKED: PumpPortal API key funded with 0.02 SOL required",
-                "watched_tokens": len(self._watched), "pending_unsubscribes": len(self._pending_unsub), **self.stats}
+                "watched_tokens": len(self._watched), "pending_unsubscribes": len(self._pending_unsub),
+                "unconfirmed_subscriptions": len((set(self._watched) | set(self.held_mints_provider())) - self._confirmed)
+                if self.subscribe_trades else 0, **self.stats}

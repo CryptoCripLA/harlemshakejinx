@@ -42,6 +42,6 @@ def test_docker_image_includes_the_notices_and_licenses():
 
 def test_license_check_accepts_a_crlf_checkout(tmp_path):
     # simulate a Windows checkout of the vendored license
-    lf = (ROOT / "third_party" / "d3ad" / "LICENSE").read_bytes()
+    lf = (ROOT / "third_party" / "d3ad" / "LICENSE").read_bytes().replace(b"\r\n", b"\n")  # may already be CRLF
     crlf = lf.replace(b"\n", b"\r\n")
     assert hashlib.sha256(crlf.replace(b"\r\n", b"\n")).hexdigest() == PINS["d3ad"]["license_sha256"]

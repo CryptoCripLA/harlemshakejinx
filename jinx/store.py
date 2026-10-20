@@ -135,20 +135,29 @@ CREATE TABLE IF NOT EXISTS paper_wallet_entries (
 """
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 # v1 (up to commit 1ad0d65): no entry budget, no exit_intents, no amount CHECK constraints.
 # v2: positions.entry_budget_lamports (NULL = unknown for positions created by v1), exit_intents, CHECKs.
 # v3: exit_intents.legacy_fill_id; v1 sell fills ("<intent>:sell") become historical exit bindings, so a
 #     replayed pre-v2 exit is recognized instead of selling again.
+# v4: legacy sell fills are identified through durable exit bindings, not an id prefix (the v3 rule missed
+#     legacy intents whose id began with "p<position>:"); the backfill re-runs on every open.
 
 V2_POSITIONS = SCHEMA[SCHEMA.index("CREATE TABLE IF NOT EXISTS positions ("):SCHEMA.index("CREATE INDEX IF NOT EXISTS positions_active")]
 V2_FILLS = SCHEMA[SCHEMA.index("CREATE TABLE IF NOT EXISTS fills ("):SCHEMA.index("CREATE TABLE IF NOT EXISTS exit_intents")]
-# a fill id written by schema v2+ code is "p<position_id>:<intent>:<side>"; anything else on a sell is a v1 id
+# A sell fill is "modern" only if a non-legacy exit binding produced it: the v2+ gateway records the binding
+# (intent, position) in the same transaction as the claim, and names the fill "p<position>:<intent>:sell".
+# Every other sell fill predates schema v2 and becomes a historical binding keyed by its old id
+# ("<intent>:sell"), whatever that intent string looks like. Idempotent; runs on every open, which also
+# repairs databases that an earlier, prefix-based version of this rule had already marked v3.
 LEGACY_EXIT_BACKFILL = """
 INSERT OR IGNORE INTO exit_intents (intent_id, position_id, token_amount, created_ns, legacy_fill_id)
-SELECT substr(fill_id, 1, length(fill_id) - 5), position_id, NULL, ts_ns, fill_id
-FROM fills
-WHERE side = 'sell' AND fill_id LIKE '%:sell' AND fill_id NOT LIKE 'p' || position_id || ':%'
+SELECT substr(f.fill_id, 1, length(f.fill_id) - 5), f.position_id, NULL, f.ts_ns, f.fill_id
+FROM fills f
+WHERE f.side = 'sell' AND f.fill_id LIKE '%:sell'
+  AND NOT EXISTS (SELECT 1 FROM exit_intents e
+                  WHERE e.legacy_fill_id IS NULL AND e.position_id = f.position_id
+                    AND f.fill_id = 'p' || e.position_id || ':' || e.intent_id || ':sell')
 """
 
 
@@ -184,11 +193,10 @@ class Store:
         if version < 2 and "positions" in self._tables() and "entry_budget_lamports" not in self._columns("positions"):
             self._migrate_v1_to_v2()
         self.conn.executescript(SCHEMA)
-        if version < 3:
-            self._migrate_to_v3()
+        self._bind_legacy_exits()
         self.conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
-    def _migrate_to_v3(self) -> None:
+    def _bind_legacy_exits(self) -> None:
         with self.transaction() as c:
             if "legacy_fill_id" not in self._columns("exit_intents"):
                 c.execute("ALTER TABLE exit_intents ADD COLUMN legacy_fill_id TEXT")

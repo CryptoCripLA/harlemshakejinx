@@ -76,10 +76,24 @@ def test_paper_accounting_reconciles_on_real_reserves(tmp_path):
     assert 100 <= acc["flat_round_trip_cost_bps"]["min"] <= acc["flat_round_trip_cost_bps"]["max"] <= 400
 
 
+LOOPBACK = {"127.0.0.1", "::1", "localhost"}
+
+
 def test_replay_and_paper_execution_never_touch_the_network(tmp_path, monkeypatch):
-    def refuse(*a, **k):
-        raise AssertionError("network access during paper replay")
-    monkeypatch.setattr(socket.socket, "connect", refuse)
-    monkeypatch.setattr(socket, "create_connection", refuse)
+    # Loopback stays allowed: asyncio on Windows builds its internal socketpair over 127.0.0.1.
+    real_connect, real_create = socket.socket.connect, socket.create_connection
+
+    def guarded_connect(sock, address, *a, **k):
+        if isinstance(address, tuple) and address[0] not in LOOPBACK:
+            raise AssertionError(f"network access during paper replay: {address}")
+        return real_connect(sock, address, *a, **k)
+
+    def guarded_create(address, *a, **k):
+        if address[0] not in LOOPBACK:
+            raise AssertionError(f"network access during paper replay: {address}")
+        return real_create(address, *a, **k)
+
+    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
+    monkeypatch.setattr(socket, "create_connection", guarded_create)
     r = replay(RECORDS, tmp_path / "r.db", accounting_exercise=True)
     assert r.accounting["closed_round_trips"] > 0

@@ -69,14 +69,14 @@ Replay latency differs by mode. The batch modes push all 356 events at once, so 
 
 ## 6. Final state
 
-- Full suite at the round-3 fix head: **175 passed, 0 failed, 0 skipped** (`.venv/bin/python -m pytest`). This includes the round-1, round-2 and round-3 regression files and `tests/test_licenses.py`. The rustc differential ran; it was not skipped. The full suite was run by the builder on jinx-nyc; Codex's Windows runs covered selected tests only.
+- Full suite at the round-4 fix head: **180 passed, 0 failed, 0 skipped** (`.venv/bin/python -m pytest`). This includes the round-1 to round-4 regression files and `tests/test_licenses.py`. The rustc differential ran; it was not skipped. The full suite was run by the builder on jinx-nyc; Codex's Windows runs covered selected tests only.
 - 30-second live smoke run on the fixed code: status ok, 11 events stored and applied, 0 malformed, 0 write retries, ingestion not stalled, wallet reconciled. Local processing p50 0.29 ms.
 - `scripts/upstream_sync.py --verify`: all four upstreams OK, now including clean Windows CRLF checkouts.
 - Independent review:
   - Round 1 (Codex, `1ad0d65`): FAIL, 9 findings, all fixed (`docs/audits/phase1-codex-20261020-round1.md`).
   - Round 2 (Codex, `69111a2`): FAIL, 7 new findings (section 7).
-  - Round 3 (Codex, `e1c5b06`): FAIL, 3 findings, fixed but not yet re-reviewed (section 8).
-  - Round 4: see `docs/audits/`.
+  - Round 3 (Codex, `e1c5b06`): FAIL, 3 findings (section 8).
+  - Round 4 (Codex, `631da32`): FAIL, 1 high, 2 medium, 2 low; fixed by the builder, awaiting round 5 (section 9).
 - Not verified, with reasons:
   - Docker image build: no Docker permission on jinx-nyc.
   - Live GMGN API calls: no API key yet (B-08).
@@ -104,11 +104,11 @@ Live measurement after the round-2 fixes (`python -m jinx run --seconds 120`, 20
 
 ## 8. Review round 3 fixes
 
-Codex round 3 (`docs/audits/phase1-codex-20261020-round3.md`, on `e1c5b06`) returned FAIL. It confirmed B2, B3, B4, B7 and round-1 #4 and #5 fixed. B1, B5, B6 and round-1 #3 were partial, which led to three findings. Each fix below has a failing regression test first (`tests/test_review_round3.py`). These fixes have not been re-reviewed yet.
+Codex round 3 (`docs/audits/phase1-codex-20261020-round3.md`, on `e1c5b06`) returned FAIL. It confirmed B2, B3, B4, B7 and round-1 #4 and #5 fixed. B1, B5, B6 and round-1 #3 were partial, which led to three findings. Each fix below had a failing regression test first (`tests/test_review_round3.py`). Round 4 then confirmed R3-3 and B6 fixed and found R3-1 and R3-2 still partial (section 9).
 
 | Finding | Fix |
 |---|---|
-| R3-1 HIGH: a migrated pre-v2 partial exit could sell again | Schema v3 turns every pre-v2 sell fill into a historical exit binding (`exit_intents.legacy_fill_id`). A historical intent is accepted only as an unambiguous replay: same position and the same amount as its recorded fill, or a whole-position request whose fill closed the position. Anything else, including another position, is `INTENT_CONFLICT`. Its original requested amount was never stored, so it is not guessed. v2 databases from `e1c5b06` upgrade in place |
+| R3-1 HIGH: a migrated pre-v2 partial exit could sell again | Schema v3 turns pre-v2 sell fills into historical exit bindings (round 4: its id-prefix test missed legacy ids beginning `p<position>:`, see R4-1) (`exit_intents.legacy_fill_id`). A historical intent is accepted only as an unambiguous replay: same position and the same amount as its recorded fill, or a whole-position request whose fill closed the position. Anything else, including another position, is `INTENT_CONFLICT`. Its original requested amount was never stored, so it is not guessed. v2 databases from `e1c5b06` upgrade in place |
 | R3-2 MED: a failed OFF unsubscribe was forgotten | Unsubscribes wait in a pending set until sent, are retried on every sync, and show in health (`pending_unsubscribes`, status degraded). Mako's reconnect hook re-syncs subscriptions with the current mode and held positions |
 | R3-3 MED: failed applies counted as state latency | The bus samples latency only when every handler succeeds. Receive→state is now measured by the core state at the moment an event's state commits, so an event applied later by `apply_pending` is counted once, with its full wait |
 
@@ -119,4 +119,15 @@ Metric definitions after round 3 (local processing inside JINX, never execution 
 Live run after the round-3 fixes (`python -m jinx run --seconds 90`, 13 events, mode OFF): status ok, 0 handler errors, 0 unsent unsubscribes.
 - **Receive→state:** p50 0.60 ms, p95 0.92 ms.
 - **Admission→state:** p50 0.45 ms, p95 0.62 ms.
+
+## 9. Review round 4 fixes (awaiting re-review)
+
+Codex round 4 (`docs/audits/phase1-codex-20261020-round4.md`, on `631da32`) returned FAIL. It confirmed R3-3 and B6 fixed. R3-1, R3-2, B1, B5 and round-1 #3 were partial, plus the findings below. Each fix has a failing regression test first (`tests/test_review_round4.py`). **None of these is confirmed until the next independent review.**
+
+| Finding | Fix (builder) |
+|---|---|
+| R4-1 HIGH: the v3 migration took legacy ids beginning `p<position>:` for modern ones | Schema v4. A sell fill counts as modern only if a non-legacy exit binding produced it (same position, fill id `p<position>:<intent>:sell`). Every other sell fill becomes a historical binding under its own old id, whatever the id looks like. The backfill re-runs, idempotently, on every open, which also repairs databases an earlier build marked v3. Tests: Codex's exact `p1:X` reproduction, a repaired v3 database, and a check that modern fills are never turned into legacy bindings |
+| R4-2 MED: a retried unsubscribe could drop a mint that had become held | Paid subscriptions are one locked reconcile of wanted (watched creations plus held mints) against confirmed (sent on the current connection). Unsubscribes that are no longer wanted are cancelled before anything is sent. On reconnect, Mako's re-subscribed set becomes the confirmed state. Health reports `pending_unsubscribes` and `unconfirmed_subscriptions`. Test: Codex's exact 5-step sequence ends with the held mint still subscribed on the server |
+| R4-3 MED: completion claims ran ahead of the code | `BUILD_STATUS.md` and this file now separate what Codex confirmed from what awaits re-review |
+| LOW: Windows test portability | The license CRLF test normalizes first. The replay network guard allows loopback, which Windows asyncio uses for its internal socketpair |
 

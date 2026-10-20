@@ -29,7 +29,7 @@ Status words: NOT STARTED / IN PROGRESS / TESTING / PASSED / FAILED / BLOCKED. E
 | Live trades from other wallets | BLOCKED | PumpPortal needs a key funded with 0.02 SOL | — | B-01 |
 | GMGN live API access | BLOCKED | owner creating the API key | fake-server contract tests PASSED | B-08 |
 | Runtime host | jinx-nyc (existing) | GMGN does not host custom code; jinx-nyc is the minimum existing environment and the GMGN-trusted IP | — | B-10. Railway not provisioned; `Dockerfile`/`railway.json` ready but unused (image not built: no Docker permission) |
-| Independent Codex review | IN PROGRESS | Codex 0.160.0 on the owner's Windows PC (logged in), read-only, clean GitHub clone | Round 1 (`1ad0d65`): FAIL, 9 findings. Round 2 (`69111a2`): FAIL. 6 of the 9 confirmed fixed, 3 partial; 7 new (B1–B7). Round 3 (`e1c5b06`): FAIL. Confirmed fixed: B2, B3, B4, B7 and round-1 #4, #5. Partial: B1, B5, B6 and round-1 #3, which led to 3 findings (R3-1 HIGH, R3-2, R3-3). Those 3 are fixed with regression tests (`tests/test_review_round3.py`) and not yet re-reviewed | `docs/audits/phase1-codex-20261020-round{1,2,3}.md`; round 4 pending |
+| Independent Codex review | IN PROGRESS | Codex 0.160.0 on the owner's Windows PC (logged in), read-only, clean GitHub clone | Rounds 1–4 each returned FAIL. Confirmed fixed by Codex: round-1 #1, #2, #4, #5, #6, #7, #8, #9; B2, B3, B4, B6, B7; R3-3. Not yet confirmed: round-1 #3, B1, B5, R3-1, R3-2 (partial in round 4) and R4-1, R4-2, R4-3 (round 4). The builder has fixed these at the current head, each with a failing regression test first (`tests/test_review_round4.py`); they await round-5 re-review. Full findings in `docs/audits/phase1-codex-20261020-round{1,2,3,4}.md` | gate stays open until a round passes |
 
 ## Phases 2–4
 

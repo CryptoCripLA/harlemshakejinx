@@ -1,7 +1,8 @@
 """Integration health: one JSON document describing whether JINX is fit to run.
 
 failed   - the store is unhealthy or the paper wallet does not reconcile. Do not trade.
-degraded - running, but the live feed is down, stale, stalled on writes or has unsent unsubscribes,
+degraded - running, but the live feed is down, stale, stalled on writes, or has unsent unsubscribes or
+           unconfirmed wanted subscriptions,
            stored events are waiting
            to be applied, or the slot setting is unreadable.
 ok       - everything checked is healthy.
@@ -34,7 +35,8 @@ def build_health(store: Store, ledger: PositionLedger, wallet: PaperWallet, adap
     feed_ok = bool(feeds) and all(f.get("connected") for f in feeds)
     if feed_ok and feed_stale_after_ns is not None:
         feed_ok = all(f.get("last_message_ns") and now_ns - f["last_message_ns"] <= feed_stale_after_ns for f in feeds)
-    if any(f.get("ingest_stalled") or f.get("pending_unsubscribes") for f in feeds):
+    if any(f.get("ingest_stalled") or f.get("pending_unsubscribes") or f.get("unconfirmed_subscriptions")
+           for f in feeds):
         feed_ok = False
     unapplied = len(store.unapplied_events())
     max_slots = ledger.max_slots()
