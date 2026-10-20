@@ -76,24 +76,54 @@ def test_paper_accounting_reconciles_on_real_reserves(tmp_path):
     assert 100 <= acc["flat_round_trip_cost_bps"]["min"] <= acc["flat_round_trip_cost_bps"]["max"] <= 400
 
 
-LOOPBACK = {"127.0.0.1", "::1", "localhost"}
+def install_network_guard(monkeypatch) -> list:
+    """Refuse every socket connection except the one asyncio makes inside socket.socketpair() while creating
+    its event loop (on Windows socketpair is built over a loopback TCP connection). Returns the refused list."""
+    import threading
+    inside_socketpair = threading.local()
+    real_socketpair, real_connect = socket.socketpair, socket.socket.connect
+    refused = []
+
+    def socketpair(*a, **k):
+        inside_socketpair.on = True
+        try:
+            return real_socketpair(*a, **k)
+        finally:
+            inside_socketpair.on = False
+
+    def guarded_connect(sock, address, *a, **k):
+        if getattr(inside_socketpair, "on", False):
+            return real_connect(sock, address, *a, **k)
+        refused.append(address)
+        raise AssertionError(f"network access during paper replay: {address}")
+
+    def guarded_create(address, *a, **k):
+        refused.append(address)
+        raise AssertionError(f"network access during paper replay: {address}")
+
+    monkeypatch.setattr(socket, "socketpair", socketpair)
+    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
+    monkeypatch.setattr(socket, "create_connection", guarded_create)
+    return refused
 
 
 def test_replay_and_paper_execution_never_touch_the_network(tmp_path, monkeypatch):
-    # Loopback stays allowed: asyncio on Windows builds its internal socketpair over 127.0.0.1.
-    real_connect, real_create = socket.socket.connect, socket.create_connection
-
-    def guarded_connect(sock, address, *a, **k):
-        if isinstance(address, tuple) and address[0] not in LOOPBACK:
-            raise AssertionError(f"network access during paper replay: {address}")
-        return real_connect(sock, address, *a, **k)
-
-    def guarded_create(address, *a, **k):
-        if address[0] not in LOOPBACK:
-            raise AssertionError(f"network access during paper replay: {address}")
-        return real_create(address, *a, **k)
-
-    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
-    monkeypatch.setattr(socket, "create_connection", guarded_create)
+    refused = install_network_guard(monkeypatch)
     r = replay(RECORDS, tmp_path / "r.db", accounting_exercise=True)
     assert r.accounting["closed_round_trips"] > 0
+    assert refused == []
+
+
+def test_the_network_guard_refuses_loopback_application_connections(monkeypatch):
+    refused = install_network_guard(monkeypatch)
+    with pytest.raises(AssertionError):
+        socket.create_connection(("127.0.0.1", 8080))
+    s = socket.socket()
+    try:
+        with pytest.raises(AssertionError):
+            s.connect(("127.0.0.1", 8080))
+    finally:
+        s.close()
+    a, b = socket.socketpair()          # asyncio's internal pair is still allowed
+    a.close(); b.close()
+    assert refused == [("127.0.0.1", 8080), ("127.0.0.1", 8080)]

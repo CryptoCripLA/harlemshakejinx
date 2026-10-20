@@ -55,6 +55,7 @@ class MakoPumpPortalFeed:
         self._confirmed: set[str] = set()
         self._pending_unsub: set[str] = set()
         self._sub_lock = asyncio.Lock()
+        self._conn_seen = None
         self.stream.on_reconnect(self._on_reconnect)
         self.stats = {"received": 0, "malformed": 0, "published": 0, "duplicates": 0, "publish_retries": 0,
                       "subscribe_failures": 0, "unsubscribe_failures": 0,
@@ -117,6 +118,13 @@ class MakoPumpPortalFeed:
             await self._reconcile()
 
     async def _reconcile(self) -> None:
+        ws = self.stream.ws
+        if ws is not self._conn_seen:
+            # a new connection (including a clean reconnect, which Mako does not report): it carries exactly
+            # the tokens Mako re-subscribed, and nothing from the old connection is left to unsubscribe
+            self._conn_seen = ws
+            self._confirmed = set(self.stream._watched_tokens)
+            self._pending_unsub = set()
         held = set(self.held_mints_provider())
         if not self._paid_subscriptions_allowed():
             for mint in [m for m in self._watched if m not in held]:
@@ -127,6 +135,10 @@ class MakoPumpPortalFeed:
                 break  # every watched mint is a held position; never stop observing those
             del self._watched[evictable]
         wanted = set(self._watched) | held
+        # an unsubscribe that is wanted again is cancelled; its send may have failed after Mako had already
+        # dropped the mint from its own set, so subscribe it again to restore Mako's reconnect tracking
+        cancelled = self._pending_unsub & wanted
+        self._confirmed -= cancelled
         self._pending_unsub = (self._pending_unsub | (self._confirmed - wanted)) - wanted
         for mint in sorted(wanted - self._confirmed):
             try:
@@ -149,11 +161,8 @@ class MakoPumpPortalFeed:
             self.stats["unsubscribed"] += 1
 
     async def _on_reconnect(self) -> None:
-        # Mako re-subscribed exactly its own token set on the new connection: that is now what is confirmed.
-        # Nothing is left to unsubscribe from the old connection; then reconcile with mode and held positions.
+        # called by Mako after reconnecting from an error; _reconcile notices the new connection itself
         async with self._sub_lock:
-            self._confirmed = set(self.stream._watched_tokens)
-            self._pending_unsub = set()
             await self._reconcile()
 
     async def _watch(self, mint: str) -> None:

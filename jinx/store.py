@@ -111,7 +111,8 @@ CREATE TABLE IF NOT EXISTS fills (
     protocol_fee_lamports INTEGER NOT NULL CHECK (protocol_fee_lamports >= 0),
     network_fee_lamports INTEGER NOT NULL CHECK (network_fee_lamports >= 0),
     simulated INTEGER NOT NULL,
-    ts_ns INTEGER NOT NULL
+    ts_ns INTEGER NOT NULL,
+    exit_intent_id TEXT  -- provenance: the exit intent that produced this sell (NULL before schema v5)
 );
 CREATE TABLE IF NOT EXISTS exit_intents (
     intent_id TEXT PRIMARY KEY,
@@ -135,29 +136,28 @@ CREATE TABLE IF NOT EXISTS paper_wallet_entries (
 """
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 # v1 (up to commit 1ad0d65): no entry budget, no exit_intents, no amount CHECK constraints.
 # v2: positions.entry_budget_lamports (NULL = unknown for positions created by v1), exit_intents, CHECKs.
 # v3: exit_intents.legacy_fill_id; v1 sell fills ("<intent>:sell") become historical exit bindings, so a
 #     replayed pre-v2 exit is recognized instead of selling again.
 # v4: legacy sell fills are identified through durable exit bindings, not an id prefix (the v3 rule missed
 #     legacy intents whose id began with "p<position>:"); the backfill re-runs on every open.
+# v5: fills.exit_intent_id records provenance; sell fills without it are historical (the v4 rule trusted a
+#     binding, which a rejected attempt can leave behind).
 
 V2_POSITIONS = SCHEMA[SCHEMA.index("CREATE TABLE IF NOT EXISTS positions ("):SCHEMA.index("CREATE INDEX IF NOT EXISTS positions_active")]
 V2_FILLS = SCHEMA[SCHEMA.index("CREATE TABLE IF NOT EXISTS fills ("):SCHEMA.index("CREATE TABLE IF NOT EXISTS exit_intents")]
-# A sell fill is "modern" only if a non-legacy exit binding produced it: the v2+ gateway records the binding
-# (intent, position) in the same transaction as the claim, and names the fill "p<position>:<intent>:sell".
-# Every other sell fill predates schema v2 and becomes a historical binding keyed by its old id
-# ("<intent>:sell"), whatever that intent string looks like. Idempotent; runs on every open, which also
-# repairs databases that an earlier, prefix-based version of this rule had already marked v3.
+# Only a fill's own provenance proves which exit produced it: from schema v5 every sell fill records its
+# exit_intent_id in the same transaction. A sell fill without provenance (written before v5) is treated as
+# historical: it gets a binding under its own old id ("<intent>:sell" -> "<intent>"), so replaying that id
+# can never sell again. A binding alone proves nothing (a rejected attempt also leaves one). Idempotent;
+# runs on every open, which also repairs databases that earlier builds marked v3 or v4.
 LEGACY_EXIT_BACKFILL = """
 INSERT OR IGNORE INTO exit_intents (intent_id, position_id, token_amount, created_ns, legacy_fill_id)
-SELECT substr(f.fill_id, 1, length(f.fill_id) - 5), f.position_id, NULL, f.ts_ns, f.fill_id
-FROM fills f
-WHERE f.side = 'sell' AND f.fill_id LIKE '%:sell'
-  AND NOT EXISTS (SELECT 1 FROM exit_intents e
-                  WHERE e.legacy_fill_id IS NULL AND e.position_id = f.position_id
-                    AND f.fill_id = 'p' || e.position_id || ':' || e.intent_id || ':sell')
+SELECT substr(fill_id, 1, length(fill_id) - 5), position_id, NULL, ts_ns, fill_id
+FROM fills
+WHERE side = 'sell' AND exit_intent_id IS NULL AND fill_id LIKE '%:sell'
 """
 
 
@@ -200,6 +200,8 @@ class Store:
         with self.transaction() as c:
             if "legacy_fill_id" not in self._columns("exit_intents"):
                 c.execute("ALTER TABLE exit_intents ADD COLUMN legacy_fill_id TEXT")
+            if "exit_intent_id" not in self._columns("fills"):
+                c.execute("ALTER TABLE fills ADD COLUMN exit_intent_id TEXT")
             c.execute(LEGACY_EXIT_BACKFILL)
 
     def _tables(self) -> set[str]:
@@ -228,7 +230,10 @@ class Store:
                                     p.proceeds_lamports, p.protocol_fees_lamports, p.network_fees_lamports,
                                     p.realized_pnl_lamports, p.simulated, p.opened_ns, p.closed_ns, p.note
                              FROM positions_v1 p""")
-                c.execute("INSERT INTO fills SELECT * FROM fills_v1")
+                c.execute("INSERT INTO fills (fill_id, position_id, side, token_amount, sol_lamports,"
+                          " protocol_fee_lamports, network_fee_lamports, simulated, ts_ns)"
+                          " SELECT fill_id, position_id, side, token_amount, sol_lamports, protocol_fee_lamports,"
+                          " network_fee_lamports, simulated, ts_ns FROM fills_v1")
                 c.execute("DROP TABLE fills_v1")
                 c.execute("DROP TABLE positions_v1")
                 if c.execute("PRAGMA foreign_key_check").fetchall():

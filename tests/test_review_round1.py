@@ -59,7 +59,9 @@ def test_database_refuses_negative_fills_even_if_code_is_bypassed(rig):
     store.conn.execute("INSERT INTO positions (entry_intent_id, mint, status, simulated, opened_ns, entry_budget_lamports)"
                        " VALUES ('I','A','OPEN',1,1,1)")
     with pytest.raises(sqlite3.IntegrityError):
-        store.conn.execute("INSERT INTO fills VALUES ('F', 1, 'sell', -1000, 0, 0, 0, 1, 1)")
+        store.conn.execute("INSERT INTO fills (fill_id, position_id, side, token_amount, sol_lamports,"
+                           " protocol_fee_lamports, network_fee_lamports, simulated, ts_ns)"
+                           " VALUES ('F', 1, 'sell', -1000, 0, 0, 0, 1, 1)")
 
 
 def test_wallet_cannot_be_inflated_through_the_gateway(rig):

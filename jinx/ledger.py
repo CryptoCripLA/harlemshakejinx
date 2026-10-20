@@ -186,11 +186,18 @@ class PositionLedger:
                             (intent_id,)).fetchone()
             if row is not None and row["legacy_fill_id"]:
                 return self._legacy_exit_replay(c, row, pos, token_amount)
+            existing_fill = c.execute("SELECT exit_intent_id FROM fills WHERE fill_id = ?", (fill_id,)).fetchone()
             if row is not None:
                 if (row["position_id"], row["token_amount"]) != (position_id, token_amount):
                     return Result(False, position_id, "INTENT_CONFLICT")
-                if self.has_fill(fill_id):
-                    return Result(True, position_id, "ALREADY_APPLIED")
+                if existing_fill is not None:
+                    if existing_fill["exit_intent_id"] == intent_id:
+                        return Result(True, position_id, "ALREADY_APPLIED")
+                    # the fill under this id was not produced by this intent (or has no provenance): refuse
+                    return Result(False, position_id, "AMBIGUOUS_HISTORICAL_FILL")
+            elif existing_fill is not None:
+                # a new intent whose fill id is already taken by another fill: refuse before binding anything
+                return Result(False, position_id, "FILL_ID_COLLISION")
             if token_amount is not None and token_amount > pos.token_amount:
                 return Result(False, position_id, "EXCEEDS_POSITION")
             if pos.status is Status.PENDING_CLOSE:
@@ -258,7 +265,7 @@ class PositionLedger:
             pos = self._require(position_id, (Status.PENDING_CLOSE,))
             if fill.token_amount > pos.token_amount:
                 raise ValueError(f"sell of {fill.token_amount} exceeds held {pos.token_amount}")
-            self._insert_fill(c, position_id, fill)
+            self._insert_fill(c, position_id, fill, exit_intent_id=pos.exit_intent_id)
             remaining = pos.token_amount - fill.token_amount
             proceeds = pos.proceeds_lamports + fill.sol_lamports
             network = pos.network_fees_lamports + fill.network_fee_lamports
@@ -308,13 +315,15 @@ class PositionLedger:
         return True
 
     @classmethod
-    def _insert_fill(cls, c, position_id: int, fill: Fill) -> bool:
+    def _insert_fill(cls, c, position_id: int, fill: Fill, exit_intent_id: str | None = None) -> bool:
         if cls._is_replay(c, position_id, fill):
             return False
         cur = c.execute("INSERT OR IGNORE INTO fills (fill_id, position_id, side, token_amount, sol_lamports,"
-                        " protocol_fee_lamports, network_fee_lamports, simulated, ts_ns) VALUES (?,?,?,?,?,?,?,?,?)",
+                        " protocol_fee_lamports, network_fee_lamports, simulated, ts_ns, exit_intent_id)"
+                        " VALUES (?,?,?,?,?,?,?,?,?,?)",
                         (fill.fill_id, position_id, fill.side.value, fill.token_amount, fill.sol_lamports,
-                         fill.protocol_fee_lamports, fill.network_fee_lamports, int(fill.simulated), fill.ts_ns))
+                         fill.protocol_fee_lamports, fill.network_fee_lamports, int(fill.simulated), fill.ts_ns,
+                         exit_intent_id))
         return cur.rowcount == 1
 
 

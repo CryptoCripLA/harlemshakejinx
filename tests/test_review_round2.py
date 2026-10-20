@@ -54,7 +54,9 @@ def test_migrated_database_enforces_the_new_constraints(tmp_path):
     v1_database(path)
     s = Store(path)
     with pytest.raises(sqlite3.IntegrityError):
-        s.conn.execute("INSERT INTO fills VALUES ('bad', 1, 'sell', -5, 0, 0, 0, 1, 1)")
+        s.conn.execute("INSERT INTO fills (fill_id, position_id, side, token_amount, sol_lamports,"
+                       " protocol_fee_lamports, network_fee_lamports, simulated, ts_ns)"
+                       " VALUES ('bad', 1, 'sell', -5, 0, 0, 0, 1, 1)")
     s.close()
 
 

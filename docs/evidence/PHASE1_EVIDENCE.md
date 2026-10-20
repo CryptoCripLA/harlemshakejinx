@@ -53,7 +53,7 @@ Mutation checks (each change was reverted afterwards):
 | Timestamp order / out-of-order events handled safely | `--shuffle-seed 1` (also seeds 2, 3 in tests) | same 356 events; same digest |
 | Position state survives restart | `--restart-at 117` (stop, reopen, recover, continue) | same digest; 0 unapplied |
 | Paper wallet balances reconcile | `--accounting-exercise` (mechanical, not a strategy: buy 0.01 SOL at each creator-buy observation and sell at the same observation) | 122 round trips closed; realized P&L = wallet change exactly (−26,125,445 lamports); flat round-trip cost 199–204 bps, inside D3AD's own 100–400 bps expectation; wallet reconciled |
-| No accidental real-money order can escape | replay with socket connections forbidden | completes; no connection attempted |
+| No accidental real-money order can escape | replay with every socket connection refused, except the one asyncio makes inside `socket.socketpair()` while creating its loop (round 5, R5-3) | completes; no connection attempted. A companion test proves the guard refuses loopback application connections |
 
 Replay latency differs by mode. The batch modes push all 356 events at once, so they report queue drain (p50 ~32 ms). The accounting mode drains after every record, so it reports per-event cost: p50 0.145 ms, p99 0.584 ms.
 
@@ -69,14 +69,15 @@ Replay latency differs by mode. The batch modes push all 356 events at once, so 
 
 ## 6. Final state
 
-- Full suite at the round-4 fix head: **180 passed, 0 failed, 0 skipped** (`.venv/bin/python -m pytest`). This includes the round-1 to round-4 regression files and `tests/test_licenses.py`. The rustc differential ran; it was not skipped. The full suite was run by the builder on jinx-nyc; Codex's Windows runs covered selected tests only.
+- Full suite at the round-5 fix head: **185 passed, 0 failed, 0 skipped** (`.venv/bin/python -m pytest`). This includes the round-1 to round-5 regression files and `tests/test_licenses.py`. The rustc differential ran; it was not skipped. The full suite was run by the builder on jinx-nyc; Codex's Windows runs covered selected tests only.
 - 30-second live smoke run on the fixed code: status ok, 11 events stored and applied, 0 malformed, 0 write retries, ingestion not stalled, wallet reconciled. Local processing p50 0.29 ms.
 - `scripts/upstream_sync.py --verify`: all four upstreams OK, now including clean Windows CRLF checkouts.
 - Independent review:
   - Round 1 (Codex, `1ad0d65`): FAIL, 9 findings, all fixed (`docs/audits/phase1-codex-20261020-round1.md`).
   - Round 2 (Codex, `69111a2`): FAIL, 7 new findings (section 7).
   - Round 3 (Codex, `e1c5b06`): FAIL, 3 findings (section 8).
-  - Round 4 (Codex, `631da32`): FAIL, 1 high, 2 medium, 2 low; fixed by the builder, awaiting round 5 (section 9).
+  - Round 4 (Codex, `631da32`): FAIL, 1 high, 2 medium, 2 low (section 9).
+  - Round 5 (Codex, `1b6d797`): FAIL, 1 high, 1 medium, 1 low; fixed by the builder, awaiting round 6 (section 10).
 - Not verified, with reasons:
   - Docker image build: no Docker permission on jinx-nyc.
   - Live GMGN API calls: no API key yet (B-08).
@@ -120,14 +121,24 @@ Live run after the round-3 fixes (`python -m jinx run --seconds 90`, 13 events, 
 - **Receive→state:** p50 0.60 ms, p95 0.92 ms.
 - **Admission→state:** p50 0.45 ms, p95 0.62 ms.
 
-## 9. Review round 4 fixes (awaiting re-review)
+## 9. Review round 4 fixes (round 5: R4-1 and R4-2 partial, see section 10)
 
 Codex round 4 (`docs/audits/phase1-codex-20261020-round4.md`, on `631da32`) returned FAIL. It confirmed R3-3 and B6 fixed. R3-1, R3-2, B1, B5 and round-1 #3 were partial, plus the findings below. Each fix has a failing regression test first (`tests/test_review_round4.py`). **None of these is confirmed until the next independent review.**
 
 | Finding | Fix (builder) |
 |---|---|
-| R4-1 HIGH: the v3 migration took legacy ids beginning `p<position>:` for modern ones | Schema v4. A sell fill counts as modern only if a non-legacy exit binding produced it (same position, fill id `p<position>:<intent>:sell`). Every other sell fill becomes a historical binding under its own old id, whatever the id looks like. The backfill re-runs, idempotently, on every open, which also repairs databases an earlier build marked v3. Tests: Codex's exact `p1:X` reproduction, a repaired v3 database, and a check that modern fills are never turned into legacy bindings |
-| R4-2 MED: a retried unsubscribe could drop a mint that had become held | Paid subscriptions are one locked reconcile of wanted (watched creations plus held mints) against confirmed (sent on the current connection). Unsubscribes that are no longer wanted are cancelled before anything is sent. On reconnect, Mako's re-subscribed set becomes the confirmed state. Health reports `pending_unsubscribes` and `unconfirmed_subscriptions`. Test: Codex's exact 5-step sequence ends with the held mint still subscribed on the server |
+| R4-1 HIGH: the v3 migration took legacy ids beginning `p<position>:` for modern ones | **Partial per round 5 (R5-1); superseded by the v5 provenance rule in section 10.** Schema v4. A sell fill counts as modern only if a non-legacy exit binding produced it (same position, fill id `p<position>:<intent>:sell`). Every other sell fill becomes a historical binding under its own old id, whatever the id looks like. The backfill re-runs, idempotently, on every open, which also repairs databases an earlier build marked v3. Tests: Codex's exact `p1:X` reproduction, a repaired v3 database, and a check that modern fills are never turned into legacy bindings |
+| R4-2 MED: a retried unsubscribe could drop a mint that had become held | **Partial per round 5 (R5-2); completed in section 10.** Paid subscriptions are one locked reconcile of wanted (watched creations plus held mints) against confirmed (sent on the current connection). Unsubscribes that are no longer wanted are cancelled before anything is sent. On reconnect, Mako's re-subscribed set becomes the confirmed state. Health reports `pending_unsubscribes` and `unconfirmed_subscriptions`. Test: Codex's exact 5-step sequence ends with the held mint still subscribed on the server |
 | R4-3 MED: completion claims ran ahead of the code | `BUILD_STATUS.md` and this file now separate what Codex confirmed from what awaits re-review |
 | LOW: Windows test portability | The license CRLF test normalizes first. The replay network guard allows loopback, which Windows asyncio uses for its internal socketpair |
+
+## 10. Review round 5 fixes (awaiting re-review)
+
+Codex round 5 (`docs/audits/phase1-codex-20261020-round5.md`, on `1b6d797`) returned FAIL. It confirmed both Windows portability fixes. R4-1, R4-2, R4-3, R3-1, R3-2, B1, B5 and round-1 #3 were still partial, plus the findings below. Each fix has a failing regression test first (`tests/test_review_round5.py`). **None of these is confirmed until the next independent review.** The section-9 claims that v4 repairs every escaped database and that reconnects keep held mints subscribed did not hold; they are replaced by these fixes.
+
+| Finding | Fix (builder) |
+|---|---|
+| R5-1 HIGH: a binding left by a rejected attempt hid a historical fill from v4 | Schema v5. Every sell fill now records the exit intent that produced it (`fills.exit_intent_id`), in the same transaction. A sell fill without that provenance (written before v5) always gets a historical binding under its own old id, whatever other bindings exist, so replaying that id can never sell again. `claim_exit` reports `ALREADY_APPLIED` only when the fill's provenance names this intent. A fill with other or no provenance is `AMBIGUOUS_HISTORICAL_FILL`. A new intent whose fill id is already taken is refused as `FILL_ID_COLLISION` before anything is bound or locked. Tests: Codex's exact sequence (escaped v3 binding gap, rejected `X`, upgrade, replay of `p1:X`), the collision refusal, and the provenance record |
+| R5-2 MED: a cancelled unsubscribe plus a clean reconnect lost a held mint | A cancelled unsubscribe re-subscribes the mint, which restores Mako's own reconnect tracking. Every reconcile checks the connection object; on any new connection, clean closes included, the confirmed set is reset to what Mako re-subscribed. Test: Codex's five-step sequence followed by a code-1000 close ends with the held mint subscribed on the new connection and in Mako's set |
+| R5-3 LOW: the replay network guard allowed any loopback connection | The guard allows only the connection asyncio makes inside `socket.socketpair()`. A second test proves loopback application connections are refused |
 
