@@ -1,18 +1,26 @@
 """Token lifecycle interface (owner mandate 2026-10-20, section 3): one state machine per mint, from launch
 through bonding-curve graduation and migration to the post-migration market.
 
-Phase 1 defines the interface and its transition rules. Phase 2 translates provider data into Evidence:
-GMGN Trenches categories (new_creation / near_completion / completed), pool and curve fields, and the
-Pump.fun event stream. The rules below are about evidence handling, not trading:
-- every transition records its source, observation time and event time;
-- older evidence never moves the state backwards; a repeated report produces no second transition;
-- migration is confirmed only with post-migration pool identity, never inferred from price or from a token
-  missing in a query result (there is deliberately no evidence kind for either);
-- newer evidence that contradicts an observed migration is flagged CONFLICTING, not silently applied;
-- STALE is declared by the caller with its own age limit; failures are recorded without changing state.
+Phase 1 defines the interface and its rules; Phase 2 translates provider data into Evidence (GMGN Trenches and
+token info, the Pump.fun stream; mapping in docs/GMGN_ADAPTER_CONTRACT.md §5). The rules are about evidence
+handling, not trading:
+- Every transition keeps its source, observation time, event time and evidence payload. The mandated lifecycle
+  record (§3.1) is kept in `fields`, each value with the source and times of the evidence that set it.
+- A report older than the latest accepted event (by provider event time) is late: it never moves the state,
+  never replaces a recorded value and never refreshes freshness. It still counts toward the reserve peak,
+  because a real past reading is part of the all-time high.
+- A repeated report makes no second transition.
+- Migration is confirmed only with the destination pool, the destination venue and the provider's migration
+  time. Post-migration market data is accepted only after that confirmation. There is deliberately no evidence
+  kind for price or for a token missing from a query result.
+- Newer evidence that contradicts the observed migration (curve data, another pool) moves the token to
+  CONFLICTING once; every contradicting report is kept in `conflicts`.
+- STALE (caller's age limit) and FAILED (a failed observation) are exceptional states. The last consistent
+  state is kept, and the next accepted consistent evidence returns the token to it.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping
@@ -26,11 +34,12 @@ class State(Enum):
     MIGRATION_OBSERVED = 4
     MIGRATION_CONFIRMED = 5
     POST_MIGRATION_MARKET = 6
-    STALE = 100        # exceptional: no evidence within the caller's age limit
-    CONFLICTING = 101  # exceptional: newer evidence contradicts an observed migration
+    STALE = 100        # exceptional: no accepted evidence within the caller's age limit
+    FAILED = 101       # exceptional: the latest observation attempt failed
+    CONFLICTING = 102  # exceptional: newer evidence contradicts the observed migration
 
 
-EXCEPTIONAL = (State.STALE, State.CONFLICTING)
+EXCEPTIONAL = (State.STALE, State.FAILED, State.CONFLICTING)
 
 
 class Kind(Enum):
@@ -63,6 +72,7 @@ class Transition:
     source: str
     observed_ns: int
     event_ns: int
+    payload: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -72,6 +82,31 @@ class Failure:
     reason: str
 
 
+@dataclass(frozen=True)
+class Recorded:
+    """One value of the lifecycle record and the evidence that set it."""
+    value: Any
+    source: str
+    observed_ns: int
+    event_ns: int
+
+
+# payload values copied into the record as reported (mandate §3.1); pools and venue are handled with migration
+RECORDED_AS_REPORTED = ("launchpad", "category", "progress", "pre_pool")
+
+
+def _text(v) -> bool:
+    return isinstance(v, str) and v != ""
+
+
+def _number(v, minimum_exclusive: float | None = None, minimum: float | None = None) -> bool:
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+        return False
+    if minimum_exclusive is not None and v <= minimum_exclusive:
+        return False
+    return minimum is None or v >= minimum
+
+
 class TokenLifecycle:
     def __init__(self, mint: str) -> None:
         self.mint = mint
@@ -79,56 +114,120 @@ class TokenLifecycle:
         self.last_consistent_state = State.UNKNOWN
         self.history: list[Transition] = []
         self.failures: list[Failure] = []
+        self.conflicts: list[Evidence] = []
+        self.fields: dict[str, Recorded] = {}
         self.peak_v_sol_lamports: int | None = None
-        self.pre_pool: str | None = None
-        self.post_pool: str | None = None
+        self.late_reports = 0
+        self.last_received_ns: int | None = None     # any report, late ones included
+        self.last_accepted_ns: int | None = None     # reports not older than the latest accepted event
         self._latest_event_ns: int | None = None
-        self._last_observed_ns: int | None = None
+
+    @property
+    def pre_pool(self) -> str | None:
+        r = self.fields.get("pre_pool")
+        return r.value if r else None
+
+    @property
+    def post_pool(self) -> str | None:
+        r = self.fields.get("post_pool")
+        return r.value if r else None
 
     def observe(self, e: Evidence) -> Transition | None:
-        if e.kind is Kind.MIGRATION_CONFIRMED and not e.payload.get("post_pool"):
-            raise MissingEvidence("migration is confirmed only with the post-migration pool identity")
+        self._validate(e)
+        self.last_received_ns = max(self.last_received_ns or 0, e.observed_ns)
         v_sol = e.payload.get("v_sol_lamports")
-        if v_sol is not None:
+        if _number(v_sol, minimum=0):
             self.peak_v_sol_lamports = max(self.peak_v_sol_lamports or 0, v_sol)
-        if e.payload.get("pre_pool"):
-            self.pre_pool = e.payload["pre_pool"]
-        if e.payload.get("post_pool"):
-            self.post_pool = e.payload["post_pool"]
-        self._last_observed_ns = max(self._last_observed_ns or 0, e.observed_ns)
         if self._latest_event_ns is not None and e.event_ns < self._latest_event_ns:
-            return None  # a late report of an earlier fact never moves the state
+            self.late_reports += 1
+            return None
         self._latest_event_ns = e.event_ns
+        self.last_accepted_ns = max(self.last_accepted_ns or 0, e.observed_ns)
 
         target = e.kind.value
         base = self.last_consistent_state
         migrated = base.value >= State.MIGRATION_OBSERVED.value
-        if migrated and target.value < State.MIGRATION_OBSERVED.value:
-            return self._move(State.CONFLICTING, e)
+        if self._contradicts(e, migrated):
+            return self._conflict(e)
+        self._record(e)
+        if e.kind is Kind.CREATED and base is not State.UNKNOWN:
+            return None   # creation is the entry state; a later creation report never moves a token back
         if target is base:
             return self._move(target, e) if self.state in EXCEPTIONAL else None
         if target.value > base.value or not migrated:
             # forward progress, or curve progress moving between pre-migration states
             return self._move(target, e)
+        if self.state in EXCEPTIONAL:
+            # fresh evidence consistent with the migration already observed: back to the last consistent state
+            return self._move(base, e)
         return None
 
     def mark_stale_if_older_than(self, now_ns: int, max_age_ns: int) -> Transition | None:
-        if self.state is State.STALE or self._last_observed_ns is None:
+        if self.state is State.STALE or self.last_accepted_ns is None:
             return None
-        if now_ns - self._last_observed_ns <= max_age_ns:
+        if now_ns - self.last_accepted_ns <= max_age_ns:
             return None
-        t = Transition(self.state, State.STALE, None, "lifecycle", now_ns, now_ns)
-        self.history.append(t)
-        self.state = State.STALE
-        return t
+        return self._enter(State.STALE, None, "lifecycle", now_ns, now_ns)
 
-    def record_failure(self, source: str, observed_ns: int, reason: str) -> None:
+    def record_failure(self, source: str, observed_ns: int, reason: str) -> Transition | None:
         self.failures.append(Failure(source, observed_ns, reason))
+        if self.state is State.FAILED:
+            return None
+        return self._enter(State.FAILED, None, source, observed_ns, observed_ns, {"reason": reason})
+
+    # ---- rules ---------------------------------------------------------------------------------------
+    def _validate(self, e: Evidence) -> None:
+        """Evidence that cannot support its kind is refused before anything is recorded."""
+        if e.kind is Kind.MIGRATION_CONFIRMED:
+            if not (_text(e.payload.get("post_pool")) and _text(e.payload.get("exchange")) and e.event_ns > 0):
+                raise MissingEvidence("a migration is confirmed only with the destination pool, the destination "
+                                      "venue and the provider's migration time")
+        if e.kind is Kind.POST_MIGRATION_MARKET and not (
+                self.last_consistent_state.value >= State.MIGRATION_CONFIRMED.value and self.post_pool):
+            raise MissingEvidence("post-migration market data is accepted only after a confirmed migration")
+
+    def _contradicts(self, e: Evidence, migrated: bool) -> bool:
+        if migrated and e.kind.value.value < State.MIGRATION_OBSERVED.value:
+            return True   # curve-stage data after a migration was observed
+        confirmed = self.post_pool
+        if e.kind is Kind.MIGRATION_CONFIRMED and confirmed and e.payload["post_pool"] != confirmed:
+            return True   # another destination pool than the confirmed one
+        pool = e.payload.get("pool")
+        return e.kind is Kind.POST_MIGRATION_MARKET and pool is not None and pool != confirmed
+
+    def _conflict(self, e: Evidence) -> Transition | None:
+        self.conflicts.append(e)
+        if self.state is State.CONFLICTING:
+            return None   # one transition; every contradicting report is kept in `conflicts`
+        return self._enter(State.CONFLICTING, e.kind, e.source, e.observed_ns, e.event_ns, e.payload)
+
+    def _record(self, e: Evidence) -> None:
+        def put(name, value):
+            self.fields[name] = Recorded(value, e.source, e.observed_ns, e.event_ns)
+
+        for name in RECORDED_AS_REPORTED:
+            if e.payload.get(name) is not None:
+                put(name, e.payload[name])
+        if e.kind is Kind.CREATED and "created" not in self.fields:
+            put("created", e.event_ns)
+        if e.kind is Kind.MIGRATION_SIGNAL and "first_migration_signal" not in self.fields:
+            put("first_migration_signal", e.event_ns)
+        if e.kind is Kind.MIGRATION_CONFIRMED and "post_pool" not in self.fields:
+            put("post_pool", e.payload["post_pool"])
+            put("exchange", e.payload["exchange"])
+        if _number(e.payload.get("price"), minimum_exclusive=0):
+            put("price", e.payload["price"])
+        if _number(e.payload.get("liquidity"), minimum=0):
+            put("liquidity", e.payload["liquidity"])
 
     def _move(self, to: State, e: Evidence) -> Transition:
-        t = Transition(self.state, to, e.kind, e.source, e.observed_ns, e.event_ns)
+        t = self._enter(to, e.kind, e.source, e.observed_ns, e.event_ns, e.payload)
+        self.last_consistent_state = to
+        return t
+
+    def _enter(self, to: State, kind: Kind | None, source: str, observed_ns: int, event_ns: int,
+               payload: Mapping[str, Any] | None = None) -> Transition:
+        t = Transition(self.state, to, kind, source, observed_ns, event_ns, dict(payload or {}))
         self.history.append(t)
         self.state = to
-        if to not in EXCEPTIONAL:
-            self.last_consistent_state = to
         return t

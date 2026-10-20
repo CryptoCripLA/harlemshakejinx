@@ -128,6 +128,11 @@ CREATE TABLE IF NOT EXISTS historical_exits (
     position_id INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS historical_exits_intent ON historical_exits(intent_id);
+CREATE TABLE IF NOT EXISTS unclassified_exits (
+    position_id INTEGER NOT NULL,        -- a position with a provenance-free sell whose fill id is not text
+    fill_ref TEXT NOT NULL,              -- "<sqlite type>:<hex of the stored value>"; never decoded or merged
+    PRIMARY KEY (position_id, fill_ref)
+);
 
 CREATE TABLE IF NOT EXISTS paper_wallet (
     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -143,7 +148,7 @@ CREATE TABLE IF NOT EXISTS paper_wallet_entries (
 """
 
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 # v1 (up to commit 1ad0d65): no entry budget, no exit_intents, no amount CHECK constraints.
 # v2: positions.entry_budget_lamports (NULL = unknown for positions created by v1), exit_intents, CHECKs.
 # v3: exit_intents.legacy_fill_id; v1 sell fills ("<intent>:sell") become historical exit bindings, so a
@@ -155,6 +160,9 @@ SCHEMA_VERSION = 7
 # v6: historical sell evidence lives in historical_exits, keyed by fill id, and is checked before any exit
 #     binding; a binding under the same intent id can no longer suppress it.
 # v7: the historical-evidence scan runs in Python (NUL-safe) and also preserves sells it cannot classify.
+# v8: a provenance-free sell whose fill id SQLite stores as BLOB or NULL is recorded in unclassified_exits
+#     (it is a distinct key from any text id, so it is never decoded into text evidence); its position refuses
+#     new exit claims until reconciled. Before v8 one such row made every open fail.
 
 V2_POSITIONS = SCHEMA[SCHEMA.index("CREATE TABLE IF NOT EXISTS positions ("):SCHEMA.index("CREATE INDEX IF NOT EXISTS positions_active")]
 V2_FILLS = SCHEMA[SCHEMA.index("CREATE TABLE IF NOT EXISTS fills ("):SCHEMA.index("CREATE TABLE IF NOT EXISTS exit_intents")]
@@ -208,9 +216,14 @@ class Store:
                 c.execute("ALTER TABLE exit_intents ADD COLUMN legacy_fill_id TEXT")
             if "exit_intent_id" not in self._columns("fills"):
                 c.execute("ALTER TABLE fills ADD COLUMN exit_intent_id TEXT")
-            rows = c.execute("SELECT fill_id, position_id FROM fills WHERE side = 'sell' AND exit_intent_id IS NULL"
-                             ).fetchall()
-            for fill_id, position_id in rows:
+            rows = c.execute("SELECT fill_id, typeof(fill_id), position_id FROM fills"
+                             " WHERE side = 'sell' AND exit_intent_id IS NULL").fetchall()
+            for fill_id, kind, position_id in rows:
+                if kind != "text":
+                    raw = fill_id if isinstance(fill_id, bytes) else b"" if fill_id is None else str(fill_id).encode()
+                    c.execute("INSERT OR IGNORE INTO unclassified_exits (position_id, fill_ref) VALUES (?,?)",
+                              (position_id, f"{kind}:{raw.hex()}"))
+                    continue
                 intent_id = fill_id[:-len(SELL_SUFFIX)] if fill_id.endswith(SELL_SUFFIX) else fill_id
                 c.execute("INSERT OR IGNORE INTO historical_exits (fill_id, intent_id, position_id) VALUES (?,?,?)",
                           (fill_id, intent_id, position_id))

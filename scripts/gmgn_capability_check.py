@@ -93,6 +93,30 @@ async def check(adapter: GmgnAdapter, report: list, name: str, method: str, *arg
     return result
 
 
+async def migration_semantics(adapter: GmgnAdapter, trenches: dict, per_category: int = 3) -> list[dict]:
+    """Per token, the lifecycle fields Trenches and token info report, side by side (values, not field names;
+    pools compared, not printed). Backs the migration claims in docs/GMGN_CAPABILITY_INVENTORY.md §3."""
+    rows = []
+    for category in ("near_completion", "completed"):
+        for item in (trenches.get(category) or [])[:per_category]:
+            info = await adapter.call("getTokenInfo", "sol", item["address"])
+            rows.append({
+                "category": category,
+                "mint": short(item["address"]),
+                "trenches": {"launchpad_status": item.get("launchpad_status"), "exchange": item.get("exchange"),
+                             "progress": item.get("progress"), "complete_timestamp": item.get("complete_timestamp")},
+                "token_info": {"launchpad_status": info.get("launchpad_status"),
+                               "launchpad_progress": info.get("launchpad_progress"),
+                               "migrated_pool_present": bool(info.get("migrated_pool")),
+                               "migrated_timestamp": info.get("migrated_timestamp")},
+                "migrated_pool_equals_trenches_pool": bool(info.get("migrated_pool"))
+                                                      and info.get("migrated_pool") == item.get("pool_address"),
+                "migrated_timestamp_equals_complete_timestamp":
+                    info.get("migrated_timestamp") == item.get("complete_timestamp"),
+            })
+    return rows
+
+
 async def run(out_path: Path) -> dict:
     adapter = GmgnAdapter(ROOT / "build" / "gmgn", allow_signing_key=config.GMGN_ALLOW_SIGNING_KEY)
     report: list[dict] = []
@@ -118,6 +142,8 @@ async def run(out_path: Path) -> dict:
                 k: (short(c[k]) if k == "pool_address" else c.get(k))
                 for k in ("exchange", "launchpad", "launchpad_status", "progress", "complete_timestamp",
                           "complete_cost_time", "pool_address") if k in c}
+
+        migration = await migration_semantics(adapter, trenches) if isinstance(trenches, dict) else []
 
         await check(adapter, report, "market signals (all types)", "getTokenSignalV2", "sol", [{}])
         await check(adapter, report, "trending 1m", "getTrendingSwaps", "sol", "1m")
@@ -153,6 +179,7 @@ async def run(out_path: Path) -> dict:
             await check(adapter, report, "own wallet holdings (signed)", "getWalletHoldings", "sol", sol_wallet)
 
         # trading stays refused by the bridge, before any request is made
+        refusal = None
         try:
             await adapter.call("swap", {"chain": "sol"})
             refused = False
@@ -169,8 +196,12 @@ async def run(out_path: Path) -> dict:
         "plan_budget": {"plan": adapter.budget.plan.name, "rate_per_s": adapter.budget.plan.rate,
                         "capacity": adapter.budget.plan.capacity, **adapter.budget.stats},
         "bridge": {k: health.get(k) for k in ("bridge", "configured", "signing") if k in health},
-        "bridge_after": {k: final_health.get(k) for k in ("calls", "errors", "restarts", "oversized")},
+        "bridge_after": {k: final_health.get(k) for k in ("calls", "errors", "restarts", "oversized", "rate_limited",
+                                                            "paused_until")},
+        # GMGN's own x-ratelimit-* headers on the last reply: the plan's limit as GMGN reports it
+        "gmgn_rate_limit_headers": final_health.get("rate_limit"),
         "checks": report,
+        "migration_semantics": migration,
     }
     out_path.write_text(json.dumps(doc, indent=2) + "\n")
     return doc

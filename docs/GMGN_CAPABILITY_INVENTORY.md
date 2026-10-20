@@ -20,7 +20,7 @@ PYTHONPATH=. .venv/bin/python scripts/gmgn_capability_check.py docs/evidence/gmg
 |---|---|---|
 | Key authentication succeeds | **PASSED** | `getUserInfo` OK (450.8 ms). `gmgn-cli config --apply` reported "Configuration verified successfully". The key lives only in `~/.config/gmgn/.env` (mode 600); see `docs/SECRETS.md` |
 | Solana access | **PASSED** | 9 chains bound to the key, `sol` among them; Solana wallet 3CtN…HZhg |
-| Enabled plan and quotas | **Plus**: 20 weight/s refill, burst capacity 20 | Response header `x-ratelimit-limit: 20`, measured with gmgn-cli on 2026-10-20. 1-second candles refused: `403 PRO_PLAN_REQUIRED "1s kline is available to Pro users only"` (reproduced in this run). The owner's message said "Pro"; measurement shows Plus, and the owner confirmed: "its not pro its plus … use what we have available" |
+| Enabled plan and quotas | **Plus**: 20 weight/s refill, burst capacity 20 | GMGN's own response header `x-ratelimit-limit: 20` (with `x-ratelimit-remaining: 11` on the last reply), recorded by the bridge in a second run at 19:52:35 UTC: `docs/evidence/gmgn_capability_check_20261020T1952.json`, field `gmgn_rate_limit_headers`. That run also returned 25 of 26 GMGN calls OK. 1-second candles refused: `403 PRO_PLAN_REQUIRED "1s kline is available to Pro users only"` (reproduced in this run). The owner's message said "Pro"; measurement shows Plus, and the owner confirmed: "its not pro its plus … use what we have available" |
 | Supported token endpoints | **PASSED** | info, security, pool, top holders, top traders and 1-minute candles all OK, for a fresh token and for a migrated one |
 | Trenches and migration data | **PASSED** | `getTrenches` returned 60 items in each of `new_creation`, `near_completion` and `completed`, with explicit migration fields (§3) |
 | Wallet tracking | **PASSED** | `getFollowWallet` (signed route) OK, 10 trades. The newest was 48.8 min old, because the account follows few wallets |
@@ -42,7 +42,7 @@ PYTHONPATH=. .venv/bin/python scripts/gmgn_capability_check.py docs/evidence/gmg
 | `getFollowWallet` | `GET /v1/trade/follow_wallet` | **signed** | 10 | enabled | OK 299 ms |
 | `getTokenInfo` / `getTokenSecurity` / `getTokenPoolInfo` | token routes | API key | 1 / 1 / 1 | enabled | OK 103–136 ms |
 | `getTokenTopHolders` / `getTokenTopTraders` | token routes | API key | 5 / 5 | enabled | OK 151–205 ms |
-| `getTokenKline` | `GET /v1/market/token_kline` | API key | 2 | enabled | 1m OK 114–126 ms; 1s **refused on Plus** |
+| `getTokenKline` | `GET /v1/market/token_kline` | API key | 2 (1 s resolution: 3, Pro only) | enabled | 1m OK 114–126 ms; 1s **refused on Plus** |
 | `getWalletStats` / `getWalletActivity` / `getWalletProfits` | user routes | API key | 3 each | enabled | stats 100 ms, activity 246 ms |
 | `getCreatedTokens` | dev history | API key | 2 | enabled | OK 105 ms |
 | `getWalletHoldings` | `GET /v1/user/wallet_holdings` | **signed** | 2 | enabled | OK 118 ms |
@@ -50,28 +50,35 @@ PYTHONPATH=. .venv/bin/python scripts/gmgn_capability_check.py docs/evidence/gmg
 | `getGasPrice` | gas + SOL/USD | API key | 1 | enabled | OK 131 ms |
 | `quoteOrder` | `GET /v1/trade/quote` | API key | 10 | enabled | OK 157 ms |
 | `queryOrder`, `getStrategyOrders` | order status | **signed** | 5 / 1 | enabled (read) | not called (no orders exist) |
-| `getHotSearches`, `searchMarket`, `getFollowTokens`, `getFollowGroupNames`, `getWalletTokenBalance`, `getCalloutRecord`, `getCalloutGlobal`, `getCookingStatistics` | various | API key / signed | 3,1,3,1,2,3,3, undocumented (budgeted at 10) | enabled | not exercised in this run |
-| `swap`, `multiSwap`, `createStrategyOrder`, `cancelStrategyOrder`, `createToken` | trade routes | **signed** | 10,10,5,2,— | **refused** (`METHOD_NOT_ENABLED`) | refusal verified, no request made |
+| `getHotSearches`, `searchMarket`, `getFollowTokens`, `getFollowGroupNames`, `getWalletTokenBalance`, `getCalloutRecord`, `getCalloutGlobal`, `getCookingStatistics` | various | API key / signed | 3,1,3,1,2,3,3,1 | enabled | not exercised in this run |
+| `swap`, `multiSwap`, `createStrategyOrder`, `cancelStrategyOrder`, `createToken` | trade routes | **signed** | 10,10,5,2,5 | **refused** (`METHOD_NOT_ENABLED`) | refusal verified, no request made |
 
 Latency above is through the persistent bridge (Node process already running), from jinx-nyc. The earlier one-shot `gmgn-cli` timings (339–668 ms, 1,414 ms for pool) include Node start-up on each call. Neither is order execution latency.
 
 ## 3. Migration evidence actually supplied
 
-Trenches categories match GMGN's documented lifecycle `new_creation → near_completion → completed`. Observed fields:
+Trenches categories match GMGN's documented lifecycle `new_creation → near_completion → completed`.
 
-| Field | Route | Observed on curve (`near_completion`) | Observed after migration (`completed`) |
+**Evidence.** Per-token values for 3 `near_completion` and 3 `completed` tokens, read through Trenches and token info at 20:01:19 UTC: `docs/evidence/gmgn_capability_check_20261020T2001.json`, field `migration_semantics`. Values are recorded; pools are compared, not printed. Reproduce with `scripts/gmgn_capability_check.py`. Round 8 (M6) correctly found that an earlier, unrecorded sample did not support the claims made from it. This section now states only what that file shows.
+
+| Field | Route | 3 tokens on the curve (`near_completion`) | 3 tokens after completion (`completed`) |
 |---|---|---|---|
 | `exchange` | trenches | `pump` | `pump_amm` |
-| `progress` / `launchpad_progress` | trenches / token info | 0.93–0.95 | 1 |
-| `launchpad_status` | trenches and token info | 0 | 1 |
-| `complete_timestamp` / `migrated_timestamp` | trenches / token info | 0 | equal, e.g. 1792523765 in both |
-| `pool_address` | trenches | the bonding-curve pool (pre-migration identity) | the new AMM pool |
-| `migrated_pool` | token info | empty | equals trenches `pool_address` |
-| `complete_cost_time` | trenches (`completed` only) | — | seconds from creation to completion, e.g. 1094 |
+| `progress` / `launchpad_progress` | trenches / token info | 0.94–0.96 | 1 |
+| `complete_timestamp` / `migrated_timestamp` | trenches / token info | 0 / 0 | non-zero and equal in both routes, all 3 tokens |
+| `launchpad_status` | trenches | 0 | 1 |
+| `launchpad_status` | token info | 0 | **2** for the two tokens completed 39 s and 54 s before the read; **1** for the one completed 232 s before |
+| `migrated_pool` | token info | empty | **empty** for the two recent ones; present for the older one, equal to its trenches `pool_address` |
 
-**Documented vs observed discrepancy:** `skills/gmgn-token/SKILL.md:166` documents `launchpad_status` as `0` not opened, `1` live, `2` migrated. On 2026-10-20, curve tokens read `0` and migrated tokens read `1` in both routes (6 tokens checked). Phase 2 must therefore not confirm a migration from `launchpad_status` alone. JINX's lifecycle interface confirms a migration only with a post-migration pool identity (`migrated_pool` / `pool_address` with `exchange: pump_amm`) and a non-zero completion timestamp. See `docs/GMGN_ADAPTER_CONTRACT.md` §5.
+What this shows (6 tokens, one read; not a distribution):
+- **`launchpad_status` is not a stable migration indicator.** `skills/gmgn-token/SKILL.md:166` documents `0` not opened, `1` live, `2` migrated. Token info read `2` shortly after completion and `1` a few minutes later, while trenches read `1`.
+- **The new pool can appear in token info later than the completion time.** Here it was missing 39–54 s after completion and present at 232 s.
+- **What the lifecycle interface requires.** `jinx/core/lifecycle.py`, tested, enforces this:
+  - A migration is confirmed only with the destination pool, the destination venue and the provider's migration time.
+  - Post-migration market data is accepted only after that confirmation.
+- **How the Phase 2 translation will use it** (contract §5): a non-zero `complete_timestamp` without a pool is a migration signal (MIGRATION_OBSERVED). `migrated_pool` present, with `exchange: pump_amm` and `migrated_timestamp`, is the confirmation. `launchpad_status` is kept as payload only.
 
-GMGN provides migration state only through queries; there is no stream, webhook or callback in the client. Detection delay is therefore bounded by the polling interval plus GMGN's indexing delay. In this run, the newest `completed` item had been created 220.8 s earlier; its completion age is not separately reported by this check. Phase 2 measures the delay from `complete_timestamp` to JINX observation as a distribution.
+GMGN provides migration state only through queries; there is no stream, webhook or callback in the client. Detection delay is therefore bounded by the polling interval plus GMGN's indexing delay, and confirmation can lag further while `migrated_pool` is empty. Phase 2 measures both delays as distributions.
 
 ## 4. Freshness (single run, 19:16:06 UTC)
 
@@ -113,11 +120,13 @@ An earlier gmgn-cli probe the same day measured similar values: `new_creation` 1
 ## 7. Plus budget
 
 GMGN's limit is a leaky bucket per API key: 20 weight refilled per second, at most 20 banked. Requests over the limit return 429. Repeated requests during a cooldown extend the ban by 5 s each, up to 5 minutes. JINX paces itself with `jinx/adapters/gmgn/budget.py`:
-- per-route weights come from the skill docs;
-- undocumented routes are charged 10;
+- per-route weights come from the skill docs, and a test compares every client route against the pinned tables;
+- a route without a documented weight would be charged 10 (none today);
 - a call heavier than the whole bucket is refused locally;
 - the adapter's health reports weight spent and time waited.
 
 This run spent 84 weight over 28 calls with no waiting.
+
+If GMGN still answers with a rate-limit ban, the adapter stops sending on the key until GMGN's reset time instead of extending the ban (`docs/GMGN_ADAPTER_CONTRACT.md` §4, "Bans").
 
 Budget arithmetic (cost per second of polling one route once per second): trenches 2, signals 1, Smart Money 1, KOL 1, trending 3, follow-wallet 10. For example, trenches + signals + Smart Money + KOL every second costs 5/s and leaves 15/s for per-token lookups (info/security/pool cost 1 each, holders/traders 5 each). The actual allocation is a Phase 2 plan item for owner approval, not a Phase 1 decision.

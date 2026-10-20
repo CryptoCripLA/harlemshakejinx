@@ -8,7 +8,8 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-CLIENT = ROOT / "upstream" / "gmgn" / "src" / "client" / "OpenApiClient.ts"
+UPSTREAM = ROOT / "upstream" / "gmgn"
+CLIENT = UPSTREAM / "src" / "client" / "OpenApiClient.ts"
 BRIDGE = ROOT / "jinx" / "adapters" / "gmgn" / "bridge.mjs"
 TRADING = {"swap", "multiSwap", "createStrategyOrder", "cancelStrategyOrder", "createToken"}
 
@@ -70,13 +71,45 @@ def test_runtime_loads_the_signing_key_for_signed_reads_by_owner_decision_but_tr
 
 
 # ---- Plus rate budget -------------------------------------------------------------------------
-def test_every_allowlisted_method_has_a_documented_or_conservative_weight():
-    from jinx.adapters.gmgn.budget import CONSERVATIVE_WEIGHT, ROUTE_WEIGHTS, weight
-    assert bridge_allowlist() <= set(ROUTE_WEIGHTS) | {"getCookingStatistics"}
-    # spot checks against GMGN's pinned skill docs (rate-limit tables)
-    assert (weight("getFollowWallet"), weight("getTrenches"), weight("getTokenTopHolders"), weight("getSmartMoney"),
-            weight("quoteOrder"), weight("getTokenSignalV2")) == (10, 2, 5, 1, 10, 1)
-    assert weight("getCookingStatistics") == CONSERVATIVE_WEIGHT == 10  # not documented: assume the maximum
+def doc_route_weights() -> dict[str, set[int]]:
+    """Route -> weights from the rate-limit tables in GMGN's pinned skill docs."""
+    out: dict[str, set[int]] = {}
+    for md in sorted((UPSTREAM / "skills").glob("*/SKILL.md")):
+        for m in re.finditer(r"\| `[^`]*` \| `(?:GET|POST) (/v1/[a-z_/]+)` \| (\d+) \|", md.read_text()):
+            out.setdefault(m.group(1), set()).add(int(m.group(2)))
+    return out
+
+
+def client_method_routes() -> dict[str, str]:
+    """Client method -> route, from the pinned OpenApiClient.ts."""
+    src = (UPSTREAM / "src" / "client" / "OpenApiClient.ts").read_text()
+    starts = [(m.group(1), m.start()) for m in re.finditer(r"\n  async (\w+)\(", src)]
+    routes = {}
+    for (name, start), (_, end) in zip(starts, starts[1:] + [("", len(src))]):
+        m = re.search(r'"(/v1/[a-z_/]+)"', src[start:end])
+        if m:
+            routes[name] = m.group(1)
+    return routes
+
+
+def test_every_route_weight_matches_gmgns_pinned_docs():
+    """Round 8 M5: weights are derived from the docs, not spot-checked."""
+    from jinx.adapters.gmgn.budget import ROUTE_WEIGHTS, weight
+    docs, routes = doc_route_weights(), client_method_routes()
+    checked = 0
+    for method, route in routes.items():
+        if route in docs:
+            assert len(docs[route]) == 1, route
+            assert weight(method) == next(iter(docs[route])), method
+            checked += 1
+    assert checked >= 30
+    # cooking's table names commands, not routes (skills/gmgn-cooking/SKILL.md:104-107)
+    cooking = (UPSTREAM / "skills" / "gmgn-cooking" / "SKILL.md").read_text()
+    assert weight("getCookingStatistics") == int(re.search(r"\| `cooking stats` \| (\d+) \|", cooking).group(1)) == 1
+    assert weight("createToken") == int(re.search(r"\| `cooking create` \| (\d+) \|", cooking).group(1)) == 5
+    # 1-second candles cost 3 (Pro only; skills/gmgn-market/SKILL.md:71); other resolutions 2
+    assert weight("getTokenKline", "sol", "MINT", "1s") == 3 and weight("getTokenKline", "sol", "MINT", "1m") == 2
+    assert set(routes) <= set(ROUTE_WEIGHTS)       # every client method has a documented weight
 
 
 def test_plans_match_gmgns_documented_leaky_buckets():

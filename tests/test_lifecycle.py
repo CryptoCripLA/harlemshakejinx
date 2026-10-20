@@ -59,7 +59,7 @@ def test_older_evidence_never_moves_the_state_backwards():
 def test_newer_contradicting_evidence_is_flagged_not_silently_applied():
     lc = TokenLifecycle("MINT")
     lc.observe(ev(Kind.MIGRATION_SIGNAL, 1))
-    lc.observe(ev(Kind.MIGRATION_CONFIRMED, 2, post_pool="P"))
+    lc.observe(ev(Kind.MIGRATION_CONFIRMED, 2, post_pool="P", exchange="pump_amm"))
     t = lc.observe(ev(Kind.ON_CURVE, 3, event_ns=3))                # a curve observation after migration
     assert t is not None and t.to_state is State.CONFLICTING
     assert lc.state is State.CONFLICTING and lc.last_consistent_state is State.MIGRATION_CONFIRMED
@@ -75,11 +75,17 @@ def test_stale_is_declared_by_the_caller_with_its_own_age_limit():
     assert lc.state is State.ON_BONDING_CURVE
 
 
-def test_failed_observation_is_recorded_without_changing_the_state():
+def test_a_failed_observation_is_an_exceptional_state_that_fresh_evidence_clears():
+    """Mandate §3: exceptional states for unknown, stale, failed or conflicting observations (round 8 M3)."""
     lc = TokenLifecycle("MINT")
     lc.observe(ev(Kind.ON_CURVE, 1))
-    lc.record_failure(source="gmgn.trenches", observed_ns=2, reason="HTTP 429")
-    assert lc.state is State.ON_BONDING_CURVE and lc.failures[-1].reason == "HTTP 429"
+    t = lc.record_failure(source="gmgn.trenches", observed_ns=2, reason="HTTP 429")
+    assert t.to_state is State.FAILED and lc.state is State.FAILED
+    assert lc.last_consistent_state is State.ON_BONDING_CURVE and lc.failures[-1].reason == "HTTP 429"
+    assert lc.record_failure(source="gmgn.trenches", observed_ns=3, reason="timeout") is None   # one transition
+    assert len(lc.failures) == 2
+    lc.observe(ev(Kind.ON_CURVE, 4))
+    assert lc.state is State.ON_BONDING_CURVE
 
 
 def test_peak_virtual_sol_is_kept_across_the_lifecycle():
@@ -88,3 +94,116 @@ def test_peak_virtual_sol_is_kept_across_the_lifecycle():
     lc.observe(ev(Kind.ON_CURVE, 2, v_sol_lamports=60))
     lc.observe(ev(Kind.NEAR_COMPLETION, 3, v_sol_lamports=25))
     assert lc.peak_v_sol_lamports == 60
+
+
+def test_a_late_report_never_overwrites_newer_pool_identity():
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.MIGRATION_CONFIRMED, 10, event_ns=10, post_pool="NEW", pre_pool="CURVE2", exchange="pump_amm"))
+    lc.observe(ev(Kind.MIGRATION_CONFIRMED, 11, event_ns=5, post_pool="OLD", pre_pool="CURVE1", exchange="pump_amm"))  # late, older
+    assert lc.post_pool == "NEW" and lc.pre_pool == "CURVE2"
+
+
+def test_a_late_report_still_counts_toward_the_reserve_peak():
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.ON_CURVE, 10, event_ns=10, v_sol_lamports=40))
+    lc.observe(ev(Kind.ON_CURVE, 11, event_ns=5, v_sol_lamports=90))   # an earlier, higher reserve reading
+    assert lc.peak_v_sol_lamports == 90 and lc.state is State.ON_BONDING_CURVE
+
+
+def test_fresh_evidence_consistent_with_a_confirmed_migration_recovers_from_stale():
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.MIGRATION_CONFIRMED, 1_000, post_pool="P", exchange="pump_amm"))
+    lc.mark_stale_if_older_than(now_ns=5_000, max_age_ns=1_000)
+    t = lc.observe(ev(Kind.MIGRATION_SIGNAL, 5_100))          # a repeated migration report, fresh
+    assert t is not None and t.to_state is State.MIGRATION_CONFIRMED and lc.state is State.MIGRATION_CONFIRMED
+    assert [x.to_state for x in lc.history].count(State.MIGRATION_OBSERVED) == 0   # never moved backwards
+
+
+def test_without_an_exceptional_state_a_repeated_earlier_stage_report_changes_nothing():
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.MIGRATION_CONFIRMED, 1, post_pool="P", exchange="pump_amm"))
+    assert lc.observe(ev(Kind.MIGRATION_SIGNAL, 2)) is None and lc.state is State.MIGRATION_CONFIRMED
+
+
+# ---- Codex round 8 (docs/audits/phase1-codex-20261020-round8.md) ---------------------------------
+def test_post_migration_market_needs_a_confirmed_migration_first():          # H2
+    lc = TokenLifecycle("MINT")
+    with pytest.raises(MissingEvidence):
+        lc.observe(ev(Kind.POST_MIGRATION_MARKET, 1, price=2.0))
+    assert lc.state is State.UNKNOWN and lc.history == []
+    lc.observe(ev(Kind.MIGRATION_SIGNAL, 2))                                # observed, not confirmed
+    with pytest.raises(MissingEvidence):
+        lc.observe(ev(Kind.POST_MIGRATION_MARKET, 3, price=2.0))
+    assert lc.state is State.MIGRATION_OBSERVED
+
+
+@pytest.mark.parametrize("payload", [{"post_pool": "P"}, {"exchange": "pump_amm"}, {"post_pool": "", "exchange": "x"},
+                                     {"post_pool": 7, "exchange": "pump_amm"}])
+def test_confirmation_needs_pool_venue_and_time(payload):                   # H2
+    lc = TokenLifecycle("MINT")
+    with pytest.raises(MissingEvidence):
+        lc.observe(ev(Kind.MIGRATION_CONFIRMED, 1, **payload))
+    with pytest.raises(MissingEvidence):
+        lc.observe(ev(Kind.MIGRATION_CONFIRMED, 1, event_ns=0, post_pool="P", exchange="pump_amm"))
+    assert lc.state is State.UNKNOWN and lc.post_pool is None
+
+
+def test_a_late_report_cannot_change_the_confirmed_pool_or_refresh_freshness():   # M1 (Codex reproduction)
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.MIGRATION_CONFIRMED, 1_000, event_ns=1_000, post_pool="VALID", exchange="pump_amm"))
+    assert lc.observe(ev(Kind.ON_CURVE, 2_400, event_ns=500, post_pool="OLD")) is None
+    assert lc.post_pool == "VALID" and lc.state is State.MIGRATION_CONFIRMED
+    assert lc.last_received_ns == 2_400 and lc.last_accepted_ns == 1_000
+    t = lc.mark_stale_if_older_than(now_ns=2_500, max_age_ns=1_000)       # the late report did not refresh it
+    assert t is not None and t.to_state is State.STALE
+
+
+def test_a_second_confirmation_naming_another_pool_is_a_conflict():         # M2
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.MIGRATION_CONFIRMED, 1, post_pool="A", exchange="pump_amm"))
+    t = lc.observe(ev(Kind.MIGRATION_CONFIRMED, 2, post_pool="B", exchange="pump_amm"))
+    assert t is not None and t.to_state is State.CONFLICTING
+    assert lc.post_pool == "A" and [c.payload["post_pool"] for c in lc.conflicts] == ["B"]
+    assert lc.observe(ev(Kind.MIGRATION_CONFIRMED, 3, post_pool="A", exchange="pump_amm")).to_state is State.MIGRATION_CONFIRMED
+
+
+def test_a_repeated_contradiction_is_kept_but_makes_one_transition():      # M2
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.MIGRATION_SIGNAL, 1))
+    first = lc.observe(ev(Kind.ON_CURVE, 2))
+    again = lc.observe(ev(Kind.ON_CURVE, 3))
+    assert first.to_state is State.CONFLICTING and again is None
+    assert [t.to_state for t in lc.history].count(State.CONFLICTING) == 1 and len(lc.conflicts) == 2
+
+
+def test_post_migration_data_from_another_pool_is_a_conflict():             # M2
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.MIGRATION_CONFIRMED, 1, post_pool="A", exchange="pump_amm"))
+    t = lc.observe(ev(Kind.POST_MIGRATION_MARKET, 2, pool="Z", price=1.0))
+    assert t.to_state is State.CONFLICTING and lc.post_pool == "A"
+
+
+def test_the_mandated_lifecycle_record_is_kept_with_provenance():           # M3 (mandate §3.1)
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.CREATED, 10, source="mako.pumpportal", launchpad="Pump.fun", pre_pool="CURVE"))
+    lc.observe(ev(Kind.NEAR_COMPLETION, 20, category="near_completion", progress=0.95, v_sol_lamports=80))
+    lc.observe(ev(Kind.MIGRATION_SIGNAL, 30))
+    lc.observe(ev(Kind.MIGRATION_SIGNAL, 31))
+    lc.observe(ev(Kind.MIGRATION_CONFIRMED, 40, post_pool="AMM", exchange="pump_amm", category="completed"))
+    lc.observe(ev(Kind.POST_MIGRATION_MARKET, 50, source="gmgn.token_info", price=0.5, liquidity=1_000.0))
+    lc.observe(ev(Kind.POST_MIGRATION_MARKET, 60, price=-1, liquidity="n/a"))   # not a valid price or liquidity
+    f = lc.fields
+    assert f["launchpad"].value == "Pump.fun" and f["launchpad"].source == "mako.pumpportal"
+    assert f["created"].event_ns == 10 and f["pre_pool"].value == "CURVE"
+    assert f["progress"].value == 0.95 and f["category"].value == "completed"
+    assert f["first_migration_signal"].event_ns == 30            # the first one, not the repeat
+    assert f["post_pool"].value == "AMM" and f["post_pool"].event_ns == 40 and f["exchange"].value == "pump_amm"
+    assert (f["price"].value, f["price"].observed_ns, f["liquidity"].value) == (0.5, 50, 1_000.0)
+    assert lc.peak_v_sol_lamports == 80
+    assert lc.history[-1].payload["price"] == 0.5 and lc.history[0].source == "mako.pumpportal"
+
+
+def test_a_creation_report_never_moves_a_token_back_to_newly_detected():
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.ON_CURVE, 1))
+    assert lc.observe(ev(Kind.CREATED, 2)) is None and lc.state is State.ON_BONDING_CURVE

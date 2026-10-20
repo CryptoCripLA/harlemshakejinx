@@ -41,9 +41,9 @@ failure : {"id": <int|null>, "ok": false, "error": {"code": "<code>", "message":
 | `BAD_REQUEST` | the line was not JSON |
 | `METHOD_NOT_ENABLED` | the method is not on the read allowlist; no request was made |
 | `NOT_CONFIGURED` | no API key available |
-| GMGN status or API code (e.g. `403` with `PRO_PLAN_REQUIRED`, `429`) | GMGN's error, passed through with its message |
+| GMGN status or API code (e.g. `403` with `PRO_PLAN_REQUIRED`, `429`) | GMGN's error, passed through with its message. The reply also carries `api_error` (GMGN's error name, e.g. `RATE_LIMIT_BANNED`) and `reset_at` (unix seconds from `X-RateLimit-Reset`) when the client has them |
 
-`__health` returns `{"configured": bool, "signing": bool}` without calling GMGN.
+`__health` returns `{"configured": bool, "signing": bool, "rate_limit": {...} | null}` without calling GMGN. `rate_limit` holds GMGN's `x-ratelimit-*` response headers from the last reply. The bridge observes them by wrapping `fetch` around the unmodified client: only those header names are copied, never request data.
 
 ## 3. Read allowlist and refused methods
 
@@ -64,7 +64,7 @@ The enabled set must equal every method of the pinned client minus the refused s
 ```python
 GmgnAdapter(build_dir, env=None, home=None, node="node", timeout_s=15.0,
             max_response_bytes=16 MiB, auto_restart=True,
-            allow_signing_key=False, budget=None)
+            allow_signing_key=False, budget=None, wall=time.time)
 
 await adapter.start()
 result = await adapter.call(method, *args)   # the client's positional arguments
@@ -81,6 +81,7 @@ await adapter.stop()
 | `GmgnUnavailable` | bridge down and not restartable, or pipe closed |
 | `asyncio.TimeoutError` | no reply within `timeout_s` |
 | `PlanCapacityExceeded` | the method's weight exceeds the plan's whole bucket |
+| `GmgnRateLimited` (a `GmgnError`, with `reset_at`) | GMGN answered `RATE_LIMIT_EXCEEDED`, `RATE_LIMIT_BANNED`, `RATE_LIMIT_BANNED_MAX` or `ERROR_RATE_LIMIT_BLOCKED`, or a ban from such an answer is still running. No request is sent before `reset_at` |
 
 **Lifecycle:**
 - Each bridge process is a generation that owns its pending requests. A dead or replaced generation fails only its own requests.
@@ -94,7 +95,13 @@ await adapter.stop()
 - Plan: Plus, 20 per second, capacity 20, measured (`docs/GMGN_CAPABILITY_INVENTORY.md`).
 - Weights come from GMGN's skill rate-limit tables; undocumented routes are charged 10.
 
-**Health:** `bridge` (`up`/`down`), `configured`, `signing`, call/error/restart/oversize counters, `plan`, and `budget` (`weight_spent`, `waited_s`, `calls`).
+**Bans:**
+- GMGN documents that requests sent during a rate-limit cooldown extend the ban by 5 s each, up to 5 minutes. On `RATE_LIMIT_BANNED_MAX` it says to stop all calls until the reset time (`skills/gmgn-token/SKILL.md:68-76`).
+- The pinned client retries once by itself only when the reset is under 5 s (`OpenApiClient.ts::getRateLimitRetryDelayMs`).
+- For any longer ban the adapter records `paused_until`: GMGN's `X-RateLimit-Reset`, or now + 5 s, GMGN's documented ban step, when no reset time is given. Every call on the key, any route, then raises `GmgnRateLimited` without sending until that time.
+- Tested against GMGN's real compiled client and a fake server: `tests/test_gmgn_rate_limit.py`.
+
+**Health:** `bridge` (`up`/`down`), `configured`, `signing`, call/error/restart/oversize/rate-limited counters, `plan`, `budget` (`weight_spent`, `waited_s`, `calls`), `paused_until`, and `rate_limit` (GMGN's own headers).
 
 ## 5. Lifecycle evidence mapping (interface in Phase 1, translation built in Phase 2)
 
@@ -122,7 +129,11 @@ Phase 2 translates provider data into `Evidence` exactly as below. The categorie
 | GMGN error, timeout or 429 | `record_failure` | — | reason |
 | token missing from a query result | nothing | — | there is deliberately no evidence kind for absence or for price |
 
-`launchpad_status` alone never confirms a migration. GMGN's skill doc says `2 = migrated`, but on 2026-10-20 migrated tokens read `1` (inventory §3). It is recorded as payload only.
+`launchpad_status` alone never confirms a migration. In the recorded sample it read `2` shortly after completion and `1` minutes later, while the trenches route read `1` (inventory §3). It is recorded as payload only.
+
+`migrated_pool` can still be empty after `complete_timestamp` is set. Until it appears, the token stays MIGRATION_OBSERVED.
+
+The interface itself (`_validate`) requires a non-empty `post_pool`, a non-empty `exchange` and a positive event time for `MIGRATION_CONFIRMED`. It requires an already-confirmed migration for `POST_MIGRATION_MARKET`. The specific value `pump_amm` is the Phase 2 translator's rule for Pump.fun, not a lifecycle constant.
 
 Migration handling around positions (mandate §3.4 and §3.5) is built in Phase 2 and Phase 3:
 - one deduplicated migration event;

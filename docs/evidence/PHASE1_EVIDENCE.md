@@ -177,8 +177,43 @@ The owner's GMGN mandate (`docs/OWNER_GMGN_MANDATE_20261020.md`) added these ite
 | Signing-key policy | adapter `allow_signing_key`, bridge `JINX_GMGN_NO_SIGNING_KEY`, `jinx/config.py::GMGN_ALLOW_SIGNING_KEY` | 3 tests in `tests/test_gmgn_plus.py` | excluded by default; runtime allows it by owner decision; trading still refused |
 | Migration lifecycle interface | `jinx/core/lifecycle.py` | `tests/test_lifecycle.py` (9) | normal path, repeats, confirmation needs the post-migration pool, no absence/price kinds, late evidence ignored, contradictions flagged, caller-declared stale, failures recorded, peak virtual SOL kept |
 | Secrets guard | — | `tests/test_secrets.py` (3) | no committable file holds a credential shape or the configured GMGN values |
-| Migration field semantics checked live | — | 6 tokens (3 near completion, 3 completed) read through trenches and token info | `launchpad_status` read 0 on the curve and 1 after migration, not 2 as `skills/gmgn-token/SKILL.md:166` documents. `migrated_pool` equals the trenches `pool_address` once migrated, and `migrated_timestamp` equals `complete_timestamp`. The lifecycle mapping relies on those fields, never on `launchpad_status` alone |
+| Migration field semantics checked live | — | **Superseded (round 8 M6).** The 6-token sample behind this row was not recorded, and its conclusion (`launchpad_status` reads 1 after migration) was too broad | Recorded replacement and corrected reading: section 14 and `docs/GMGN_CAPABILITY_INVENTORY.md` §3 |
 
 Full suite after these changes: `246 passed` (`.venv/bin/python -m pytest -o addopts="" -q`, 10.3 s on jinx-nyc), up from 224 at f2eac2d. The 22 new tests are 10 GMGN Plus, 9 lifecycle and 3 secrets.
 
 These items are the builder's evidence. They have not been through a Codex round yet.
+
+## 14. Review round 8 (on 7d3fe55) and fixes (awaiting round 9)
+
+**Round 8, first attempt (on f2eac2d): no review produced.**
+- OpenAI's service stopped Codex after 8,660 tokens with "This content was flagged for possible cybersecurity risk".
+- The prompt had asked the reviewer to "try hard to construct" database states that would let a historical sale execute twice.
+- Log kept on the owner's PC: `E:\DevCache\agent-scratch\harlemshakejinx-review-20261020-codex-round8-attempt1-refused.log`, sha256 `7777EE57A267B2828319F05A3E58CE34694F98EAC6AB7F2DA2123DC8BC093034`.
+- Round 8 was re-run on 7d3fe55 with the same checks worded as a correctness review.
+
+**Round 8 result.** Codex returned FAIL (`docs/audits/phase1-codex-20261020-round8.md`).
+- Confirmed FIXED: R7-1, R7-2, R4-1, R5-1, R6-2.
+- PARTIAL: round-1 #3, B1, R3-1 (all through H1 below), and R4-3 (through M6).
+- It also confirmed:
+  - the allowlist equals the client's 30 read methods;
+  - the signing-key handling matches the owner decision;
+  - no credential shape in any committable file or any blob in history;
+  - no real-money order path, no second controller, no Phase 2 logic, no invented strategy value.
+
+| Finding | Fix (builder) | Tests |
+|---|---|---|
+| H1 HIGH: a provenance-free sell with a BLOB (or NULL) fill id made every database open fail, v1–v6 | Schema v8. Such a sell is recorded in `unclassified_exits` under `"<sqlite type>:<hex>"`, never decoded or merged into text evidence. Its position refuses new exit claims (`UNCLASSIFIED_HISTORY`) until reconciled. New fills must have text ids | `tests/test_review_round8.py` (24: BLOB and NULL ids from v1 to v6, refusal on replay and on new intents, text-id rule) |
+| H2 HIGH: POST_MIGRATION_MARKET was reachable without a confirmed migration; confirmation checked only a truthy pool | Confirmation needs a non-empty destination pool, a non-empty venue and a positive provider time. Post-migration data needs a prior confirmation. Both are refused before anything is recorded | `test_post_migration_market_needs_a_confirmed_migration_first`, `test_confirmation_needs_pool_venue_and_time` (4 cases) |
+| M1: late reports changed the pool and refreshed freshness | Ordering is checked before any recorded value changes. Freshness counts only accepted reports (`last_accepted_ns`); every receipt is kept in `last_received_ns` | `test_a_late_report_cannot_change_the_confirmed_pool_or_refresh_freshness`, `test_a_late_report_never_overwrites_newer_pool_identity` |
+| M2: a second confirmation with another pool changed it silently; a repeated contradiction made two transitions | Another pool, or post-migration data from another pool, is a conflict. One CONFLICTING transition is made; every contradicting report is kept in `conflicts` | `test_a_second_confirmation_naming_another_pool_is_a_conflict`, `test_a_repeated_contradiction_is_kept_but_makes_one_transition`, `test_post_migration_data_from_another_pool_is_a_conflict` |
+| M3: no FAILED state; the mandated record (§3.1) and evidence payloads were not kept | `State.FAILED`: one transition, failures listed, cleared by fresh evidence. `fields` keeps launchpad, creation time, category, progress, pre/post pool, venue, first migration signal, and last valid price and liquidity, each with source and times. Transitions keep the evidence payload | `test_a_failed_observation_is_an_exceptional_state_that_fresh_evidence_clears`, `test_the_mandated_lifecycle_record_is_kept_with_provenance` |
+| M4: requests continued during a GMGN ban | The bridge passes GMGN's `api_error` and `reset_at`. The adapter pauses every call on the key until the reset (or GMGN's documented 5 s step) and raises `GmgnRateLimited` without sending. The client's own retry knob is set to 0, so every ban reaches JINX at once. Found while testing: in the pinned build that retry never fires anyway (`executePreparedRequest` returns `parseResponse` without `await` inside its `try`) | `tests/test_gmgn_rate_limit.py` (10: four ban types, missing reset, plan refusal, header reporting, short ban, concurrent callers, retry knob) |
+| M5: cooking stats charged 10 (documented 1); 1 s candles charged 2 (documented 3) | Weights corrected (`createToken` 5 as documented too); `weight()` is resolution-aware | `test_every_route_weight_matches_gmgns_pinned_docs`: every client route found in the pinned skill tables is compared to the docs |
+| M6: the 6-token migration claim had no recorded evidence | The capability check records per-token migration values. The recorded run contradicted the earlier reading (token info showed `launchpad_status` 2 right after completion and 1 later, and `migrated_pool` lagged completion). The docs now state only what the file shows | `docs/evidence/gmgn_capability_check_20261020T2001.json` (`migration_semantics`); `docs/GMGN_CAPABILITY_INVENTORY.md` §3 |
+
+**Also found by the builder while round 8 ran:**
+- GMGN's own `x-ratelimit-*` headers are now recorded in health. Live: `x-ratelimit-limit: 20` (`docs/evidence/gmgn_capability_check_20261020T1952.json`).
+- Lifecycle: fresh evidence consistent with a confirmed migration now clears STALE.
+- The capability script's `refusal` variable was undefined on a non-refused `swap`; now initialized.
+
+Full suite after these fixes: `295 passed` (`.venv/bin/python -m pytest -o addopts="" -q`, 16.4 s on jinx-nyc).

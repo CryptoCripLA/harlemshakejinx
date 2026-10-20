@@ -65,7 +65,7 @@ safety 0–100 formula and pass threshold; momentum "stall" and "sustained volum
 
 ## B-15 GMGN plan tier sets JINX's polling budget — RESOLVED 2026-10-20
 - GMGN rate limits per plan: Free 5/5, Plus 20/20, Pro 50/50 weight per second. 1-second candles are Pro only.
-- Measured on the owner's key: **Plus**. Evidence: response header `x-ratelimit-limit: 20`, and 1-second candles refused with `PRO_PLAN_REQUIRED`.
+- Measured on the owner's key: **Plus**. Evidence: GMGN's response header `x-ratelimit-limit: 20` (`docs/evidence/gmgn_capability_check_20261020T1952.json`), and 1-second candles refused with `PRO_PLAN_REQUIRED`.
 - The owner's message said "Pro". The owner then confirmed: "its not pro its plus who cares claude use what we have available maximize jinx with what gmgn gives us".
 - JINX paces itself to Plus (`jinx/adapters/gmgn/budget.py`). Changing plans is a one-line change (`CURRENT_PLAN`).
 

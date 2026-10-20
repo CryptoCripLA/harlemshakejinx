@@ -14,6 +14,7 @@ import asyncio
 import itertools
 import json
 import os
+import time
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,6 +27,11 @@ PASSED_VARS = ("GMGN_API_KEY", "GMGN_PRIVATE_KEY", "JINX_GMGN_HOST")
 # Response-size contract: one JSON reply per line, at most this many bytes. A larger reply fails that request
 # with RESPONSE_TOO_LARGE and the bridge is replaced on the next call.
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+# GMGN rate-limit errors that cover the whole API key (skills/gmgn-token/SKILL.md:68-76). Requests sent during the
+# cooldown extend the ban, so after one of these JINX sends nothing until the reset time.
+RATE_LIMIT_ERRORS = {"RATE_LIMIT_EXCEEDED", "RATE_LIMIT_BANNED", "RATE_LIMIT_BANNED_MAX", "ERROR_RATE_LIMIT_BLOCKED"}
+# When GMGN gives no reset time: its documented ban step, "extend the ban by 5 seconds each time".
+BAN_STEP_S = 5
 
 
 class GmgnError(Exception):
@@ -34,6 +40,14 @@ class GmgnError(Exception):
 
 class GmgnUnavailable(Exception):
     """The bridge process is not running."""
+
+
+class GmgnRateLimited(GmgnError):
+    """GMGN banned the key for a while; no request is sent before `reset_at` (unix seconds)."""
+
+    def __init__(self, message: str, reset_at: float) -> None:
+        super().__init__(message)
+        self.reset_at = reset_at
 
 
 @dataclass
@@ -58,7 +72,8 @@ class GmgnAdapter:
 
     def __init__(self, build_dir: Path, env: dict[str, str] | None = None, home: Path | None = None,
                  node: str = "node", timeout_s: float = 15.0, max_response_bytes: int = MAX_RESPONSE_BYTES,
-                 auto_restart: bool = True, allow_signing_key: bool = False, budget: RateBudget | None = None) -> None:
+                 auto_restart: bool = True, allow_signing_key: bool = False, budget: RateBudget | None = None,
+                 wall=time.time) -> None:
         self.build_dir = Path(build_dir)
         self.env = env
         self.home = home
@@ -71,11 +86,14 @@ class GmgnAdapter:
         # (jinx/config.py). Trading stays refused by the bridge allowlist either way.
         self.allow_signing_key = allow_signing_key
         self.budget = budget if budget is not None else RateBudget(PLANS[CURRENT_PLAN])
+        self._wall = wall                      # wall clock, because GMGN's reset times are unix seconds
+        self.paused_until: float | None = None
         self._gen: _Generation | None = None
         self._lock: asyncio.Lock | None = None
         self._ids = itertools.count(1)
         self._stderr_tail: deque[str] = deque(maxlen=20)
-        self.stats = {"calls": 0, "errors": 0, "unavailable": 0, "oversized": 0, "restarts": 0, "spawned": 0}
+        self.stats = {"calls": 0, "errors": 0, "unavailable": 0, "oversized": 0, "restarts": 0, "spawned": 0,
+                      "rate_limited": 0}
 
     def child_env(self) -> dict[str, str]:
         source = self.env if self.env is not None else os.environ
@@ -85,6 +103,11 @@ class GmgnAdapter:
         if not self.allow_signing_key:
             env.pop("GMGN_PRIVATE_KEY", None)
             env["JINX_GMGN_NO_SIGNING_KEY"] = "1"
+        # GMGN's own setting for the client's sleep-and-retry on a short ban (OpenApiClient.ts
+        # getAutoRetryMaxWaitMs). At 0 every ban reaches JINX at once, where one shared pause covers all calls.
+        # (In the pinned build that retry never fires anyway: executePreparedRequest returns parseResponse's
+        # promise without await inside its try, so the rejection skips the retry; see test_gmgn_rate_limit.py.)
+        env["GMGN_RATE_LIMIT_AUTO_RETRY_MAX_WAIT_MS"] = "0"
         return env
 
     @property
@@ -134,13 +157,27 @@ class GmgnAdapter:
 
     async def call(self, method: str, *args: Any) -> Any:
         if not method.startswith("__"):
-            await self.budget.acquire(weight(method))  # pace to the plan instead of tripping GMGN's bans
+            self._refuse_while_banned()
+            await self.budget.acquire(weight(method, *args))  # pace to the plan instead of tripping GMGN's bans
+            self._refuse_while_banned()                # a ban may have started while this call waited
         msg = await self._send(method, args)
         if not msg.get("ok"):
             self.stats["errors"] += 1
             err = msg.get("error") or {}
-            raise GmgnError(f"{err.get('code')}: {err.get('message')}")
+            text = f"{err.get('code')}: {err.get('message')}"
+            if err.get("api_error") in RATE_LIMIT_ERRORS:
+                reset = err.get("reset_at") or self._wall() + BAN_STEP_S
+                self.paused_until = max(self.paused_until or 0, reset)
+                self.stats["rate_limited"] += 1
+                raise GmgnRateLimited(f"{err.get('api_error')}: {text}", self.paused_until)
+            raise GmgnError(text)
         return msg.get("result")
+
+    def _refuse_while_banned(self) -> None:
+        if self.paused_until is not None and self._wall() < self.paused_until:
+            self.stats["rate_limited"] += 1
+            raise GmgnRateLimited(f"RATE_LIMITED: GMGN calls paused until {self.paused_until} (unix s)",
+                                  self.paused_until)
 
     async def _send(self, method: str, args) -> dict:
         gen = await self._ensure_running()
@@ -166,7 +203,7 @@ class GmgnAdapter:
         except (GmgnUnavailable, GmgnError, asyncio.TimeoutError):
             return {"adapter": self.name, "bridge": "down", "configured": None, **self.stats}
         return {"adapter": self.name, "bridge": "up", **h, **self.stats, "plan": self.budget.plan.name,
-                "budget": dict(self.budget.stats)}
+                "budget": dict(self.budget.stats), "paused_until": self.paused_until}
 
     async def stop(self) -> None:
         async with self._lifecycle:

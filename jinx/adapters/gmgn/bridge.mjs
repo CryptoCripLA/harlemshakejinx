@@ -52,6 +52,20 @@ function credentials() {
 
 const { apiKey, privateKey } = credentials();
 // SRC: gmgn-skills@402671e src/config.ts:67
+// Observe GMGN's own rate-limit headers on every reply the pinned client receives. The client keeps using the
+// real fetch; only header names starting with x-ratelimit- are copied, never request data.
+let lastRateLimit = null;
+const realFetch = globalThis.fetch;
+globalThis.fetch = async (...fetchArgs) => {
+  const res = await realFetch(...fetchArgs);
+  const seen = {};
+  res.headers.forEach((value, name) => {
+    if (name.toLowerCase().startsWith("x-ratelimit-")) seen[name.toLowerCase()] = value;
+  });
+  if (Object.keys(seen).length) lastRateLimit = seen;
+  return res;
+};
+
 const host = process.env.JINX_GMGN_HOST || "https://openapi.gmgn.ai";
 const client = apiKey ? new OpenApiClient({ apiKey, privateKeyPem: privateKey, host }) : null;
 
@@ -67,7 +81,7 @@ createInterface({ input: process.stdin })
     }
     const { id, method, args = [] } = req;
     if (method === "__health") {
-      return reply({ id, ok: true, result: { configured: client !== null, signing: Boolean(privateKey) } });
+      return reply({ id, ok: true, result: { configured: client !== null, signing: Boolean(privateKey), rate_limit: lastRateLimit } });
     }
     if (!READ_ONLY.has(method)) {
       return reply({ id, ok: false, error: { code: "METHOD_NOT_ENABLED", message: `${method} is not enabled` } });
@@ -78,7 +92,10 @@ createInterface({ input: process.stdin })
     try {
       reply({ id, ok: true, result: await client[method](...args) });
     } catch (e) {
-      reply({ id, ok: false, error: { code: String(e?.apiCode ?? e?.status ?? "GMGN_ERROR"), message: String(e?.message ?? e) } });
+      // GMGN's rate-limit identity and reset time (OpenApiError.apiError / resetAtUnix) are passed on so JINX can
+      // stop sending until the ban lifts instead of extending it.
+      reply({ id, ok: false, error: { code: String(e?.apiCode ?? e?.status ?? "GMGN_ERROR"), message: String(e?.message ?? e),
+                                      api_error: e?.apiError ?? null, reset_at: e?.resetAtUnix ?? null } });
     }
   })
   .on("close", () => process.exit(0));

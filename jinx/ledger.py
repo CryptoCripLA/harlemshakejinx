@@ -55,8 +55,8 @@ class Fill:
     ts_ns: int
 
     def __post_init__(self) -> None:
-        if not self.fill_id:
-            raise ValueError("fill needs an id")
+        if not isinstance(self.fill_id, str) or not self.fill_id:
+            raise ValueError("fill needs a non-empty text id")
         _check_int("token_amount", self.token_amount, 1)
         _check_int("sol_lamports", self.sol_lamports, 0)
         _check_int("protocol_fee_lamports", self.protocol_fee_lamports, 0)
@@ -182,6 +182,8 @@ class PositionLedger:
             pos = self.get(position_id)
             if pos is None:
                 return Result(False, position_id, "UNKNOWN_POSITION")
+            if self._unclassified_history(c, position_id):
+                return Result(False, position_id, "UNCLASSIFIED_HISTORY")
             historical = c.execute("SELECT fill_id, position_id FROM historical_exits WHERE intent_id = ?",
                                    (intent_id,)).fetchall()
             if historical:
@@ -219,6 +221,12 @@ class PositionLedger:
             return Result(True, position_id)
 
     @staticmethod
+    def _unclassified_history(c, position_id: int) -> bool:
+        """The position has a sell recorded before provenance under a fill id that is not text (store v8). No
+        intent can be matched to it, so any new exit could repeat it: refused until the owner reconciles."""
+        return c.execute("SELECT 1 FROM unclassified_exits WHERE position_id = ?", (position_id,)).fetchone() is not None
+
+    @staticmethod
     def _historical_exit_replay(c, historical, pos: "Position", token_amount: int | None) -> Result:
         """An exit intent whose sell happened before fills recorded provenance. Its requested amount was
         never stored, so only an unambiguous replay is accepted: the same position and the same amount as its
@@ -248,6 +256,8 @@ class PositionLedger:
             pos = self.get(position_id)
             if pos is None:
                 return Result(False, position_id, "UNKNOWN_POSITION")
+            if self._unclassified_history(c, position_id):
+                return Result(False, position_id, "UNCLASSIFIED_HISTORY")
             if pos.status is Status.PENDING_CLOSE:
                 if pos.exit_intent_id == intent_id:
                     return Result(True, position_id, "ALREADY_EXITING")

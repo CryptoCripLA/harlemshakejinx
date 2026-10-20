@@ -41,11 +41,17 @@ ROUTE_WEIGHTS = {
     "getCalloutRecord": 3, "getCalloutGlobal": 3,
     "quoteOrder": 10, "queryOrder": 5, "getStrategyOrders": 1, "getGasPrice": 1,
     "swap": 10, "multiSwap": 10, "createStrategyOrder": 5, "cancelStrategyOrder": 2,
+    "getCookingStatistics": 1, "createToken": 5,   # skills/gmgn-cooking/SKILL.md:104-107 ("cooking stats" / "create")
 }
-CONSERVATIVE_WEIGHT = 10  # for routes GMGN does not document (e.g. getCookingStatistics): assume the maximum
+CONSERVATIVE_WEIGHT = 10  # for a route GMGN does not document: assume the maximum (none today; tested)
+# 1-second candles cost 3 against the Pro key bucket (skills/gmgn-market/SKILL.md:71). They also count against a
+# separate global limit shared by all Pro users (500 req/s), which JINX cannot see; the route is Pro only.
+KLINE_1S_WEIGHT = 3
 
 
-def weight(method: str) -> int:
+def weight(method: str, *args) -> int:
+    if method == "getTokenKline" and len(args) > 2 and args[2] == "1s":
+        return KLINE_1S_WEIGHT
     return ROUTE_WEIGHTS.get(method, CONSERVATIVE_WEIGHT)
 
 
