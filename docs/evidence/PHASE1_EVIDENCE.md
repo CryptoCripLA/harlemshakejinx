@@ -209,7 +209,7 @@ These items are the builder's evidence. They have not been through a Codex round
 | M3: no FAILED state; the mandated record (§3.1) and evidence payloads were not kept | `State.FAILED`: one transition, failures listed, cleared by fresh evidence. `fields` keeps launchpad, creation time, category, progress, pre/post pool, venue, first migration signal, and last valid price and liquidity, each with source and times. Transitions keep the evidence payload | `test_a_failed_observation_is_an_exceptional_state_that_fresh_evidence_clears`, `test_the_mandated_lifecycle_record_is_kept_with_provenance` |
 | M4: requests continued during a GMGN ban | The bridge passes GMGN's `api_error` and `reset_at`. The adapter pauses new calls on the key until the reset (round 9 changed the no-reset fallback from 5 s to GMGN's documented 5-minute maximum) and raises `GmgnRateLimited` without sending. The client's own retry knob is set to 0, so every ban reaches JINX at once. Found while testing: in the pinned build that retry never fires anyway (`executePreparedRequest` returns `parseResponse` without `await` inside its `try`) | `tests/test_gmgn_rate_limit.py` (10: four ban types, missing reset, plan refusal, header reporting, short ban, concurrent callers, retry knob) |
 | M5: cooking stats charged 10 (documented 1); 1 s candles charged 2 (documented 3) | Weights corrected (`createToken` 5 as documented too); `weight()` is resolution-aware | `test_every_route_weight_matches_gmgns_pinned_docs`: every client route found in the pinned skill tables is compared to the docs |
-| M6: the 6-token migration claim had no recorded evidence | The capability check records per-token migration values. The recorded run contradicted the earlier reading (token info showed `launchpad_status` 2 right after completion and 1 later, and `migrated_pool` lagged completion). The docs now state only what the file shows | `docs/evidence/gmgn_capability_check_20261020T2001.json` (`migration_semantics`); `docs/GMGN_CAPABILITY_INVENTORY.md` §3 |
+| M6: the 6-token migration claim had no recorded evidence | The capability check records per-token migration values. The recorded run contradicted the earlier reading. In that cross-sectional sample (different tokens, each read once), token info showed `launchpad_status` 2 for the tokens completed under a minute earlier and 1 for the one completed about four minutes earlier, and `migrated_pool` was still empty for the recent ones. It shows no same-token sequence. The docs now state only what the file shows | `docs/evidence/gmgn_capability_check_20261020T2001.json` (`migration_semantics`); `docs/GMGN_CAPABILITY_INVENTORY.md` §3 |
 
 **Also found by the builder while round 8 ran:**
 - GMGN's own `x-ratelimit-*` headers are now recorded in health. Live: `x-ratelimit-limit: 20` (`docs/evidence/gmgn_capability_check_20261020T1952.json`).
@@ -234,3 +234,20 @@ Full suite after these fixes: `295 passed` (`.venv/bin/python -m pytest -o addop
 | R9-L1 LOW: docs contradicted the code or the evidence | Contract: retry behavior, ban fallback and FAILED state corrected. Migration sample described as cross-sectional (inventory, contract, matrix). Wallet amounts removed from the public inventory (not in the evidence files; reported to the owner directly) | — |
 
 Full suite after these fixes: `303 passed` (`.venv/bin/python -m pytest -o addopts="" -q`, 16.9 s on jinx-nyc).
+
+## 16. Review round 10 (on 2bb51c3) and fixes (awaiting round 11)
+
+**Round 10 result.** Codex returned FAIL, with no CRITICAL or HIGH findings (`docs/audits/phase1-codex-20261020-round10.md`).
+- Confirmed FIXED: R9-M1, R9-M2, R9-M3, round-8 M4 and round-1 #3.
+- PARTIAL: R9-H1 and round-8 M3, both through R10-M1 below, and R9-L1/R4-3 (through R10-L1/L2).
+- It also verified:
+  - the recorded API counts, latencies, plan headers and six-token values against the committed reports;
+  - all four upstream pins.
+
+| Finding | Fix (builder) | Tests |
+|---|---|---|
+| R10-M1 MEDIUM: a creation report after a migration was treated as a contradiction; a provider creation report after a receipt-time one was dropped with its launchpad and pre-migration pool | A creation report is merged into the record and never ordered against the current stage or treated as a contradiction. It moves the state only to start the lifecycle. Evidence carries its clock (`provider` or `receipt`); a provider creation time replaces a receipt-time one, never the reverse | `test_a_creation_report_after_a_migration_is_history_not_a_conflict` and `test_a_provider_creation_time_replaces_a_receipt_time_approximation` (both Codex reproductions), `test_a_receipt_time_never_replaces_a_provider_creation_time` |
+| R10-L1 LOW: the evidence still implied a same-token status sequence | Section 14's M6 row now describes the cross-sectional sample | — |
+| R10-L2 LOW: the contract's confirmation mapping omitted `exchange` | Added to the mapping; the creation rows state their clock | `test_the_documented_gmgn_mapping_produces_evidence_the_lifecycle_accepts`: a contract test that builds the confirmation from the documented table. It failed before the doc fix |
+
+Full suite after these fixes: `307 passed` (`.venv/bin/python -m pytest -o addopts="" -q`, 16.5 s on jinx-nyc).

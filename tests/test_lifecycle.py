@@ -7,7 +7,8 @@ from jinx.core.lifecycle import Evidence, Kind, MissingEvidence, State, TokenLif
 
 
 def ev(kind, t, source="gmgn.trenches", **payload):
-    return Evidence(kind=kind, source=source, observed_ns=t, event_ns=payload.pop("event_ns", t), payload=payload)
+    return Evidence(kind=kind, source=source, observed_ns=t, event_ns=payload.pop("event_ns", t),
+                    clock=payload.pop("clock", "provider"), payload=payload)
 
 
 def test_normal_path_records_every_transition_with_source_and_time():
@@ -247,3 +248,47 @@ def test_an_older_value_never_replaces_a_newer_one_of_the_same_field():
     lc.observe(ev(Kind.NEAR_COMPLETION, 100, event_ns=100, progress=0.95))
     lc.observe(ev(Kind.MIGRATION_SIGNAL, 110, event_ns=90, progress=0.9))       # accepted, but its progress is older
     assert lc.fields["progress"].value == 0.95
+
+
+# ---- Codex round 10 (docs/audits/phase1-codex-20261020-round10.md) -------------------------------
+def test_a_creation_report_after_a_migration_is_history_not_a_conflict():     # R10-M1 (reproduction 1)
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.MIGRATION_CONFIRMED, 100, event_ns=90, post_pool="P", exchange="pump_amm"))
+    assert lc.observe(ev(Kind.CREATED, 110, event_ns=50, launchpad="Pump.fun", pre_pool="CURVE")) is None
+    assert lc.state is State.MIGRATION_CONFIRMED and lc.conflicts == []
+    assert (lc.fields["created"].event_ns, lc.fields["launchpad"].value, lc.pre_pool) == (50, "Pump.fun", "CURVE")
+
+
+def test_a_provider_creation_time_replaces_a_receipt_time_approximation():     # R10-M1 (reproduction 2)
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.CREATED, 100, source="mako.pumpportal", clock="receipt"))   # the feed has no chain time
+    t = lc.observe(ev(Kind.CREATED, 110, source="gmgn.trenches", event_ns=50, launchpad="Pump.fun", pre_pool="CURVE"))
+    assert t is None and lc.state is State.NEWLY_DETECTED
+    created = lc.fields["created"]
+    assert (created.value, created.source, created.clock) == (50, "gmgn.trenches", "provider")
+    assert (lc.fields["launchpad"].value, lc.pre_pool) == ("Pump.fun", "CURVE")
+
+
+def test_a_receipt_time_never_replaces_a_provider_creation_time():
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.CREATED, 60, source="gmgn.trenches", event_ns=50))
+    lc.observe(ev(Kind.CREATED, 100, source="mako.pumpportal", clock="receipt"))
+    assert (lc.fields["created"].value, lc.fields["created"].clock) == (50, "provider")
+
+
+def test_the_documented_gmgn_mapping_produces_evidence_the_lifecycle_accepts():   # R10-L2: contract test
+    """Builds each migration row of docs/GMGN_ADAPTER_CONTRACT.md §5 from its documented payload keys."""
+    import re
+    from pathlib import Path
+    doc = (Path(__file__).resolve().parents[1] / "docs" / "GMGN_ADAPTER_CONTRACT.md").read_text()
+    rows = {m.group(1): m.group(2) for m in re.finditer(r"^\|[^|]*\| `([A-Z_]+)` \|[^|]*\| ([^|]*)\|$", doc, re.M)}
+
+    def payload(kind):
+        return {k: f"value-of-{v}" for k, v in re.findall(r"`(\w+)` = `(\w+)`", rows[kind])}
+
+    confirmed = payload("MIGRATION_CONFIRMED")
+    assert {"post_pool", "exchange"} <= set(confirmed)
+    lc = TokenLifecycle("MINT")
+    lc.observe(ev(Kind.MIGRATION_SIGNAL, 10))
+    lc.observe(ev(Kind.MIGRATION_CONFIRMED, 20, **confirmed))
+    assert lc.state is State.MIGRATION_CONFIRMED

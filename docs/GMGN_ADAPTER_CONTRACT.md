@@ -120,6 +120,7 @@ The rules are tested in `tests/test_lifecycle.py`:
   - a backward curve move with older evidence than the one that set the current stage.
 - A late report never moves the state, never replaces a recorded value and never refreshes freshness. A migration indexed after a newer curve read is still recognized (round 9 H1);
 - a recorded value is replaced only by newer evidence for that value, so a delayed report can fill in what is missing;
+- a creation report is merged into the record and never conflicts with the current stage; a provider creation time replaces a receipt-time one, never the reverse (round 10 M1);
 - a repeated report makes no second transition;
 - newer evidence that contradicts a migration becomes `CONFLICTING`;
 - `STALE` is declared by the caller's own age limit;
@@ -129,12 +130,12 @@ Phase 2 translates provider data into `Evidence` exactly as below. The categorie
 
 | Provider observation | Evidence `Kind` | `event_ns` | Payload |
 |---|---|---|---|
-| Mako/PumpPortal `create` message | `CREATED` | receive time (the feed has no chain time) | creator, initial buy, `v_sol_lamports` |
-| Trenches `new_creation` item | `CREATED` | `created_timestamp` | `pre_pool` = `pool_address`, `launchpad`, `exchange` |
+| Mako/PumpPortal `create` message | `CREATED` | receive time, `clock="receipt"` (the feed has no chain time; a provider creation time replaces it) | creator, initial buy, `v_sol_lamports` |
+| Trenches `new_creation` item | `CREATED` | `created_timestamp` (`clock="provider"`) | `pre_pool` = `pool_address`, `launchpad`, `exchange` |
 | PumpPortal trade, or token info with `exchange: pump` and `launchpad_progress < 1` | `ON_CURVE` | trade receive time, or GMGN read time | `v_sol_lamports` (stream), `progress` |
 | Trenches `near_completion` item | `NEAR_COMPLETION` | GMGN read time | `progress` |
 | `complete_timestamp > 0`, but no post-migration pool yet | `MIGRATION_SIGNAL` | `complete_timestamp` | — |
-| `migrated_pool` non-empty, `exchange: pump_amm`, `migrated_timestamp > 0` | `MIGRATION_CONFIRMED` | `migrated_timestamp` | `post_pool` = `migrated_pool` |
+| `migrated_pool` non-empty, `exchange: pump_amm`, `migrated_timestamp > 0` | `MIGRATION_CONFIRMED` | `migrated_timestamp` | `post_pool` = `migrated_pool`, `exchange` = `exchange` (from the trenches item; the lifecycle requires both) |
 | price, liquidity or candles read from the post-migration pool | `POST_MIGRATION_MARKET` | provider time | price, liquidity, source route |
 | GMGN error, timeout or 429 | `record_failure` | — | reason |
 | token missing from a query result | nothing | — | there is deliberately no evidence kind for absence or for price |

@@ -19,6 +19,10 @@ handling, not trading:
   kind for price or for a token missing from a query result.
 - Evidence newer than the observed migration that contradicts it (curve data, another pool) moves the token to
   CONFLICTING once; every contradicting report is kept in `conflicts`.
+- A creation report is a fact about the past. It is merged into the record (creation time, launchpad,
+  pre-migration pool), never ordered against the current stage and never a contradiction; it moves the state
+  only to start the lifecycle. A creation time on the provider's clock replaces one taken from JINX's receipt
+  time (a feed without chain time), never the reverse.
 - STALE (caller's age limit) and FAILED (a failed observation) are exceptional states. The last consistent
   state is kept, and the next accepted consistent evidence returns the token to it.
 """
@@ -65,6 +69,7 @@ class Evidence:
     source: str
     observed_ns: int                  # when JINX received it
     event_ns: int                     # when the provider says it happened (= observed_ns if not supplied)
+    clock: str = "provider"           # "provider": event_ns is the provider's time; "receipt": JINX's receipt time
     payload: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -93,6 +98,7 @@ class Recorded:
     source: str
     observed_ns: int
     event_ns: int
+    clock: str = "provider"
 
 
 # payload values copied into the record as reported (mandate §3.1); pools and venue are handled with migration
@@ -144,6 +150,8 @@ class TokenLifecycle:
         v_sol = e.payload.get("v_sol_lamports")
         if _number(v_sol, minimum=0):
             self.peak_v_sol_lamports = max(self.peak_v_sol_lamports or 0, v_sol)
+        if e.kind is Kind.CREATED:
+            return self._observe_creation(e)
         target = e.kind.value
         base = self.last_consistent_state
         migrated = base.value >= State.MIGRATION_OBSERVED.value
@@ -157,8 +165,6 @@ class TokenLifecycle:
         if self._contradicts(e, migrated):
             return self._conflict(e)
         self._record(e)
-        if e.kind is Kind.CREATED and base is not State.UNKNOWN:
-            return None   # creation is the entry state; a later creation report never moves a token back
         if target is base:
             return self._move(target, e) if self.state in EXCEPTIONAL else None
         if target.value > base.value or not migrated:
@@ -181,6 +187,14 @@ class TokenLifecycle:
         if self.state is State.FAILED:
             return None
         return self._enter(State.FAILED, None, source, observed_ns, observed_ns, {"reason": reason})
+
+    def _observe_creation(self, e: Evidence) -> Transition | None:
+        self._record(e)
+        if self.last_consistent_state is not State.UNKNOWN:
+            return None   # creation is the entry state; a later creation report never moves a token back
+        self._latest_by_kind[e.kind] = e.event_ns
+        self.last_accepted_ns = max(self.last_accepted_ns or 0, e.observed_ns)
+        return self._move(State.NEWLY_DETECTED, e)
 
     # ---- rules ---------------------------------------------------------------------------------------
     def _validate(self, e: Evidence) -> None:
@@ -224,13 +238,14 @@ class TokenLifecycle:
         def put(name, value):
             current = self.fields.get(name)
             if current is None or e.event_ns >= current.event_ns:   # only newer evidence replaces a value
-                self.fields[name] = Recorded(value, e.source, e.observed_ns, e.event_ns)
+                self.fields[name] = Recorded(value, e.source, e.observed_ns, e.event_ns, e.clock)
 
         for name in RECORDED_AS_REPORTED:
             if e.payload.get(name) is not None:
                 put(name, e.payload[name])
-        if e.kind is Kind.CREATED and "created" not in self.fields:
-            put("created", e.event_ns)
+        created = self.fields.get("created")
+        if e.kind is Kind.CREATED and (created is None or (created.clock == "receipt" and e.clock == "provider")):
+            self.fields["created"] = Recorded(e.event_ns, e.source, e.observed_ns, e.event_ns, e.clock)
         if e.kind is Kind.MIGRATION_SIGNAL and "first_migration_signal" not in self.fields:
             put("first_migration_signal", e.event_ns)
         if e.kind is Kind.MIGRATION_CONFIRMED and "post_pool" not in self.fields:
