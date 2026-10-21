@@ -136,3 +136,58 @@ Added 2026-10-21 with the Early Momentum build. The owner settled all but the fi
 - Evidence: Phase 3's size/fire/exit code (Executioner, Negative Divergence, Sybil emergency exit, BIGMAC_PAPER, monitor) is on branch `phase3/size-fire-exit`, not on `main` (checked 2026-10-21 15:05 UTC). Contabo runs release `fe01850` in mode OFF.
 - Needed: Phase 3 landing on main; then the owner-set parameters Phase 3 leaves fail-closed (B-03 confluence threshold and Kelly values, B-30 BigMac paper settings). Phase 4 runs its exit, P&L and variant checks the moment Phase 3 lands, using explicitly labelled test fixtures where a value is owner-unset.
 - Not blocked by this: every other Phase 4 row (replay, predicates, safety, isolation, outages, recovery, stress, orders, reconciliation, anti-lookahead, latency, audits, single controller, speed rules).
+
+# Phase 3 blockers (p3 builder, 2026-10-21; ids B-30..B-49)
+
+Each is a value or permission CHAD or the owner has not given. The code around it is built and tested; the missing value is fail-closed configuration, never an invented default.
+
+## B-30 BIGMAC_PAPER settings are not set by the owner
+- The owner's BigMac exit (`jinx/exits/bigmac_exit.py`) is installed, proven equal to the original TypeScript, and wired into the position monitor. Its four percentages (take profit, stop loss, trailing stop, trailing activation) have no defaults by design ("Its numerical settings must be explicitly configured for paper testing, not inherited as live trading defaults").
+- Effect now: until the owner sets them, new paper positions get no BigMac exit; CHAD's mandatory exits still run. Tests and paper runs use settings labelled `TEST_FIXTURE_*`.
+- To set (paper only): `python -m jinx.exits.configure --db <ledger> set-bigmac --take-profit X --stop-loss Y --trailing-stop Z --trailing-activation W --owner-order`.
+
+## B-31 Which Kelly bucket an Early Momentum (fast-path) entry uses
+- CHAD's Kelly buckets are by confluence score ("Score 60 … Score 70 … Score 80+"), but Bot 10 "Bypasses the normal scoring queue", so a fast-path entry has no score.
+- Effect now: sizing refuses an unscored entry (`NO_SCORE_BUCKET`) unless the owner's Kelly settings name an `unscored_bucket`. Paper runs use a labelled fixture bucket.
+- Needed: the owner's choice of bucket (and prior) for fast-path entries.
+
+## B-32 Kelly bucket edges, bootstrap priors and cap (CHAD C13; part of B-03)
+- CHAD fixes quarter-Kelly, the 20-closed-trade switch, per-bucket models and the reset on a filter change; all four are implemented (`jinx/sizing/kelly.py`). It gives estimated win rates by score ("Score 60 … 32–36 % … Score 70 … 40 % … Score 80+ … 45–52 %+") but no payout ratio, no exact edges and no cap ("Kelly sizes up to the cap").
+- Effect now: no Kelly settings = no entries (`SIZING_NOT_CONFIGURED`). Settings are set with `python -m jinx.exits.configure set-kelly --file … --owner-order` (label `OWNER_CONFIG`).
+- Note: with CHAD's own score-70 win rate (40 %), any payout ratio up to 1.5 gives zero or negative edge, so Kelly would not bet there.
+
+## B-33 Re-entry while a Negative Divergence remainder is still held
+- CHAD: "Re-entry allowed immediately — No exit cooldown". Implemented: no cooldown exists; after a position closes, a new detection can enter the same token at once (`test_reentry_is_allowed_immediately_after_an_exit`).
+- Conflict: after a partial Negative Divergence exit the rest of the position is still open, and Phase 1's one-position-per-token rule plus the owner's slot rule refuse a second entry into the same token.
+- Needed: an owner decision only if re-entry should add to a token that is still partly held.
+
+## B-34 Paper fill delay
+- A paper fill priced at the decision's reserves ignores latency. `ExecutionGateway(fill_delay_ns=…)` prices it at the first price update at least that long after the decision (event time). It is a labelled paper simulation setting; the live paper run uses 300 ms, GMGN's own stated latency ("under 0.3 seconds"), which JINX has not measured. Real latency is measured only once live orders exist (activation).
+
+## B-35 Confluence score and global threshold (CHAD C12; part of B-03)
+- The confluence board records every component with source, times and blocking status (`jinx/confluence/board.py`). Without CHAD's weights and global threshold there is no score.
+- Effect now: the standard (scored) entry path refuses (`NO_CONFLUENCE_SCORE`); Confluence Collapse cannot fire on positions without an entry threshold and reports UNAVAILABLE instead of guessing. Only the fast path (Early Momentum) can enter.
+
+## B-36 Negative Divergence has no live producer (CHAD C02; part of B-03)
+- The Executioner's partial exits (30/40/50/60 % by entry score, only in profit, once per event) are built and tested (`jinx/exits/executioner.py`). The event comes from the momentum module's "price stalls on sustained volume", whose quantities CHAD does not give.
+- Effect now: no Negative Divergence events occur in the running engine; fast-path positions have no entry score, so they could not size one anyway.
+
+## B-37 Live execution through GMGN is not wired (activation requirement)
+- Paper only, as ordered. The gateway refuses LIVE (`LiveExecutionUnavailable`); the bridge refuses every GMGN trading method. `jinx/execution.py::gmgn_order_outcome` maps GMGN order reports to FILLED / FAILED / UNCERTAIN and books a fill only with actual report amounts.
+- GMGN's own skill page names the success status both `confirmed` and `successful`; both are accepted only together with report amounts.
+- Needed for activation: the owner's live authorization and a dedicated limited-capital wallet (B-14).
+
+## B-38 CHAD's own stop loss and trailing values (C14; part of B-03)
+- CHAD: "Standard configurable stop loss on every position. High-conviction positions get a trailing stop". Values and the high-conviction cut-off are not in CHAD. The owner's BIGMAC_PAPER policy is the paper stop/take-profit/trailing exit meanwhile. GMGN condition orders are not placed, so no protective sell can be duplicated across JINX and GMGN.
+
+## B-39 Priority fee escalation amounts (C15; part of B-03)
+- Paper fills include the 5,000-lamport network fee and the curve fees; tips and priority fees are 0 and reported as such.
+
+## B-40 BigMac: one documented arithmetic difference that JINX cannot reach
+- The original computes the take-profit price before the stop check, so a NaN (or +Infinity) take-profit percent throws there; the owner's port computes it only when used. The owner ordered exactly two fixes, so this structure is kept, and `BigMacPaperConfig` refuses non-finite percents. 39 of 6,767 differential cases, all of this kind (`docs/evidence/PHASE3_BIGMAC_SOURCE_EQUIVALENCE.md`).
+
+## B-41 Order lifecycle replication to PostgreSQL
+- `order_events` (decided, quoted, submitted, filled, failed, with costs) is in the authoritative local ledger. It joins the PostgreSQL replica once the storage session's hygiene test counts replicated tables from `OUTBOX_TABLES` (requested 2026-10-21 with the exact one-line change).
+
+## B-42 Daily loss stop (matrix E2)
+- Needs owner-approved parameters; not built.
