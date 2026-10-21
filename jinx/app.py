@@ -35,8 +35,13 @@ from jinx.adapters.pumpapi.feed import PumpApiFeed
 from jinx.adapters.rugcheck.client import RugCheckClient
 from jinx.core.bus import EventBus, Lane
 from jinx.core.lifecycle import State as LifeState
+from jinx.confluence.board import ConfluenceBoard
+from jinx.confluence.entry import EntryCoordinator
 from jinx.core_state import CoreState
 from jinx.execution import ExecutionGateway
+from jinx.exits.chad import SybilEmergencyExit
+from jinx.exits.executioner import CHECK_INTERVAL_S, ConfluenceCollapse, Executioner
+from jinx.exits.monitor import PositionMonitor
 from jinx.health import build_health
 from jinx.intel.bundles import BundleTracker
 from jinx.intel.early_momentum import EarlyMomentum, Funding
@@ -56,6 +61,7 @@ from jinx.persistence.redis_state import RedisState
 from jinx.persistence.research import ResearchStore
 from jinx.recovery import recover
 from jinx.registry import TokenRegistry, WalletRegistry
+from jinx.sizing.kelly import QuarterKelly, load_kelly_config
 from jinx.storage import MB, DailyRun, StorageMonitor, filesystem, process_rss_bytes, tree_bytes
 from jinx.store import Store
 
@@ -100,6 +106,20 @@ class JinxApp:
         self.bus = EventBus(persist=self.market.record_event)
         self._handler_ns: dict[str, deque] = {}            # per-handler processing time (bounded, RAM)
         self.bus.subscribe(Lane.FAST, self._timed("core_state", self.core.apply), name="core_state")
+        # Phase 3 EXIT: right after core state, so every exit sees the newest reserves before any intelligence runs.
+        # CHAD's mandatory protective exits first (Sybil emergency, Confluence Collapse), then the position's paper
+        # policy (BIGMAC_PAPER); one intent through the one gateway (jinx/exits/monitor.py).
+        self.board = ConfluenceBoard()
+        self.collapse = ConfluenceCollapse(self.board.score, self.ledger)
+        self.exit_monitor = PositionMonitor(self.ledger, self.core.tokens, self.gateway, config.PUMP_CURVE_FEES,
+                                       protective=[SybilEmergencyExit(lambda m: self.early.evidence(m)), self.collapse])
+        self.bus.subscribe(Lane.FAST, self._timed("position_monitor", self.exit_monitor.on_event), name="position_monitor")
+        self.executioner = Executioner(self.exit_monitor, self.ledger, config.NETWORK_FEE_LAMPORTS)
+        # Phase 3 SIZE + FIRE: quarter-Kelly from the owner's stored settings (none = no entries, B-03)
+        self.sizing = QuarterKelly(self.ledger, self.wallet, load_kelly_config(self.store), config.NETWORK_FEE_LAMPORTS)
+        self.entries = EntryCoordinator(self.store, self.ledger, self.gateway, self.sizing, self.board, self.entry_check,
+                                        self.core.tokens, config.PUMP_CURVE_FEES,
+                                        reload_sizing=lambda: load_kelly_config(self.store))
         self.bundles = BundleTracker()                     # R1 evidence, off the fast lane
         self.bus.subscribe(Lane.BACKGROUND, self.bundles.on_event, name="bundles")
         # CHAD Bot 10 (C10) on the fast lane: synchronous, no I/O; detections are screened in the background
@@ -163,6 +183,7 @@ class JinxApp:
             self._tasks["gmgn-trenches"] = asyncio.create_task(self._trenches_loop(), name="gmgn-trenches")
         if self.ai_gateway is not None:
             self._tasks["ai-gateway-probe"] = asyncio.create_task(self._probe_gateway(), name="ai-gateway-probe")
+        self._tasks["position-monitor"] = asyncio.create_task(self._monitor_loop(), name="position-monitor")
         self._server = await asyncio.start_server(self._http, "0.0.0.0", s.http_port)
         log.info("JINX up: db=%s port=%s mode=%s", s.db_path, s.http_port, (await self.health())["mode"])
 
@@ -239,6 +260,9 @@ class JinxApp:
         fires … in parallel"). Never blocks the event path."""
         entry = self.candidates.setdefault(evidence.mint, {"first_detected_ns": evidence.detected_ns})
         entry.update(evidence=evidence.to_dict(), trade_permitted=evidence.trade_permitted)
+        self.board.record(evidence.mint, "early_momentum", value=None, source=",".join(evidence.sources),
+                          observed_ns=evidence.observed_ns, event_ns=evidence.event_ns,
+                          blocking=not evidence.trade_permitted, payload={"blocking": list(evidence.blocking)})
         self.candidates.move_to_end(evidence.mint)
         while len(self.candidates) > 500:
             self.candidates.popitem(last=False)
@@ -252,6 +276,23 @@ class JinxApp:
             else:
                 self.screen_stats["screened"] += 1
                 self._spawn(self._screen(evidence.mint, evidence.creator))
+        elif (entry.get("safety") or {}).get("eligible"):
+            self._fast_entry(evidence)          # safety already passed: decide now, on the event path (CHAD Bot 10)
+
+    def _fast_entry(self, evidence) -> None:
+        """CHAD Bot 10's fast path: the entry decision runs at once, never behind a background queue. A failure here
+        is logged and never stops the feed."""
+        if not evidence.trade_permitted:
+            return
+        try:
+            d = self.entries.consider_fast_path(evidence)
+        except Exception:
+            log.exception("fast-path entry decision failed for %s; no order was placed", evidence.mint)
+            return
+        entry = self.candidates.get(evidence.mint)
+        if entry is not None:
+            entry["entry_decision"] = {"ok": d.ok, "reason": d.reason, "intent_id": d.intent_id,
+                                       "position_id": d.position_id}
 
     def _never_eligible(self, mint: str) -> str | None:
         """A reason the B-02 entry rule can never pass for this coin, whatever happens next: its verified peak
@@ -430,6 +471,12 @@ class JinxApp:
                                "checks": {c.name: c.verdict.value for c in result.safety.checks},
                                "latency_ms": round(result.latency_ms, 1)}
             entry["entry_check"] = self.entry_check(mint)
+            self.board.record_safety(mint, verdict=result.safety.verdict.value, veto=result.safety.veto_reasons,
+                                     observed_ns=time.time_ns(), source="gmgn+rugcheck")
+            if result.safety.eligible:
+                evidence = self.early.evidence(mint)
+                if evidence is not None:
+                    self._fast_entry(evidence)  # the moment the safety check passes (CHAD Bot 10)
             if result.safety.verdict.value != "UNKNOWN" or rc_error not in ("not_indexed", "rate_limited", "timeout"):
                 return
             await asyncio.sleep(self.SCREEN_RETRY_S)
@@ -458,6 +505,16 @@ class JinxApp:
                 ts = common.get("fund_from_ts")
                 self.early.record_funding(Funding(wallet, funder, "gmgn.getWalletStats.common.fund_from_address",
                                                   time.time_ns(), int(ts) * 1_000_000_000 if ts else None))
+
+    async def _monitor_loop(self) -> None:
+        """CHAD Bot 9: every open position checked at least every 10 seconds (Confluence Collapse, Sybil emergency)."""
+        while True:
+            await asyncio.sleep(CHECK_INTERVAL_S)
+            try:
+                self.exit_monitor.sweep()
+                self.board.hold({p.mint for p in self.ledger.active()})
+            except Exception:
+                log.exception("position sweep failed; next sweep in %s s", CHECK_INTERVAL_S)
 
     async def _whale_discovery_loop(self) -> None:
         """CHAD: discovery "runs every 4 hours". Promoted whales persist in the research store and come back on start."""
@@ -507,6 +564,11 @@ class JinxApp:
             "ai_gateway": self.ai_gateway.health() if self.ai_gateway else {"configured": False},
         }
         h["intel"] = self.intel_health()
+        h["trading"] = {"monitor": self.exit_monitor.health(), "executioner": dict(self.executioner.stats),
+                        "confluence_collapse": {"unavailable": self.collapse.unavailable,
+                                                "no_threshold": self.collapse.no_threshold},
+                        "entries": dict(self.entries.stats), "latest_entries": list(self.entries.decisions)[-5:],
+                        "sizing_configured": self.sizing.config is not None or load_kelly_config(self.store) is not None}
         h["storage"] = self.monitor.report()
         h["end_of_day"] = {"last_day": self.daily.last_day, "report": self.daily.last_report}
         if h["storage"]["status"] == "critical" and h["status"] == "ok":
@@ -651,7 +713,8 @@ class JinxApp:
 
     def _supervise(self) -> None:
         """Restart the bus or feed task if it ended unexpectedly (an exception, not a cancel)."""
-        starters = {"bus": lambda: self.bus.run(), "mako-feed": lambda: self.feed.run()}
+        starters = {"bus": lambda: self.bus.run(), "mako-feed": lambda: self.feed.run(),
+                    "position-monitor": lambda: self._monitor_loop()}
         if getattr(self, "rugcheck", None) is not None:
             starters["rugcheck"] = lambda: self.rugcheck.run()
         if getattr(self, "pumpapi", None) is not None:
