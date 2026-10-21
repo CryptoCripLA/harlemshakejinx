@@ -179,7 +179,14 @@ and the reference is settled as soon as the record's time changes (`tests/test_r
 Codex round 7 on f4496a8 (`docs/audits/phase2-intel-codex-20261021-round7.md`): FAIL with 1 MEDIUM only, again in M3
 (R6-1 confirmed FIXED): with a full kept set and no kept trade qualifying under a changed record, "no qualifying trade
 yet" was claimed. Fixed: a full kept set without a qualifying trade is "not determinable"
-(`tests/test_review_phase2_intel_round7.py`). Later rounds are listed in `docs/audits/`.
+(`tests/test_review_phase2_intel_round7.py`).
+
+**Codex round 8 on cf4569c (`docs/audits/phase2-intel-codex-20261021-round8.md`): VERDICT: PASS** — no CRITICAL, HIGH,
+MEDIUM or LOW defect in scope; every earlier finding confirmed FIXED; B-02 boundaries, migration merging and identity,
+graduation, creator and funders, sells and holders, engine wiring (no order path) and the documentation checked with
+file:line evidence. Codex's sandbox could not run the app tests (it was denied access to the installed `psycopg`) or
+four temporary-directory tests; those run in the full suite on jinx-nyc (615 passed, 1 skipped at cf4569c). The verdict
+covers the reviewed code; it is not the owner's Phase 2 acceptance.
 
 ## Deployment
 
