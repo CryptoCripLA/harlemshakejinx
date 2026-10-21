@@ -227,7 +227,7 @@ def first_window(buys: list[Buy]) -> tuple[Buy, ...] | None:
 
 class _Mint:
     __slots__ = ("buys", "seen", "creator", "since_creation", "current", "peak_v", "peak_real", "newest_ns",
-                 "window", "detection", "sybil", "create_sig", "creation_bound", "unverified", "migrated")
+                 "window", "detection", "sybil", "create_sig", "creation_bound", "unverified", "migrated", "gap")
 
     def __init__(self) -> None:
         self.buys: list[Buy] = []
@@ -245,6 +245,7 @@ class _Mint:
         self.creation_bound: int | None = None   # upper bound on real SOL right after an unverified creation
         self.unverified: list[str] = []          # signatures of curve readings without verified real SOL
         self.migrated = False
+        self.gap: str | None = None              # a trade-feed gap the token's history spans
 
 
 class EarlyMomentum:
@@ -301,6 +302,13 @@ class EarlyMomentum:
                 out.append(evidence)
                 self._call(self.notify, evidence)
         return out
+
+    def mark_feed_gap(self, gap_ns: int, reason: str) -> None:
+        """The trade feed (re)connected at `gap_ns`: anything may have traded unseen before that, so every token
+        tracked so far has an incomplete history and its peak can no longer be proven (Codex round 1, F1). Tokens
+        first seen after the gap are unaffected."""
+        for _, st in self._mints.items():
+            st.gap = f"{reason} at {gap_ns} ns"
 
     def evidence(self, mint: str) -> EarlyMomentumEvidence | None:
         st = self._mints.get(mint)
@@ -474,6 +482,8 @@ class EarlyMomentum:
             status, reason = Status.FAIL, "verified real SOL already exceeded 10"
         elif not st.since_creation:
             status, reason = Status.UNAVAILABLE, "history incomplete: creation not observed"
+        elif st.gap:
+            status, reason = Status.UNAVAILABLE, f"history incomplete: trade feed gap ({st.gap})"
         elif st.unverified:
             status, reason = Status.UNAVAILABLE, "history incomplete: unverified curve readings since creation"
         elif st.creation_bound is not None and st.creation_bound > CEILING_LAMPORTS:
@@ -498,8 +508,9 @@ class EarlyMomentum:
             return {**out, "eligible": False, "reason": "stale: trade feed not live, reserves cannot be confirmed"}
         eligible = cur.status is Status.PASS and peak.status is Status.PASS
         return {**out, "eligible": eligible,
-                "reason": "ok" if eligible else "; ".join(f"{p.name}: {p.status}" for p in (cur, peak)
-                                                           if p.status is not Status.PASS)}
+                "reason": "ok" if eligible else "; ".join(
+                    f"{p.name}: {p.status}" + (f" ({p.detail['reason']})" if p.detail.get("reason") else "")
+                    for p in (cur, peak) if p.status is not Status.PASS)}
 
     def _sybil(self, payers: tuple[str, ...]) -> Predicate:
         known = {w: self._funding[w] for w in payers if w in self._funding}

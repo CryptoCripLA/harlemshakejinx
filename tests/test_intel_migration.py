@@ -100,7 +100,8 @@ def test_a_trade_on_the_announced_pool_before_the_migration_slot_does_not_confir
     m = MigrationTracker()
     feed(m, launched() + [migrate(t_ms=MIG_T, slot=499)])
     assert feed(m, [pool("buy", "S0", -1, slot=498)]) == []
-    assert m.evidence("MintApump").verified is False and m.stats["pool_trades_before_migration"] == 1
+    ev = m.evidence("MintApump")
+    assert ev.verified is False and "provably at or after the migration" in ev.verification_status
 
 
 def test_pumpportals_migration_names_only_the_venue_so_it_cannot_verify_a_pool():

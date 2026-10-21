@@ -31,6 +31,7 @@ newest by event time; a late reading counts toward the peaks but never replaces 
 from __future__ import annotations
 
 import math
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Callable
 
@@ -50,6 +51,7 @@ SCORE_UNRESOLVED = "not computed: CHAD gives the 0–20 range but not the progre
 NEAR_UNRESOLVED = "no provider status yet: near graduation comes only from the provider's category (GMGN Trenches)"
 MAX_MINTS = 20_000
 IDLE_TTL_S = 2 * 3600
+MAX_SEEN = 512                                      # per-token reading identities kept for duplicate detection
 
 
 @dataclass(frozen=True)
@@ -139,7 +141,8 @@ class GraduationEvidence:
 
 
 class _Curve:
-    __slots__ = ("latest", "peak_v", "peak_progress", "readings", "late", "since_creation", "complete", "provider")
+    __slots__ = ("latest", "peak_v", "peak_progress", "readings", "late", "since_creation", "complete", "provider",
+                 "seen")
 
     def __init__(self) -> None:
         self.latest: CurveReading | None = None
@@ -148,6 +151,7 @@ class _Curve:
         self.readings = self.late = 0
         self.since_creation = self.complete = False
         self.provider: dict | None = None
+        self.seen: OrderedDict[str, None] = OrderedDict()   # reading identities: a duplicate delivery counts once
 
 
 class GraduationTracker:
@@ -155,12 +159,19 @@ class GraduationTracker:
                  idle_ttl_s: float = IDLE_TTL_S) -> None:
         self.score_mapping = score_mapping
         self._curves: MintTable[_Curve] = MintTable(lambda _mint: _Curve(), max_mints, int(idle_ttl_s * 1_000_000_000))
-        self.stats = {"readings": 0, "late_readings": 0, "score_errors": 0}
+        self.stats = {"readings": 0, "late_readings": 0, "score_errors": 0, "duplicates": 0}
 
     def on_event(self, ev: MarketEvent) -> list[GraduationEvidence]:
         if ev.kind not in (EventKind.TOKEN_CREATED, EventKind.TRADE) or not is_curve(ev):
             return []
         c = self._curves.touch(ev.mint, ev.recv_ns)
+        key = ev.idempotency_key
+        if key in c.seen:
+            self.stats["duplicates"] += 1
+            return []
+        c.seen[key] = None
+        while len(c.seen) > MAX_SEEN:
+            c.seen.popitem(last=False)
         if ev.kind is EventKind.TOKEN_CREATED:
             c.since_creation = True
         r = reading(ev)

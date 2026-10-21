@@ -41,7 +41,7 @@ class PumpApiFeed:
     def __init__(self, bus: EventBus, ws_url: str = PUMPAPI_WS, clock_ns=time.time_ns, max_followed: int = 5000,
                  held_mints_provider=None, tap=None, retry_initial_s: float = 0.05, retry_max_s: float = 5.0,
                  reconnect_initial_s: float = 1.0, reconnect_max_s: float = 30.0, connect=None,
-                 stall_timeout_s: float = 5.0) -> None:
+                 stall_timeout_s: float = 5.0, on_connect=None) -> None:
         self.bus = bus
         self.ws_url = ws_url
         self.clock_ns = clock_ns
@@ -53,6 +53,9 @@ class PumpApiFeed:
         self._connect = connect or (lambda url: websockets.connect(url, open_timeout=15, max_size=None,
                                                                    ping_interval=20))
         self.stall_timeout_s = stall_timeout_s
+        # called with the receipt clock at every (re)connection: trades sent while disconnected are lost, so the
+        # owner can mark the history before this moment incomplete
+        self.on_connect = on_connect
         self._last_mono = time.monotonic()
         self.connection_log: deque[dict] = deque(maxlen=200)
         self._followed: OrderedDict[str, None] = OrderedDict()
@@ -74,6 +77,11 @@ class PumpApiFeed:
                 async with self._connect(self.ws_url) as ws:
                     self.connected = True
                     self.stats["connections"] += 1
+                    if self.on_connect is not None:
+                        try:
+                            self.on_connect(self.clock_ns())
+                        except Exception:
+                            log.exception("on_connect listener failed")
                     entry["start_utc"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                     entry["end_reason"] = "closed by server"
                     delay = self.reconnect_initial_s

@@ -1,136 +1,123 @@
 # Phase 2 event intel: Early Momentum (C10), graduation (C05), migration (M1–M3)
 
-Built 2026-10-21 on branch `phase2/momentum-migration`, merged to `main` slice by slice. Paper only: none of these
-modules places, sizes or permits an order. Status words as in `docs/BUILD_STATUS.md`. Timings are local processing
-inside JINX plus the feed's own delivery lag; they are not order execution or landing.
+Paper only: none of these modules places, sizes or permits an order. Status words as in `docs/BUILD_STATUS.md`.
+Timings are local processing inside JINX plus the feed's own delivery lag; they are not order execution or landing.
+Owner orders: `docs/OWNER_DIRECTIVES_20261021.md` (the last section is the Phase 2 integration order, verbatim).
 
 Evidence files:
 - `docs/evidence/phase2_event_intel_replay_20261021.json`: replay of the committed live capture
   (`tests/fixtures/pumpapi-live-20261021.jsonl.gz`, 1,200 curve records, 39 s), `scripts/intel_replay_report.py`.
-- `docs/evidence/phase2_event_intel_live_20261021.json`: live run on jinx-nyc against the free PumpAPI stream,
-  `scripts/intel_live_check.py` (RAM only; the summary keeps no wallet addresses).
-- `tests/fixtures/pumpapi-migrations-live-20261021.jsonl.gz`: from an earlier live run the same morning, for each
-  migration the mint's last curve records, the migrate record and its first PumpSwap records.
+- `docs/evidence/phase2_event_intel_live_20261021.json`: live run of the three modules on jinx-nyc against the free
+  PumpAPI stream at 254434f, `scripts/intel_live_check.py` (RAM only; no wallet addresses kept).
+- `tests/fixtures/pumpapi-migrations-live-20261021.jsonl.gz`: four real migrations captured live (each mint's last
+  curve records, the migrate record, its first PumpSwap records).
+- `tests/fixtures/gmgn_trenches_holders_sample_20261021.json`: real GMGN Trenches, token-info and top-holder
+  responses (read-only, trimmed to the fields JINX reads).
+- `docs/audits/phase2-intel-codex-20261021-round*.md`: independent Codex reviews.
 
-## Wiring contract (for `jinx/app.py`, owned by the other engineer; Early Momentum wired in 59b81eb, graduation and migration not yet)
+## In the running engine (`jinx/app.py`)
 
-All three take one `MarketEvent` at a time, synchronously, with no I/O; state is RAM only, bounded (mint cap
-20,000, idle 2 h on the events' receipt clock, per-mint caps) and rebuilt from the feeds after a restart.
+All three modules are subscribed to the engine's own bus, on the fast lane, in this order after core state:
+Early Momentum, graduation, migration. Each takes one event at a time, synchronously, with no I/O; GMGN lookups they
+ask for run as background tasks, at most 64 at once and one per (kind, token) (`JinxApp._spawn`), never on the event
+path. A shed lookup leaves its evidence UNAVAILABLE, which blocks. State is RAM only and bounded (mint cap 20,000,
+idle 2 h on the receipt clock, per-token caps) and rebuilt from the feeds after a restart.
 
-| Module | Call | Returns / pushes | Lane |
+| Module | Events in | Shared state out | GMGN asked (background) |
 |---|---|---|---|
-| `jinx/intel/early_momentum.py::EarlyMomentum` | `on_event(ev)`; `evidence(mint)`; `record_funding(Funding)` | one `EarlyMomentumEvidence` per mint at detection, also pushed to `notify(evidence)` at once; `request_funders(mint, wallets)` asks for the buyers' funders; a funding result that changes the sybil check is pushed again | FAST |
-| `jinx/intel/graduation.py::GraduationTracker` | `on_event(ev)`; `evidence(mint)` | `GraduationEvidence` per curve event | either |
-| `jinx/intel/migration.py::MigrationTracker` | `on_event(ev)`; `evidence(mint)`; `lifecycle(mint)` | `MigrationEvidence` when the migration is observed and when it is verified, also pushed to `notify`; the mint's `TokenLifecycle` | either |
+| `EarlyMomentum` (C10) | curve trades, creations, migrations | `candidates` (newest 500 detections), `entry_check(mint)` | wallet funders (`getWalletStats`, one wallet per request) |
+| `GraduationTracker` (C05) | curve trades, creations | `entry_check(mint)["graduation"]` | Trenches `near_completion` / `completed` every 10 s (`poll_trenches_once`) |
+| `MigrationTracker` (M1–M3) | creations, curve and PumpSwap trades, migrations from both feeds | `migrations` index, `migration_view(mint)`, `entry_check(mint)["migration"]`, the token lifecycle | `migrated_pool` when no report names the pool (`getTokenInfo`), top holders once per migration (`getTokenTopHolders`) |
 
-`notify` and `request_funders` failures are counted (`stats["listener_errors"]`) and never stop detection. Every
-evidence object has `to_dict()` with the confluence fields the GMGN mandate lists: token, signal type, sources,
-observation time, event time and clock, freshness, payload and blocking status.
+`intel_health()` (inside `/health`) shows every module's counters, the newest detections and migrations read from
+the trackers (never a stale copy), the GMGN Trenches read, background-task counts and the fast lane's measured
+admission-to-handled delay. The PumpAPI feed reports each (re)connection; the engine then marks every history
+tracked so far as incomplete (trades sent while disconnected are lost), so B-02's peak gate blocks those tokens.
 
-One wiring fact to know: PumpAPI and PumpPortal report the same migration transaction with the same
-`MarketEvent.idempotency_key`, so the bus delivers whichever arrives first. PumpAPI's carries the new pool and
-usually arrives first; when PumpPortal's wins, the migration stays observed but unverifiable (it names the venue,
-not the pool), and the evidence says so.
+## C10 Early Momentum — TESTING; entries blocked until every check passes
 
-## C10 Early Momentum — TESTING (detection evidence); entry BLOCKED by B-02
+- **Trigger (CHAD):** the earliest moment three distinct fee payers (PumpAPI `txSigner`) have bought on the curve
+  within 30 s of event time, inclusive. One evidence object per token, pushed to the fast path at once.
+- **B-02 (owner decision, implemented in b63794d, verified here):** current verified real SOL in the curve 0.5–10
+  inclusive; the verified peak since creation never above 10; the 35 SOL statement retired; real SOL only from
+  PumpAPI's `quoteInPool` on a SOL-quoted curve, never virtual minus 30; non-standard curves follow the same rule when
+  their real SOL is verified; unknown or incomplete history (creation not seen, an unverified reading, a trade-feed
+  gap) blocks; migrated tokens are outside this path; re-checked on the current state at the entry decision.
+  Boundaries tested to the lamport: 0.49 fails, 0.50 passes, 10.00 passes, 10.01 fails; a peak of exactly 10 passes
+  and one lamport more fails, even after the reserve falls back into range.
+- **Creator (owner item 4):** the creator's verified buy counts as one distinct buyer and is flagged
+  (`creator_in_window`).
+- **Common funders (owner item 5):** three or more buyers with one GMGN-reported funder fail the sybil check with
+  `emergency_exit`; any buyer without a known funder makes it UNAVAILABLE, never clean.
+- **Failure cases tested:** one wallet buying 3 and 12 times; two wallets churning; a third wallet 30.001 s after the
+  first; the 30.000 s boundary; sells and PumpSwap buys; a feed backlog delivering a 45 s cluster at once; a signal
+  delivered 40 s late; every arrival order of four buys; a late buy inside the window; duplicate delivery; a retrace
+  after a higher peak; unknown, shared and distinct funders; funding learned after detection; failing listeners;
+  non-standard curves; a trade-feed gap; bounded state.
+- **Measured:** replay of the committed capture: 38 detections, identical to an independent scan of the raw records;
+  shuffled and duplicated delivery converge. Live module run at 254434f (600 s, jinx-nyc): 176 detections, PumpAPI
+  time to evidence p50 45.7 ms / p95 50.3 ms / p99 53.6 ms / max 56.6 ms, local processing p50 51 µs; none
+  permitted.
 
-- **Input:** PumpAPI curve trades (fee payer = `txSigner`, PumpAPI millisecond time, slot, virtual and real
-  reserves) and creations from both feeds.
-- **Output:** the earliest moment three distinct fee payers have bought on the curve within 30 s of event time
-  (inclusive), as one `EarlyMomentumEvidence`: the window's buys, the trigger, creator flag, live and all-time-peak
-  reserves, the retrace from the peak, and six predicates: the window (PASS), the live reserve read, both curve gates
-  (UNRESOLVED, B-02), the peak gate (UNRESOLVED, B-02/B-03; UNAVAILABLE without the creation) and the sybil funder
-  check (UNAVAILABLE for a buyer without a known funder; FAIL with `emergency_exit` when three or more buyers share
-  one). `trade_permitted` is False while any predicate is not PASS.
-- **Failure cases tested:** one wallet buying 3 and 12 times; two wallets churning; a third wallet 30.001 s after
-  the first; the 30.000 s boundary; sells and PumpSwap buys; a feed backlog delivering a 45 s cluster at once; a
-  signal delivered 40 s late; every arrival order of four buys; a late buy inside the window; duplicate delivery; a
-  reserve retrace after a higher peak; a late reserve report; unknown, shared and distinct funders; funding learned
-  after detection; failing listeners; non-standard curves; bounded state.
-- **Tests:** `tests/test_intel_early_momentum.py` (28), `tests/test_intel_replay.py`, `tests/test_intel_readings.py`.
-  Five targeted mutants (exclusive boundary, counting buys instead of wallets, arrival time instead of event time,
-  no peak, no late merge) each fail at least one test.
-- **Replay (committed capture):** 38 detections, identical to an independent scan of the raw records; shuffled and
-  duplicated delivery converge. Detection delay p50 672 ms / p95 1,459 ms / p99 1,538 ms, almost all of it the
-  receipt lag recorded during that capture (190–1,690 ms); local processing p50 9.7 µs / p99 27 µs.
-- **Live:** 176 detections in 600 s, detection delay p50 45.7 ms / p95 50.3 ms / p99 53.6 ms (live section).
+## C05 Graduation — TESTING; the 0–20 points are not produced
 
-## C05 Graduation — TESTING (readings); 0–20 score BLOCKED by B-03
-
-- **Input:** every curve trade and creation; PumpAPI gives virtual and real reserves, PumpPortal virtual only.
-- **Output:** `GraduationEvidence` with the latest reading (newest by event time), peak virtual SOL, peak progress,
-  completion, and two progress readings with provenance: tokens bought / 793.1M sellable (D3AD `pumpfun.rs:538-540`,
-  buy cap at `:448`) and Mako's real SOL / 85 SOL (`src/onchain.py:546-550`). No points (CHAD gives the 0–20 range
-  only); an owner mapping is accepted only inside 0–20.
-- **Live finding:** 26 of 118 curve mints in the committed capture are not standard 30-SOL curves (virtual SOL as
-  low as 0.014, a virtual-minus-real gap that moves trade by trade, 5 with more than 793.1M sellable tokens).
-  Readings are flagged `standard_curve` and get no progress; nothing is derived or reinterpreted. Recorded under B-02,
-  because neither SOL reading means the same on such a curve.
-- **Failure cases tested:** late readings, sells after a peak, completion, PumpPortal-only readings, non-curve
-  events, out-of-range owner mappings, bounded state.
-- **Tests:** `tests/test_intel_graduation.py` (13), `tests/test_intel_replay.py` (all 118 curve mints read;
-  reordering converges). Local processing p50 6 µs / p99 18 µs per event on the replay.
+- **Readings per curve event:** virtual and real reserves, completion, peaks, and two progress readings with their
+  sources: tokens bought / 793.1M sellable (D3AD `pumpfun.rs:538-540`, buy cap at `:448`) and Mako's real SOL / 85 SOL
+  (`src/onchain.py:546-550`). Live finding: 26 of 118 curve mints in the capture are not standard 30-SOL curves; their
+  readings are flagged `standard_curve` False and get no progress, never a reinterpretation.
+- **Near graduation (owner item 6):** GMGN Trenches' own `near_completion` category for tracked tokens, read every
+  10 s, with source, read time and progress (`near_threshold`, `provider_status`; the lifecycle's APPROACHING
+  GRADUATION). GMGN's category spans progress 0.51–0.98 in the recorded sample; JINX sets no number of its own and a
+  token missing from a listing changes nothing. The 0–20 points stay unproduced: CHAD gives only the range and the
+  owner said not to invent the formula; an owner mapping would be accepted only inside 0–20.
+- **Tested:** late and duplicate readings, completion, non-standard curves, PumpPortal-only readings, provider status
+  for tracked and untracked tokens, out-of-range mappings, bounded state.
 
 ## M1–M3 Migration — TESTING
 
-- **Input:** PumpAPI `migrate` (signature, slot, PumpAPI time, new pool), PumpSwap trades on any pool (pool id and
-  reserves after the trade), curve trades, creations; PumpPortal migrations (venue only).
-- **Output (M1):** the migration transaction (MIGRATION OBSERVED) and the first verified post-migration liquidity:
-  the earliest PumpSwap trade on the announced pool at or after the migration slot, with its reserves and its slot
-  and time offsets (MIGRATION CONFIRMED on the migration's own time, then POST-MIGRATION MARKET). Trades on any other
-  pool never confirm and never contradict.
-- **Output (M2):** pre-migration liquidity and peak; first and latest post-migration liquidity; the 10 largest
-  sells around graduation with the reserve after each ("large" is B-03); the creator's sells before and after; the
-  top observed net buyers at the migration and their sells after it; the observed holder distribution at the
-  migration and now; the first 20 pool trades (competing early transactions). Holder figures are observed trades by
-  fee payer, not balances, and say whether they are complete.
-- **Output (M3):** off by default; with `confirmation_delay_ms` the evidence names the first pool trade at or after
-  migration + delay as a paper reference (`live_policy: False`).
-- **Never:** a migration from a price rise, a complete curve or a missing token.
-- **Failure cases tested:** trades on another pool; a pool trade delivered before its migrate; a pool trade before
-  the migration slot; PumpPortal's venue-only report; a repeated migrate; out-of-order pool trades; a complete curve
-  without a migration; failing listeners; bounded state.
-- **Tests:** `tests/test_intel_migration.py` (20), `tests/test_intel_live_migrations.py` (the 4 live migrations
-  against an independent scan under in-order, shuffled and duplicated delivery), `tests/test_intel_replay.py` (no migration inferred on the 39 s
-  capture, which holds none). Five targeted mutants (any pool confirms, venue-only confirms, no held trades, no slot
-  check, no migration snapshot) each fail a test.
+- **One migration, one record (owner items 2, 3).** Root cause of the defect fixed in 3462ce2: PumpAPI's and
+  PumpPortal's reports of one migration had the same event identity, so the bus and the events table kept only the
+  first. PumpAPI's pool-naming report now carries the pool as its `leg` (its own identity); both reach the tracker,
+  which merges every report (PumpAPI, PumpPortal, GMGN Trenches `completed`, GMGN `migrated_pool`) into one record.
+  Time comes from the best clock (chain, then provider with slot, then receipt) and a receipt time never replaces a
+  provider time, in the record and in the lifecycle. Effects happen once: first report, pool learned, verification
+  change. Reports naming different pools are a conflict: nothing is verified, and after a confirmation the lifecycle
+  becomes CONFLICTING.
+- **M1, first verified post-migration liquidity (derived, never sticky):** the earliest PumpSwap trade on the
+  record's single pool that has both reserves and is provably at or after the migration (slot against slot, otherwise
+  provider time against provider time), with the migration time on a provider clock. Later evidence that invalidates
+  it revokes the verification (a lifecycle failure) until another trade qualifies. The record names the trade it was
+  read after (side, size, fee payer), because a first trade can itself be a 100+ SOL buy.
+- **M2:** pre-migration liquidity and peak; first and latest post-migration liquidity; the 10 largest sells of the
+  token's observed life with seller, size, phase, reserve after and whether the seller is the creator, ranked
+  independently of the trade caps and never labelled (owner item 7); the creator's sells before and after; holder
+  concentration from GMGN top-holder balances where available, pool accounts kept apart from wallets (owner item 8),
+  and separately the observed trade flow, labelled not proof of ownership, incomplete after a feed gap, with an
+  at-migration view computed from trades before the migration; the first 20 pool trades with slot and time offsets.
+- **M3:** off by default; `confirmation_delay_ms` names a paper reference trade (`live_policy: False`).
+- **Measured:** live module run at 254434f (600 s): 8 migrations, 8 verified; migrate to evidence p50 45.4 ms; first
+  pool trade p50 1 slot / 245 ms after the migrate (max 5 slots / 1,056 ms).
 
-## Live run (jinx-nyc, 2026-10-21 04:19:53 UTC, 600 s, commit 254434f, no code changes)
+## Tests (all on main)
 
-`docs/evidence/phase2_event_intel_live_20261021.json`, `scripts/intel_live_check.py`. One PumpAPI connection for the
-whole window: 386,018 messages received, 28,183 events published to the three modules, 0 malformed, 0 duplicates,
-0 disconnects, 0 stalls. PumpAPI timestamp to JINX receipt: p50 45.1 ms, p95 49.2 ms.
+`tests/test_intel_early_momentum.py`, `tests/test_b02_reserve_policy.py`, `tests/test_intel_graduation.py`,
+`tests/test_intel_migration.py`, `tests/test_intel_live_migrations.py` (the 4 live migrations against an independent
+scan, in-order, shuffled and duplicated), `tests/test_migration_dedup.py` (the dedup defect end to end through the
+real bus and events table), `tests/test_app_event_intel.py` (real captures through the engine's own bus into shared
+state; a fake GMGN serving the recorded response shapes; nothing reaches the ledger),
+`tests/test_review_phase2_intel_round1.py` (one reproduction per Codex round-1 finding), `tests/test_intel_replay.py`,
+`tests/test_intel_readings.py`, `tests/test_lifecycle.py`.
 
-| Capability | Result | Detection delay (PumpAPI time → evidence) | Local processing per event |
-|---|---|---|---|
-| Early Momentum | 176 detections; `trade_permitted` 0 (B-02 unresolved) | p50 45.7 ms, p95 50.3 ms, p99 53.6 ms, max 56.6 ms (n 176) | p50 26 µs, p95 72 µs, p99 98 µs, max 4.3 ms |
-| Graduation | 21,491 curve readings on 634 mints, 0 late | — (evidence on every curve event) | p50 25 µs, p95 44 µs, p99 59 µs, max 0.7 ms |
-| Migration | 8 migrations, 8 verified on the announced pool, 0 trades on other pools | signal p50 45.4 ms, max 47.0 ms (n 8) | p50 58 µs, p95 91 µs, p99 115 µs, max 8.6 ms |
+## Independent review
 
-Detection delay is almost entirely the feed's delivery lag; JINX's own processing at detection was p50 51 µs, max
-115 µs. The per-event maxima are single events on a shared host with the process under `nice` (cause not isolated).
-176 detections and 8 migrations in ten minutes are a sample, not a statistical result.
+Codex round 1 on 3462ce2 (`docs/audits/phase2-intel-codex-20261021-round1.md`): FAIL with 4 HIGH, 4 MEDIUM, 1 LOW.
+Fixed: F1 feed gaps now make the history incomplete; F2 background lookups bounded and deduplicated; F3 lifecycle
+lists bounded with totals; F4 verification requires reserves, provable order and a provider-clock migration time and
+is revoked by contrary evidence; F5 shared state reads the tracker and the confirmation is published after the market
+transition; F6 conflicting pools never verify; F7 duplicate trades counted once and the at-migration view converges;
+F8 largest sells survive the caps; F9 this document. Later rounds are listed in `docs/audits/`.
 
-What the live data showed:
-- **Early Momentum:** the creator's own buy was one of the three wallets in 120 of 176 detections (B-03 asks whether
-  it should count). 71 of 176 triggered on a curve that is not a standard 30-SOL curve, where B-02's SOL gates
-  cannot mean the same thing. 122 of 176 had their creation observed, so their peak was all-time.
-- **Migration (M1):** the first trade on the announced pool came 1 slot (p50) and 245 ms (p50) after the migrate,
-  at most 5 slots and 1,056 ms. Every pool trade in the window was on the announced pool.
-- **Migration (M2):** all 8 left the curve holding 85.005 SOL. The first pool trade's reserve-after was p50 67.3 SOL
-  and up to 238.4 SOL, because a first trade can itself be a buy of well over 100 SOL in the migration slot.
-- **Fixture:** an earlier 600 s run at 04:04 UTC, on the code before 254434f's last fixes, captured 4 migrations
-  (3 standard curves holding 85.005 SOL; one non-standard curve holding 3.44 SOL whose pool opened with 3.43 SOL; two
-  first pool trades of 139.6 and 169 SOL in the migration slot, one on a token whose creator bought the whole curve in
-  its creation transaction). They are `tests/fixtures/pumpapi-migrations-live-20261021.jsonl.gz` (244 records),
-  replayed by `tests/test_intel_live_migrations.py`. That run's numbers were superseded by the run above.
+## Deployment
 
-## Blockers left (owner decisions; nothing here is invented)
-
-- **B-02:** which curve gate applies (0.5–10 SOL or under 35 SOL) and which reserve it reads. Until decided no Early
-  Momentum evidence permits a trade.
-- **B-03 (added 2026-10-21):** the peak-gate rule; whether the creator's buy counts; the sybil check before entry;
-  graduation's "near the threshold" and elevated weight; the 0–20 mapping (already listed); "large sells" around
-  graduation; holder concentration from trades versus balances.
-- **Funders:** PumpAPI carries no transfers. Since 59b81eb the app answers `request_funders` with GMGN wallet stats
-  (`common.fund_from_address`); a buyer GMGN has no funder for keeps the sybil check UNAVAILABLE (blocking).
+The Contabo paper deployment runs whatever `deploy/contabo/deploy.sh` last shipped; the revision and the live
+engine measurements are recorded here once the reviewed build is deployed. Live trading is OFF.

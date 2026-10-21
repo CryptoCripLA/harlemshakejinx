@@ -114,6 +114,8 @@ class JinxApp:
         self.migrations: OrderedDict[str, dict] = OrderedDict()   # newest 500 migrations and their status (RAM)
         self.candidates: OrderedDict[str, dict] = OrderedDict()   # newest 500 detections and their safety (RAM)
         self._background: set[asyncio.Task] = set()
+        self._inflight: dict[tuple, asyncio.Task] = {}
+        self.background_stats = {"spawned": 0, "shed": 0, "deduplicated": 0}
         self.screen_stats = {"screened": 0, "skipped": 0, "funder_lookups_skipped": 0}
         self.whales = WhaleBook()                          # CHAD C04: Layer-1 alerts and discovery candidates
         self.bus.subscribe(Lane.BACKGROUND, self.whales.on_event, name="whales")
@@ -133,7 +135,8 @@ class JinxApp:
                                        mode_provider=lambda: get_mode(self.store),
                                        held_mints_provider=lambda: {p.mint for p in self.ledger.active()})
         held = lambda: {p.mint for p in self.ledger.active()}
-        self.pumpapi = PumpApiFeed(self.bus, held_mints_provider=held) if s.pumpapi_enabled else None
+        self.pumpapi = (PumpApiFeed(self.bus, held_mints_provider=held, on_connect=self._on_trade_feed_connect)
+                        if s.pumpapi_enabled else None)
         self.gmgn = GmgnAdapter(s.gmgn_build_dir, allow_signing_key=config.GMGN_ALLOW_SIGNING_KEY)
         self.d3ad = D3adExecutionAdapter(s.upstream_dir / "d3ad")
         self.datanomad = DataNomadResearchAdapter(s.upstream_dir / "datanomad")
@@ -188,14 +191,33 @@ class JinxApp:
             return None
         return await self.safety.evaluate(mint, creator, time.time(), priority=priority)
 
-    def _spawn(self, coro) -> None:
+    # Engineering bound (owner storage rule 2), not a trading rule: background lookups waiting on GMGN or RugCheck
+    # are capped; a shed lookup leaves its evidence UNAVAILABLE, which blocks (Codex Phase 2 round 1, F2).
+    MAX_BACKGROUND_TASKS = 64
+
+    def _spawn(self, coro, key=None) -> None:
+        """Run a lookup in the background, never on the event path. At most MAX_BACKGROUND_TASKS at once; a lookup
+        with the same `key` already running is not started again."""
+        stats = self.background_stats
+        if key is not None and key in self._inflight:
+            stats["deduplicated"] += 1
+            coro.close()
+            return
+        if len(self._background) >= self.MAX_BACKGROUND_TASKS:
+            stats["shed"] += 1
+            coro.close()
+            return
         try:
             task = asyncio.get_running_loop().create_task(coro)
         except RuntimeError:                       # no loop (offline replay): nothing to schedule
             coro.close()
             return
+        stats["spawned"] += 1
         self._background.add(task)
         task.add_done_callback(self._background.discard)
+        if key is not None:
+            self._inflight[key] = task
+            task.add_done_callback(lambda _t, k=key: self._inflight.pop(k, None))
 
     def _on_early_momentum(self, evidence) -> None:
         """Fast-path notification: record the detection and screen it at once (CHAD: "Full safety check still
@@ -270,18 +292,33 @@ class JinxApp:
                 "graduation": None if grad is None else {
                     "progress": grad.latest.progress, "standard_curve": grad.latest.standard_curve,
                     "near_threshold": grad.near_threshold, "provider_status": grad.provider_status},
-                "migration": self.migrations.get(mint)}
+                "migration": self.migration_view(mint)}
 
     def _on_migration(self, evidence) -> None:
-        """Migration evidence (observed, enriched with the pool, verified) into shared state. Never an order."""
-        m = evidence.migration
-        entry = self.migrations.setdefault(evidence.mint, {"first_observed_ns": m.observed_ns})
-        entry.update(state=evidence.state, verified=evidence.verified, pool=m.pool_id, sources=list(m.sources),
-                     event_ns=m.event_ns, clock=str(m.clock),
-                     first_verified_liquidity=evidence.first_verified_liquidity)
+        """Index of migrated tokens in shared state (newest 500). Their evidence is always read from the tracker,
+        so shared state never holds a stale copy (Codex Phase 2 round 1, F5). Never an order."""
+        self.migrations.setdefault(evidence.mint, evidence.migration.observed_ns)
         self.migrations.move_to_end(evidence.mint)
         while len(self.migrations) > 500:
             self.migrations.popitem(last=False)
+
+    def migration_view(self, mint: str) -> dict | None:
+        """The tracker's current migration evidence for one token, as the decision engine reads it."""
+        ev = self.migration.evidence(mint)
+        if ev is None:
+            return None
+        m = ev.migration
+        return {"state": ev.state, "verified": ev.verified, "verification_status": ev.verification_status,
+                "pool": m.pool_id, "pools_named": list(m.pools_named), "sources": list(m.sources),
+                "event_ns": m.event_ns, "clock": str(m.clock), "first_verified_liquidity": ev.first_verified_liquidity,
+                "holder_concentration": ev.holder_distribution, "developer_selling": ev.developer_selling,
+                "largest_sells": ev.sells_around_graduation[:3]}
+
+    def _on_trade_feed_connect(self, now_ns: int) -> None:
+        """The PumpAPI trade feed (re)connected: trades sent while it was down are lost, so every history tracked so
+        far is incomplete from here on (Codex Phase 2 round 1, F1)."""
+        self.early.mark_feed_gap(now_ns, "PumpAPI trade feed (re)connected")
+        self.migration.mark_feed_gap(f"PumpAPI trade feed (re)connected at {now_ns} ns")
 
     def _gmgn_live(self) -> bool:
         return getattr(self, "gmgn", None) is not None and self.gmgn.running
@@ -290,7 +327,7 @@ class JinxApp:
         """A migration record without a pool (PumpPortal and Trenches name only the venue): GMGN token info carries
         `migrated_pool`, which can lag the completion, so it is asked again a bounded number of times."""
         if self._gmgn_live():
-            self._spawn(self._fetch_migrated_pool(mint))
+            self._spawn(self._fetch_migrated_pool(mint), key=("pool", mint))
 
     async def _fetch_migrated_pool(self, mint: str) -> None:
         for _ in range(self.SCREEN_ATTEMPTS):
@@ -313,7 +350,7 @@ class JinxApp:
     def _request_holders(self, mint: str) -> None:
         """Owner order 2026-10-21 item 8: concentration from verified balances where available (GMGN top holders)."""
         if self._gmgn_live():
-            self._spawn(self._fetch_holders(mint))
+            self._spawn(self._fetch_holders(mint), key=("holders", mint))
 
     async def _fetch_holders(self, mint: str) -> None:
         try:
@@ -382,7 +419,7 @@ class JinxApp:
             self.screen_stats["funder_lookups_skipped"] += 1
             return
         if self._gmgn_live():
-            self._spawn(self._fetch_funders(tuple(wallets)))
+            self._spawn(self._fetch_funders(tuple(wallets)), key=("funders", mint, tuple(wallets)))
 
     async def _fetch_funders(self, wallets: tuple[str, ...]) -> None:
         # One wallet per request: given several addresses GMGN's wallet_stats answers only the first (live 2026-10-21).
@@ -468,9 +505,10 @@ class JinxApp:
                                    "entry_summary": self._entry_summary(), "screening": dict(self.screen_stats)},
                 "graduation": {**self.graduation.stats, "tracked": self.graduation.tracked_mints()},
                 "migration": {**self.migration.stats, "tracked": self.migration.tracked_mints(),
-                              "verified": sum(1 for v in self.migrations.values() if v.get("verified")),
-                              "latest": [{"mint": m, **{k: v[k] for k in ("state", "verified", "pool", "sources")}}
-                                         for m, v in list(self.migrations.items())[-5:]]},
+                              "verified": self.migration.verified_mints(),
+                              "latest": [{"mint": m, **(self.migration.summary(m) or {"state": "evicted"})}
+                                         for m in list(self.migrations)[-5:]]},
+                "background": {**self.background_stats, "running": len(self._background)},
                 "gmgn_trenches": self.last_trenches,
                 "whales": {"tracked": len(self.whales.tracked), "candidates": len(self.whales._candidates),
                            "alerts": len(self.whales.alerts), "last_discovery": self.last_discovery},

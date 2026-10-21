@@ -1,0 +1,44 @@
+VERDICT: FAIL
+
+1. **HIGH — B-02 history becomes eligible again after a feed gap.**  
+   [early_momentum.py:475](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/intel/early_momentum.py:475), [app.py:234](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/app.py:234), [feed.py:92](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/adapters/pumpapi/feed.py:92).  
+   History completeness records observed creation and unverified readings, but never invalidates history after disconnects or lost messages. Reconnecting restores eligibility despite an unknowable intervening peak. **Reproduce:** observe a qualifying creation and three buyers; disconnect while an unseen rise and retrace occurs; reconnect and deliver another in-range reading. `reserve_check(..., True)` passes. The existing stale-feed test checks only while the feed remains unhealthy.
+
+2. **HIGH — Background lookup work has no hard bound.**  
+   [app.py:191](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/app.py:191), [app.py:313](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/app.py:313), [adapter.py:163](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/adapters/gmgn/adapter.py:163).  
+   `_spawn` creates unlimited tasks. Holder, pool and funder lookups have no bounded admission queue or concurrency cap. GMGN’s rate budget limits transmission, while callers accumulate waiting before the request timeout starts. **Reproduce:** hold GMGN responses pending and request holders for 1,000 migrations: `_background` retains 1,000 tasks. Candidate and mint caps do not cancel outstanding work. This violates storage hygiene.
+
+3. **HIGH — Per-token lifecycle history is unbounded.**  
+   [lifecycle.py:142](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/core/lifecycle.py:142), [lifecycle.py:269](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/core/lifecycle.py:269), [lifecycle.py:318](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/core/lifecycle.py:318).  
+   `history`, `conflicts` and `failures` are unlimited lists. The mint cap cannot bound an individual active token. **Reproduce:** confirm one migration, then deliver 2,000 newer curve reports: `conflicts` contains 2,000 entries. Continued activity prevents idle eviction.
+
+4. **HIGH — Migration verification accepts incomplete evidence and survives contradictory enrichment.**  
+   [migration.py:455](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/intel/migration.py:455), [migration.py:486](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/intel/migration.py:486), [migration.py:494](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/intel/migration.py:494).  
+   Confirmation checks pool identity and the slot only when available; it does not require reserve readings, validate event-time ordering without a migration slot, or require successful lifecycle confirmation. **Reproductions:**
+   - Supply GMGN’s pool report without a slot, then a matching trade one second before migration. It verifies with a negative migration offset. Later PumpAPI evidence placing that trade before the migration slot does not revoke verification.
+   - Remove both reserve fields from the matching trade. `verified=True`, although “first verified liquidity” contains no reserves.
+   - Remove the PumpAPI migration timestamp. `verified=True` while lifecycle confirmation is refused and the lifecycle remains `MIGRATION_OBSERVED`.
+
+5. **MEDIUM — Shared engine state stops short of the tracker’s authoritative evidence.**  
+   [migration.py:501](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/intel/migration.py:501), [migration.py:337](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/intel/migration.py:337), [app.py:275](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/app.py:275).  
+   Confirmation is published before the transition to `POST_MIGRATION_MARKET`. Earlier liquidity discovered later, corroborating provenance and holder results produce no updated callback. The app also omits holder and selling evidence from its migration record. **Reproduce:** confirm using trade B, then deliver earlier trade A and holder balances. The tracker identifies A and holds the balances; `app.migrations` still names B, remains `MIGRATION_CONFIRMED`, and exposes no holder evidence. `entry_check` and `intel_health` consume that stale record.
+
+6. **MEDIUM — Conflicting migration pools are collected but never adjudicated.**  
+   [migration.py:148](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/intel/migration.py:148), [migration.py:451](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/intel/migration.py:451).  
+   The first named pool always wins. Another report naming a different pool is treated as corroboration and does not reach lifecycle conflict handling. **Reproduce:** report pool A, report pool B, then deliver B’s trade. `pools_named` contains both, B is treated as foreign, and lifecycle never becomes `CONFLICTING`. Reversing report arrival reverses the chosen pool.
+
+7. **MEDIUM — Replay duplicates inflate migration evidence; reordered delivery changes migration snapshots.**  
+   [replay.py:125](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/intel/replay.py:125), [migration.py:409](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/intel/migration.py:409), [migration.py:460](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/intel/migration.py:460).  
+   Replay directly calls trackers without bus deduplication; migration trade accounting has no equivalent deduplication. The holder snapshot is frozen on report arrival. **Reproduce:** replay creation, buy, migration and developer sell with `duplicate_every=1`: developer sells and competing transactions double. Deliver migration before its historical buys: the migration snapshot remains empty after those buys arrive. Existing replay assertions check selected outputs, not these totals or snapshots.
+
+8. **MEDIUM — Trade caps silently defeat the “10 largest sells” claim.**  
+   [migration.py:489](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/intel/migration.py:489), [migration.py:560](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/intel/migration.py:560).  
+   Pool storage keeps only the first capped number of arrivals; curve storage keeps a trailing deque. Ranking sells afterward cannot recover discarded sells. **Reproduce:** use `max_pool_trades=2`, deliver two buys followed by a developer sell. Developer accounting records the sell, but `sells_around_graduation` is empty. The default reproduces after 256 pool trades.
+
+9. **LOW — Evidence documentation is stale and overstates coverage.**  
+   [PHASE2_MOMENTUM_MIGRATION.md:15](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/docs/evidence/PHASE2_MOMENTUM_MIGRATION.md:15), [same file:30](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/docs/evidence/PHASE2_MOMENTUM_MIGRATION.md:30), [same file:130](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/docs/evidence/PHASE2_MOMENTUM_MIGRATION.md:130).  
+   It says graduation/migration remain unwired, describes the superseded migration identity defect as current, and lists settled B-02 and owner decisions as unresolved. Matrix M1/M2 claims at [SOURCE_FIDELITY_MATRIX.md:70](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/docs/SOURCE_FIDELITY_MATRIX.md:70) require qualification for the verification, replay and sell-retention failures above. **Reproduce:** compare those statements with commit `3462ce2` and the preceding cases.
+
+The inclusive reserve comparisons and exact peak ceiling are implemented and covered by boundary tests: [early_momentum.py:461](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/jinx/intel/early_momentum.py:461), [test_b02_reserve_policy.py:51](/E:/DevCache/agent-scratch/harlemshakejinx-review-20261020/tests/test_b02_reserve_policy.py:51). Creator counting/flagging, shared-funder failure and unknown-funder blocking are implemented. Provider-category graduation adds no invented threshold or scoring formula. Both trackers subscribe on FAST; GMGN I/O runs asynchronously. I found no order submission or sizing path from these modules.
+
+Validation: **148 tests passed**, including recorded-event replay; one database test was excluded after a temporary-directory permission failure. App tests could not collect because access to installed `psycopg` was denied. Findings were reproduced in memory; app callback/task reproductions executed the unchanged method definitions in isolation. Repository files remain unchanged.

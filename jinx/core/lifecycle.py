@@ -51,6 +51,9 @@ class State(Enum):
 
 
 EXCEPTIONAL = (State.STALE, State.FAILED, State.CONFLICTING)
+# RAM bounds per token (owner storage rule 2): the newest entries are kept and the totals counted, so an active token
+# cannot grow without limit (Codex Phase 2 round 1, F3)
+MAX_HISTORY = MAX_CONFLICTS = MAX_FAILURES = 64
 
 
 class Kind(Enum):
@@ -145,6 +148,7 @@ class TokenLifecycle:
         self.fields: dict[str, Recorded] = {}
         self.peak_v_sol_lamports: int | None = None
         self.late_reports = 0
+        self.history_total = self.conflicts_total = self.failures_total = 0
         self.last_received_ns: int | None = None     # any report, late ones included
         self.last_accepted_ns: int | None = None     # reports that were not late
         self._latest_by_kind: dict[Kind, int] = {}    # per-kind ordering watermark (event time)
@@ -203,6 +207,8 @@ class TokenLifecycle:
 
     def record_failure(self, source: str, observed_ns: int, reason: str) -> Transition | None:
         self.failures.append(Failure(source, observed_ns, reason))
+        self.failures_total += 1
+        del self.failures[:-MAX_FAILURES]
         if self.state is State.FAILED:
             return None
         return self._enter(State.FAILED, None, source, observed_ns, observed_ns, {"reason": reason})
@@ -268,6 +274,8 @@ class TokenLifecycle:
 
     def _conflict(self, e: Evidence) -> Transition | None:
         self.conflicts.append(e)
+        self.conflicts_total += 1
+        del self.conflicts[:-MAX_CONFLICTS]
         if self.state is State.CONFLICTING:
             return None   # one transition; every contradicting report is kept in `conflicts`
         return self._enter(State.CONFLICTING, e.kind, e.source, e.observed_ns, e.event_ns, e.payload)
@@ -316,5 +324,7 @@ class TokenLifecycle:
                payload: Mapping[str, Any] | None = None) -> Transition:
         t = Transition(self.state, to, kind, source, observed_ns, event_ns, dict(payload or {}))
         self.history.append(t)
+        self.history_total += 1
+        del self.history[:-MAX_HISTORY]
         self.state = to
         return t
