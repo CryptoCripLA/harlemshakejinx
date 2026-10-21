@@ -73,12 +73,12 @@ Budgets (env-overridable): RAM 1 GB, data directory 1 GB, Neon 400 MB (free plan
 | Neon AI Gateway | reachable, 60 models | 2 requests in flight |
 | Neon PostgreSQL | connected 2026-10-21: PostgreSQL 18.6 via the pooler, fresh schema created by JINX (7 ledger tables + `jinx_meta`), 7.9 MB database (Neon's baseline), round trip 20 ms from jinx-nyc | budget 400 MB |
 | Redis Cloud | connected: Redis 8.6.2, 228 keys after one pass, every key with a TTL (97 s to 2 h, 0 without), 2.3 MB used, eviction policy `volatile-lru`, round trip 7 ms. Plain `redis://` (the free database offers no TLS): it carries only expiring snapshots, no credentials or trade records | budget 25 MB |
-| Railway PostgreSQL | provisioned (PostgreSQL 18, 5 GB volume); not connected: password pending (§6) | budget 4 GB |
+| Railway PostgreSQL | connected 2026-10-21 (credentials pulled with the project token through Railway's API): PostgreSQL 18.6, research schema created by JINX, first pass wrote 737 live wallets (`wallet_stats` 256 kB) and 1 performance sample; database 8.0 MB; round trip 76 ms (sfo region, off the trading path) | budget 4 GB of the 5 GB volume |
 | pytest temp area | 0 bytes after a full run (was 99 MB) | none retained |
 | Filesystem (jinx-nyc, not JINX data) | 88% used, 3.7 GB free → monitor reports `warn` | Contabo will be measured on first deploy |
 
 Latency (local processing; order-execution latency to the network is measured separately in Phase 4):
-receive → state p50 0.42 ms, p95 0.78 ms, p99 1.10 ms (3,007 live events); with Neon, Redis, object storage and the AI Gateway all connected, p50 0.44 ms, p95 0.80 ms, p99 1.22 ms (5,009 events, 130 s), RSS 102 MB. Paper order path, 400 entry+exit cycles:
+receive → state p50 0.42 ms, p95 0.78 ms, p99 1.10 ms (3,007 live events); with Neon, Redis, object storage and the AI Gateway all connected, p50 0.44 ms, p95 0.80 ms, p99 1.22 ms (5,009 events, 130 s), RSS 102 MB; with all five services connected (Neon, Railway, Redis, object storage, AI Gateway): p50 0.43 ms, p95 0.78 ms, p99 1.10 ms (4,454 events, 135 s), RSS 102 MB, health `ok`, 0 service failures. Paper order path, 400 entry+exit cycles:
 entry p50 0.30 ms / p95 0.48 ms with the outbox triggers, 0.20 / 0.29 ms without them. The outbox adds ≈0.1 ms
 locally, and nothing remote sits on the order path.
 
@@ -88,11 +88,14 @@ Ledger: download the newest `ledger/…db.gz` (`neon buckets object get jinx-bac
 `LedgerBackups.latest()`), gunzip, place as `jinx.db` in the data directory before start. Neon PostgreSQL holds the
 same records row for row. Market data is never restored: it is rebuilt from the live feeds.
 
-## 6. Open items (owner)
+## 6. Credentials and open items
 
-1. Railway PostgreSQL password (Railway → Postgres → Variables → `PGPASSWORD`). The Railway integration returns
-   variable names only. Once it is in the env file, JINX creates the research schema itself.
-   Neon PostgreSQL and Redis Cloud are connected (2026-10-21).
-2. Contabo root SSH access for the deploy key `jinx-deploy@jinx-nyc->contabo-13.140.224.208`.
-3. Rotate the Neon object-storage keys and AI Gateway token (shared in chat) and reset the `neondb_owner` password
-   (it appeared in an engineering session's output on 2026-10-21). None of them is in the repository.
+- All service credentials are in the private env file only; the Railway project token is in `~/.config/jinx/railway.env`
+  (mode 600) for automation. Nothing is in Git, logs or docs (enforced by `tests/test_secrets.py`).
+- Neon `neondb_owner` password rotated 2026-10-21 with SQL `ALTER ROLE` (Neon's documented way to set a chosen
+  password): the new one is verified and the previous one is rejected. Neon's schema and data were untouched.
+- Still open: Contabo accepts only password login, and no existing key is authorized. The one owner action is to run
+  `C:\Users\kevin\ClaudeDrop\add-jinx-key-contabo.ps1` (right-click → Run with PowerShell) and type the root password
+  once. After that the deployment runs without the owner.
+- The object-storage keys and AI Gateway token shared in chat remain in use (owner decision); Neon offers rotation for
+  them in the console only.
