@@ -36,3 +36,9 @@ def test_set_kelly_from_a_file_and_refuse_bad_values(tmp_path):
 def test_show_on_a_fresh_ledger_shows_nothing_set(tmp_path, capsys):
     assert main(["--db", str(tmp_path / "j.db"), "show"]) == 0
     assert json.loads(capsys.readouterr().out) == {"bigmac_paper": None, "kelly": None}
+
+
+def test_report_command_prints_the_trade_report(tmp_path, capsys):
+    assert main(["--db", str(tmp_path / "j.db"), "report", "--rate", "107.76", "--rate-source", "TEST"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["totals"]["wallet_reconciled"] is True and out["usd"]["rate"] == "107.76"

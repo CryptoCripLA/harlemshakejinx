@@ -184,27 +184,3 @@ def render_text(v: dict) -> str:
         lines.append(f"  exit #{e['position_id']} {e['reason']} by {e['source']}: {'filled' if e['ok'] else e['result']}")
     return "\n".join(lines)
 
-
-def main(argv: list[str] | None = None) -> int:
-    """python -m jinx.operator_view --db data/jinx.db [--rate 105.70 --rate-source "GMGN ..."]: the trade report."""
-    import argparse
-
-    from jinx.store import Store
-    p = argparse.ArgumentParser(prog="jinx.operator_view")
-    p.add_argument("--db", required=True)
-    p.add_argument("--rate")
-    p.add_argument("--rate-source", default="stated by the operator")
-    a = p.parse_args(argv)
-    store = Store(a.db)
-    try:
-        from jinx.config import PAPER_START_LAMPORTS
-        rate = SolUsd(Decimal(a.rate), a.rate_source, time.time_ns()) if a.rate else None
-        print(json.dumps(trade_report(PositionLedger(store), PaperWallet(store, PAPER_START_LAMPORTS), rate),
-                         indent=1, default=str))
-    finally:
-        store.close()
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

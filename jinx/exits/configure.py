@@ -5,6 +5,7 @@ stay off (B-30, B-03). Paper only; nothing here can arm live trading.
     python -m jinx.exits.configure --db data/jinx.db set-bigmac --take-profit 50 --stop-loss 20 \
         --trailing-stop 12 --trailing-activation 20 --owner-order
     python -m jinx.exits.configure --db data/jinx.db set-kelly --file kelly.json --owner-order
+    python -m jinx.exits.configure --db data/jinx.db report [--rate 107.76 --rate-source "GMGN getGasPrice"]
 """
 from __future__ import annotations
 
@@ -30,12 +31,27 @@ def main(argv: list[str] | None = None) -> int:
     k.add_argument("--file", required=True, help="JSON: label OWNER_CONFIG, bucket_floors, priors, cap_fraction, "
                                                  "entry_filter, unscored_bucket")
     k.add_argument("--owner-order", action="store_true")
+    r = sub.add_parser("report", help="the trade-by-trade report (read-only)")
+    r.add_argument("--rate")
+    r.add_argument("--rate-source", default="stated by the operator")
     a = p.parse_args(argv)
     store = Store(a.db)
     try:
         if a.cmd in ("set-bigmac", "set-kelly") and not a.owner_order:
             print("refused: settings change requires --owner-order", file=sys.stderr)
             return 2
+        if a.cmd == "report":
+            import time
+            from decimal import Decimal
+
+            from jinx.config import PAPER_START_LAMPORTS
+            from jinx.ledger import PositionLedger
+            from jinx.operator_view import SolUsd, trade_report
+            from jinx.paper import PaperWallet
+            rate = SolUsd(Decimal(a.rate), a.rate_source, time.time_ns()) if a.rate else None
+            print(json.dumps(trade_report(PositionLedger(store), PaperWallet(store, PAPER_START_LAMPORTS), rate),
+                             indent=1, default=str))
+            return 0
         if a.cmd == "set-bigmac":
             save_bigmac_config(store, BigMacPaperConfig(a.take_profit, a.stop_loss, a.trailing_stop,
                                                         a.trailing_activation, label=BIGMAC_PAPER,
