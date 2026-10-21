@@ -23,6 +23,7 @@ import os
 import signal
 import time
 from collections import OrderedDict, deque
+from decimal import Decimal
 from pathlib import Path
 
 from jinx import config
@@ -54,6 +55,7 @@ from jinx.intel.whales import DISCOVERY_INTERVAL_S, WhaleBook, discovery_pass
 from jinx.ledger import PositionLedger
 from jinx.market_memory import MarketMemory
 from jinx.modes import get_mode
+from jinx.operator_view import SolUsd, operator_view, render_text
 from jinx.paper import PaperExecutor, PaperWallet
 from jinx.persistence.object_store import LedgerBackups
 from jinx.persistence.postgres import PostgresReplicator
@@ -82,6 +84,7 @@ class JinxApp:
         self.replicator = self.redis_state = self.backups = self.ai_gateway = self.research = None
         self.safety = None                                  # set in start() when GMGN is running
         self.last_trenches: dict | None = None
+        self.sol_usd: SolUsd | None = None                  # owner-facing dollar rate (GMGN), never on the trading path
         self._research_at = 0.0
         self.daily = DailyRun()
         self.monitor = StorageMonitor({"ram": settings.ram_budget_mb * MB, "disk": settings.disk_budget_mb * MB,
@@ -181,6 +184,7 @@ class JinxApp:
             self._tasks["whale-discovery"] = asyncio.create_task(self._whale_discovery_loop(), name="whale-discovery")
         if self.gmgn.running:
             self._tasks["gmgn-trenches"] = asyncio.create_task(self._trenches_loop(), name="gmgn-trenches")
+            self._tasks["sol-usd"] = asyncio.create_task(self._sol_usd_loop(), name="sol-usd")
         if self.ai_gateway is not None:
             self._tasks["ai-gateway-probe"] = asyncio.create_task(self._probe_gateway(), name="ai-gateway-probe")
         self._tasks["position-monitor"] = asyncio.create_task(self._monitor_loop(), name="position-monitor")
@@ -506,6 +510,20 @@ class JinxApp:
                 self.early.record_funding(Funding(wallet, funder, "gmgn.getWalletStats.common.fund_from_address",
                                                   time.time_ns(), int(ts) * 1_000_000_000 if ts else None))
 
+    # Engineering cadence, not a trading rule: one getGasPrice read (weight 1) a minute for the owner's dollar figures.
+    SOL_USD_POLL_S = 60.0
+
+    async def _sol_usd_loop(self) -> None:
+        while True:
+            try:
+                res = await self.gmgn.call("getGasPrice", "sol")
+                price = res.get("native_token_usd_price") if isinstance(res, dict) else None
+                if isinstance(price, (int, float)) and price > 0:
+                    self.sol_usd = SolUsd(Decimal(str(price)), "GMGN getGasPrice native_token_usd_price", time.time_ns())
+            except Exception as e:
+                log.warning("SOL/USD read failed (%s); dollar figures keep the last rate", type(e).__name__)
+            await asyncio.sleep(self.SOL_USD_POLL_S)
+
     async def _monitor_loop(self) -> None:
         """CHAD Bot 9: every open position checked at least every 10 seconds (Confluence Collapse, Sybil emergency)."""
         while True:
@@ -611,6 +629,10 @@ class JinxApp:
             if path == "/health":
                 h = await self.health()
                 body, code = json.dumps(h, default=str).encode(), (200 if h["status"] != "failed" else 503)
+            elif path == "/operator":
+                body, code = json.dumps(operator_view(self), default=str).encode(), 200
+            elif path == "/operator.txt":
+                body, code = render_text(operator_view(self)).encode(), 200
             else:
                 body, code = b'{"error": "not found"}', 404
             writer.write(f"HTTP/1.1 {code} X\r\nContent-Type: application/json\r\nContent-Length: {len(body)}\r\n"
