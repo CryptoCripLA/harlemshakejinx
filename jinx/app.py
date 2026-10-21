@@ -22,6 +22,7 @@ import logging
 import os
 import signal
 import time
+from collections import OrderedDict
 from pathlib import Path
 
 from jinx import config
@@ -37,6 +38,7 @@ from jinx.core_state import CoreState
 from jinx.execution import ExecutionGateway
 from jinx.health import build_health
 from jinx.intel.bundles import BundleTracker
+from jinx.intel.early_momentum import EarlyMomentum, Funding
 from jinx.intel.safety import SafetyService
 from jinx.intel.whales import DISCOVERY_INTERVAL_S, WhaleBook, discovery_pass
 from jinx.ledger import PositionLedger
@@ -92,6 +94,11 @@ class JinxApp:
         self.bus.subscribe(Lane.FAST, self.core.apply, name="core_state")
         self.bundles = BundleTracker()                     # R1 evidence, off the fast lane
         self.bus.subscribe(Lane.BACKGROUND, self.bundles.on_event, name="bundles")
+        # CHAD Bot 10 (C10) on the fast lane: synchronous, no I/O; detections are screened in the background
+        self.early = EarlyMomentum(notify=self._on_early_momentum, request_funders=self._request_funders)
+        self.bus.subscribe(Lane.FAST, self.early.on_event, name="early_momentum")
+        self.candidates: OrderedDict[str, dict] = OrderedDict()   # newest 500 detections and their safety (RAM)
+        self._background: set[asyncio.Task] = set()
         self.whales = WhaleBook()                          # CHAD C04: Layer-1 alerts and discovery candidates
         self.bus.subscribe(Lane.BACKGROUND, self.whales.on_event, name="whales")
         self.last_discovery: dict | None = None
@@ -163,6 +170,65 @@ class JinxApp:
             return None
         return await self.safety.evaluate(mint, creator, time.time(), priority=priority)
 
+    def _spawn(self, coro) -> None:
+        try:
+            task = asyncio.get_running_loop().create_task(coro)
+        except RuntimeError:                       # no loop (offline replay): nothing to schedule
+            coro.close()
+            return
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
+
+    def _on_early_momentum(self, evidence) -> None:
+        """Fast-path notification: record the detection and screen it at once (CHAD: "Full safety check still
+        fires … in parallel"). Never blocks the event path."""
+        entry = self.candidates.setdefault(evidence.mint, {"first_detected_ns": evidence.detected_ns})
+        entry.update(evidence=evidence.to_dict(), trade_permitted=evidence.trade_permitted)
+        self.candidates.move_to_end(evidence.mint)
+        while len(self.candidates) > 500:
+            self.candidates.popitem(last=False)
+        if "screening" not in entry:
+            entry["screening"] = True
+            self._spawn(self._screen(evidence.mint, evidence.creator))
+
+    # Engineering bound, not a trading rule: RugCheck indexes a new token 7.9-10.2 s after creation (measured
+    # 2026-10-21), so a not-yet-indexed candidate is asked again every 2 s, at most 8 times.
+    SCREEN_RETRY_S, SCREEN_ATTEMPTS = 2.0, 8
+
+    async def _screen(self, mint: str, creator: str | None) -> None:
+        for attempt in range(1, self.SCREEN_ATTEMPTS + 1):
+            result = await self.check_candidate(mint, creator, priority=0)
+            entry = self.candidates.get(mint)
+            if result is None or entry is None:
+                return
+            rc_error = (result.safety.facts.get("rugcheck_error") if result.safety.facts else None)
+            entry["safety"] = {"verdict": result.safety.verdict.value, "eligible": result.safety.eligible,
+                               "veto": result.safety.veto_reasons, "rugcheck_error": rc_error, "attempts": attempt,
+                               "checks": {c.name: c.verdict.value for c in result.safety.checks},
+                               "latency_ms": round(result.latency_ms, 1)}
+            if result.safety.verdict.value != "UNKNOWN" or rc_error not in ("not_indexed", "rate_limited", "timeout"):
+                return
+            await asyncio.sleep(self.SCREEN_RETRY_S)
+
+    def _request_funders(self, mint: str, wallets: tuple[str, ...]) -> None:
+        """CHAD's Sybil funder check needs each buyer's SOL funder: GMGN wallet stats carry `fund_from_address`."""
+        if getattr(self, "gmgn", None) is not None and self.gmgn.running:
+            self._spawn(self._fetch_funders(tuple(wallets)))
+
+    async def _fetch_funders(self, wallets: tuple[str, ...]) -> None:
+        try:
+            res = await self.gmgn.call("getWalletStats", "sol", list(wallets), "7d")
+        except Exception as e:
+            log.warning("funder lookup failed (%s); the Sybil predicate stays UNAVAILABLE", type(e).__name__)
+            return
+        for stats in (res if isinstance(res, list) else [res] if isinstance(res, dict) else []):
+            common = stats.get("common") or {}
+            funder, wallet = common.get("fund_from_address"), stats.get("wallet_address")
+            if wallet and funder:
+                ts = common.get("fund_from_ts")
+                self.early.record_funding(Funding(wallet, funder, "gmgn.getWalletStats.common.fund_from_address",
+                                                  time.time_ns(), int(ts) * 1_000_000_000 if ts else None))
+
     async def _whale_discovery_loop(self) -> None:
         """CHAD: discovery "runs every 4 hours". Promoted whales persist in the research store and come back on start."""
         if self.research is not None:
@@ -212,6 +278,10 @@ class JinxApp:
         }
         h["intel"] = {"safety": dict(self.safety.stats) if getattr(self, "safety", None) else {"configured": False},
                       "bundles_tracked": len(self.bundles._tokens),
+                      "early_momentum": {**self.early.stats, "candidates": len(self.candidates),
+                                         "latest": [{"mint": m, "safety": c.get("safety"),
+                                                     "trade_permitted": c.get("trade_permitted")}
+                                                    for m, c in list(self.candidates.items())[-5:]]},
                       "whales": {"tracked": len(self.whales.tracked), "candidates": len(self.whales._candidates),
                                  "alerts": len(self.whales.alerts), "last_discovery": self.last_discovery}}
         h["storage"] = self.monitor.report()

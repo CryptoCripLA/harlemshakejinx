@@ -1,0 +1,34 @@
+{
+ "generated_utc": "2026-10-21T04:07:05Z",
+ "endpoint": "GET https://api.rugcheck.xyz/v1/tokens/{mint}/report",
+ "auth": "none (published free access: 1 request/s)",
+ "client": "jinx/adapters/rugcheck/client.py, min_interval_s=1.0",
+ "host": "jinx-nyc (engineering)",
+ "mints": {
+  "known_token": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+  "gmgn_trenches_new_near_completed": 15
+ },
+ "requests": 16,
+ "verdicts": {
+  "PASS": 14,
+  "UNKNOWN:http_400": 2
+ },
+ "fail_reasons": [],
+ "latency_ms": {
+  "n": 16,
+  "p50": 85.1,
+  "p95": 683.5,
+  "p99": 683.5
+ },
+ "wall_s_for_all": 17.45,
+ "cache_hits_after_repeat": 1,
+ "rate_limited": 0,
+ "timeouts": 0,
+ "danger_findings_seen": [
+  "Creator history of rugged tokens",
+  "Large Amount of LP Unlocked",
+  "Low Liquidity",
+  "Single holder ownership"
+ ],
+ "fresh_reuse_verdict": "PASS"
+}

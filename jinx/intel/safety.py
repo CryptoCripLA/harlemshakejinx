@@ -28,6 +28,8 @@ from enum import Enum
 
 from jinx.intel.dev_reputation import DevEvidence, dev_history
 
+TRANSIENT_RUGCHECK = {"not_indexed", "rate_limited", "timeout", "queue_full", "network", "http_500", "http_502",
+                      "http_503", "http_504"}
 SCORE_STATUS = "not computed: CHAD's 0-100 safety formula and pass threshold are unspecified (B-03)"
 
 
@@ -199,6 +201,10 @@ class SafetyService:
                                  dev_history(creator, created, decision_ts_s, observed,
                                              error=dev_err) if creator else dev_history(None, None, decision_ts_s, observed),
                                  latency_ms=(time.perf_counter() - t0) * 1000)
+        rc_error = (rugcheck or {}).get("error")
+        if rc_error in TRANSIENT_RUGCHECK:              # not indexed yet, rate limited, late: ask again next time
+            self.stats["evaluations"] += 1
+            return result
         self._cache[mint] = (now, result)
         self._cache.move_to_end(mint)
         while len(self._cache) > self.max_entries:

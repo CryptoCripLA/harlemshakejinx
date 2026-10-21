@@ -12,6 +12,8 @@ What JINX takes from a report (`interpret`), with no threshold of its own:
 Risk findings (name, level, score, value), the raw `score`, `score_normalised` and liquidity are recorded as
 evidence. They are not converted into a CHAD safety score or an approval threshold: no mapping is approved.
 
+A token RugCheck has not indexed yet (HTTP 400 "not found"; measured 7.9-10.2 s after creation on 2026-10-21) is
+UNKNOWN with error `not_indexed` and is not cached, so the caller can ask again.
 Requests are deduplicated (one in-flight call per mint), fresh results are reused for `fresh_s`, candidates are
 served by priority (lower number first, then arrival), and the cache and queue are bounded (owner storage rule 2).
 Nothing is written to disk. Exits never call this client: protective exits do not wait on RugCheck.
@@ -159,6 +161,9 @@ class RugCheckClient:
             retry = _num(r.headers.get("Retry-After"))
             self._not_before = time.monotonic() + (retry if retry is not None else 5.0)
             return self._failed("rate_limited")
+        if r.status_code == 400 and "not found" in r.text.lower():
+            # RugCheck has not indexed the token yet: measured 7.9-10.2 s after creation (2026-10-21)
+            return self._failed("not_indexed")
         if r.status_code != 200:
             return self._failed(f"http_{r.status_code}")
         try:

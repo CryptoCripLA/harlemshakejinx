@@ -207,3 +207,17 @@ def test_protective_exits_never_depend_on_rugcheck():
         ledger, _ = ledger_activity(store)                 # opens and fully closes a paper position
         assert ledger.active() == [] and store.conn.execute("SELECT status FROM positions").fetchone()[0] == "CLOSED"
         store.close()
+
+
+def test_a_token_rugcheck_has_not_indexed_yet_is_unknown_and_asked_again():
+    calls = []
+
+    def handler(req):
+        calls.append(1)
+        return httpx.Response(400, json={"error": "not found"}) if len(calls) == 1 else httpx.Response(200, json=REPORT)
+
+    async def main(c):
+        return await c.report(MINT), await c.report(MINT)
+    c = client_with(handler)
+    first, second = run(with_worker(c, main(c)))
+    assert first["error"] == "not_indexed" and second["verdict"] == "PASS" and len(calls) == 2

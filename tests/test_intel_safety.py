@@ -147,3 +147,17 @@ def test_gmgn_unclear_candidates_queue_behind_clean_ones():
     rc = FakeRugCheck({"verdict": "PASS", "facts": {}})
     asyncio.run(SafetyService(FakeGmgn(with_(renounced_mint=None)), rugcheck=rc).evaluate("M", "DEV", 2e9, priority=0))
     assert rc.calls == [("M", 1)]
+
+
+def test_transient_rugcheck_results_are_not_cached_by_the_safety_service():
+    from jinx.adapters.rugcheck.client import interpret, unknown
+
+    class Flaky(FakeRugCheck):
+        async def report(self, mint, priority=10):
+            self.calls.append((mint, priority))
+            return unknown("not_indexed") if len(self.calls) == 1 else interpret(RC)
+    rc = Flaky(None)
+    svc = SafetyService(FakeGmgn(SEC), rugcheck=rc)
+    first = asyncio.run(svc.evaluate("M", "DEV", 2e9))
+    second = asyncio.run(svc.evaluate("M", "DEV", 2e9))
+    assert first.safety.verdict is Verdict.UNKNOWN and second.safety.verdict is Verdict.PASS and len(rc.calls) == 2

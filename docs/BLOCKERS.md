@@ -112,9 +112,14 @@ Added 2026-10-21 with the Early Momentum build (`jinx/intel/early_momentum.py`);
 - Implemented: the market store is in-memory only (event TTL 300 s + cap 60,000; raw payload released at apply; tokens and wallets idle 2 h + caps). Disk on the execution server holds only the ledger (172 KB measured). The earlier projection of 3.9 GB/day no longer applies: nothing from the feed is written to disk.
 - Evidence: `tests/test_market_memory.py`, `tests/test_storage_hygiene.py`, `docs/INFRASTRUCTURE.md` §4.
 
-## B-19 RugCheck has no approved source (CHAD C01)
-- CHAD: "Runs RugCheck, honeypot detection, and mint/freeze authority analysis on every candidate." Honeypot and mint/freeze authority come from GMGN `getTokenSecurity` (implemented, `jinx/intel/safety.py`). RugCheck itself is not called by any approved source (GMGN, Mako, D3AD, DataNomad).
-- Effect: the RugCheck predicate is UNKNOWN, so the safety verdict can be PASS for no token. CHAD's rule "do not generate a trade when a required predicate is unresolved" holds; Phase 3 entries stay disabled.
-- Needed (owner): approve RugCheck's free public API as the RugCheck source, or approve GMGN's security risk fields (`hide_risk`, `flags`, `is_show_alert`) as the RugCheck stand-in.
-- Reversible option: add a RugCheck adapter, off by default, behind the existing `rugcheck=` input of `assess()`.
+## B-19 RugCheck source — DECISION CLOSED 2026-10-21 (owner: use the official public RugCheck API)
+- Decision: the official RugCheck API, `GET https://api.rugcheck.xyz/v1/tokens/{mint}/report`, unauthenticated (published free access: one request per second). No subscription, server or separate engine.
+- Runtime integration: TESTING. `jinx/adapters/rugcheck/client.py` (one worker at 1 request/s, Retry-After on 429, per-mint dedup, fresh reuse, GMGN-first priority, bounded queue and cache) feeds the RugCheck predicate of `jinx/intel/safety.py`. Every Early Momentum detection is screened at top priority (`JinxApp._screen`). Tests: `tests/test_rugcheck_adapter.py`, `tests/test_intel_safety.py`, `tests/test_candidate_screening.py`.
+- Mapping (no invented thresholds): FAIL only on RugCheck's own `rugged: true` or a present mint/freeze authority (CHAD's existing hard checks); PASS on a well-formed report without them; missing, not yet indexed, 4xx/5xx, 429, timeouts and malformed bodies are UNKNOWN, never PASS.
+- Measured live 2026-10-21 (`docs/evidence/rugcheck_check_20261021.json`): 16 requests, p50 85 ms, p95 684 ms, 0 rate-limited, 0 timeouts. RugCheck indexed fresh pump.fun tokens 7.9–10.2 s after creation; until then the answer is "not found" (UNKNOWN, retried every 2 s, at most 8 times).
+- Exits never consult RugCheck or the safety gate (tested: the exit path imports neither).
 
+## B-20 RugCheck "danger" findings are evidence only (owner option)
+- RugCheck labels risks `danger`/`warn`/`info`. Live reports carried danger findings such as "Creator history of rugged tokens", "Large Amount of LP Unlocked", "Low Liquidity" and "Single holder ownership" while `rugged` was false and both authorities were revoked, so the RugCheck predicate is PASS for them.
+- Without an approved mapping JINX records these findings, the raw `score` and `score_normalised`, and does not veto on them (owner order: no invented RugCheck thresholds).
+- Owner option (reversible, one line in `interpret`): approve RugCheck `danger` findings as hard vetoes, or name the specific findings that veto.
