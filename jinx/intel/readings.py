@@ -28,6 +28,7 @@ PUMPPORTAL = "mako.pumpportal"    # jinx/adapters/mako/normalize.py SOURCE
 DEFAULT_DECIMALS = 6              # jinx/adapters/pumpapi/normalize.py DEFAULT_DECIMALS (pump.fun mints)
 CURVE_VENUE = "pump"
 PUMPSWAP_VENUE = "pump-amm"
+INITIAL_VIRTUAL_SOL = 30_000_000_000   # D3AD shred-sniper/sniper/src/pumpfun.rs:538 (recorded mainnet global value)
 
 
 class Clock(StrEnum):
@@ -89,3 +90,12 @@ def traders_involved(ev: MarketEvent) -> tuple[str, ...] | None:
     if isinstance(v, (list, tuple)) and all(isinstance(x, str) for x in v):
         return tuple(v)
     return None
+
+
+def standard_curve(v_sol_lamports: int | None, real_sol_lamports: int | None) -> bool | None:
+    """Whether a curve reading's virtual minus real SOL is the standard 30 SOL a pump.fun curve starts with. Two
+    amounts each rounded to the lamport can differ by one lamport (5 of 580 standard live readings did). On the live
+    capture 26 of 118 curve mints were not standard (tests/test_intel_graduation.py). None when unknown."""
+    if v_sol_lamports is None or real_sol_lamports is None:
+        return None
+    return abs(v_sol_lamports - real_sol_lamports - INITIAL_VIRTUAL_SOL) <= 1

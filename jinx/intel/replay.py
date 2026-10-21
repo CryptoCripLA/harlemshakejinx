@@ -16,6 +16,7 @@ from typing import Iterable
 
 from jinx.core.events import MarketEvent
 from jinx.intel.early_momentum import EarlyMomentum, EarlyMomentumEvidence
+from jinx.intel.graduation import GraduationTracker
 
 
 def percentiles(values) -> dict:
@@ -30,6 +31,8 @@ def percentiles(values) -> dict:
 class ReplayRun:
     momentum: list[EarlyMomentumEvidence] = field(default_factory=list)
     early_momentum: EarlyMomentum | None = None
+    graduation: GraduationTracker | None = None
+    curve_mints: set[str] = field(default_factory=set)
     processing_ns: dict[str, list[int]] = field(default_factory=dict)
     events: int = 0
     refused: int = 0
@@ -39,6 +42,15 @@ class ReplayRun:
         for e in self.momentum:
             final = self.early_momentum.evidence(e.mint)
             out[e.mint] = tuple(b.signature for b in final.window)
+        return out
+
+    def graduation_latest(self) -> dict[str, tuple[str, int]]:
+        """mint -> (signature of the latest curve reading, peak virtual SOL)."""
+        out = {}
+        for mint in self.curve_mints:
+            e = self.graduation.evidence(mint)
+            if e is not None:
+                out[mint] = (e.latest.signature, e.peak_v_sol_lamports)
         return out
 
     def report(self) -> dict:
@@ -55,12 +67,22 @@ class ReplayRun:
                 "trade_permitted": sum(e.trade_permitted for e in em),
                 "blocking": sorted({b for e in em for b in e.blocking}),
             },
+            "graduation": self._graduation_report(),
         }
+
+    def _graduation_report(self) -> dict:
+        finals = [e for e in (self.graduation.evidence(m) for m in self.curve_mints) if e is not None]
+        return {"mints": len(finals),
+                "not_standard_curves": sum(e.latest.standard_curve is False for e in finals),
+                "complete_observed": sum(e.complete_observed for e in finals),
+                "latest_progress": percentiles([e.latest.progress for e in finals if e.latest.progress is not None]),
+                "late_readings": self.graduation.stats["late_readings"],
+                "score_points_produced": sum(e.score_points is not None for e in finals)}
 
 
 def replay_events(deliveries: Iterable[list[MarketEvent] | None]) -> ReplayRun:
-    run = ReplayRun(early_momentum=EarlyMomentum())
-    modules = {"early_momentum": run.early_momentum.on_event}
+    run = ReplayRun(early_momentum=EarlyMomentum(), graduation=GraduationTracker())
+    modules = {"early_momentum": run.early_momentum.on_event, "graduation": run.graduation.on_event}
     run.processing_ns = {name: [] for name in modules}
     for events in deliveries:
         if events is None:
@@ -68,6 +90,8 @@ def replay_events(deliveries: Iterable[list[MarketEvent] | None]) -> ReplayRun:
             continue
         for ev in events:
             run.events += 1
+            if ev.v_sol_lamports is not None:
+                run.curve_mints.add(ev.mint)
             for name, on_event in modules.items():
                 t0 = time.perf_counter_ns()
                 out = on_event(ev)

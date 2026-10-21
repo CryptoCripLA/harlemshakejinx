@@ -136,8 +136,20 @@ def test_both_curve_gates_are_separate_unresolved_predicates_that_block_any_trad
     assert low.detail["real_sol_at_trigger"] == pytest.approx(3.0)
     assert low.detail["if_virtual_sol"] is False and low.detail["if_real_sol"] is True
     assert high.detail["if_virtual_sol"] is True and high.detail["if_real_sol"] is True
+    assert low.detail["standard_curve_at_trigger"] is True and high.detail["standard_curve_at_trigger"] is True
     assert {"curve_gate_0_5_to_10_sol", "curve_gate_below_35_sol"} <= set(ev.blocking)
     assert ev.trade_permitted is False
+
+
+def test_a_curve_that_is_not_a_standard_30_sol_curve_is_flagged_in_both_gates():
+    """Live finding (tests/test_intel_graduation.py): some curves report virtual SOL far below 30."""
+    em = EarlyMomentum()
+    odd = [buy(p, i, v_quote=0.13) for i, p in enumerate("ABC")]
+    for m in odd:
+        m["quoteInPool"] = 0.03
+    [ev] = feed(em, [fresh()] + odd)
+    for name in ("curve_gate_0_5_to_10_sol", "curve_gate_below_35_sol"):
+        assert predicate(ev, name).detail["standard_curve_at_trigger"] is False
 
 
 def test_the_peak_gate_sees_a_reserve_that_retraced_after_a_higher_peak():

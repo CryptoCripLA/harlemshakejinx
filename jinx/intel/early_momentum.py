@@ -32,7 +32,8 @@ from enum import StrEnum
 from typing import Any, Callable, Mapping
 
 from jinx.core.events import LAMPORTS_PER_SOL, EventKind, MarketEvent, Side
-from jinx.intel.readings import Clock, event_time, is_curve, real_reserves, traders_involved
+from jinx.intel.bounded import MintTable
+from jinx.intel.readings import Clock, event_time, is_curve, real_reserves, standard_curve, traders_involved
 
 log = logging.getLogger(__name__)
 
@@ -204,7 +205,7 @@ def first_window(buys: list[Buy]) -> tuple[Buy, ...] | None:
 
 class _Mint:
     __slots__ = ("buys", "seen", "creator", "since_creation", "current", "peak_v", "peak_real", "newest_ns",
-                 "last_recv", "window", "detection", "sybil")
+                 "window", "detection", "sybil")
 
     def __init__(self) -> None:
         self.buys: list[Buy] = []
@@ -215,7 +216,6 @@ class _Mint:
         self.peak_v: int | None = None
         self.peak_real: int | None = None
         self.newest_ns: int | None = None
-        self.last_recv = 0
         self.window: tuple[Buy, ...] | None = None
         self.detection: tuple[int, int, int] | None = None   # (observed_ns, detected_ns, processing_ns)
         self.sybil: Status | None = None
@@ -227,14 +227,13 @@ class EarlyMomentum:
                  max_mints: int = MAX_MINTS, idle_ttl_s: float = IDLE_TTL_S,
                  max_buys_per_mint: int = MAX_BUYS_PER_MINT, max_funding: int = MAX_FUNDING) -> None:
         self.notify, self.request_funders, self.clock_ns = notify, request_funders, clock_ns
-        self.max_mints, self.idle_ttl_ns = max_mints, int(idle_ttl_s * 1_000_000_000)
         self.max_buys_per_mint, self.max_funding = max_buys_per_mint, max_funding
-        self._mints: OrderedDict[str, _Mint] = OrderedDict()
+        self._mints: MintTable[_Mint] = MintTable(_Mint, max_mints, int(idle_ttl_s * 1_000_000_000),
+                                                  on_evict=self._unlink)
         self._funding: OrderedDict[str, Funding] = OrderedDict()
         self._wallet_mints: dict[str, set[str]] = {}
-        self._now = 0
         self.stats = {"events": 0, "curve_buys": 0, "detections": 0, "late_beyond_retention": 0,
-                      "buys_dropped_over_cap": 0, "duplicates": 0, "listener_errors": 0, "evicted": 0}
+                      "buys_dropped_over_cap": 0, "duplicates": 0, "listener_errors": 0}
 
     # ---- API -----------------------------------------------------------------------------------------
     def on_event(self, ev: MarketEvent) -> list[EarlyMomentumEvidence]:
@@ -242,8 +241,7 @@ class EarlyMomentum:
         self.stats["events"] += 1
         if ev.kind not in (EventKind.TOKEN_CREATED, EventKind.TRADE):
             return []
-        self._now = max(self._now, ev.recv_ns)
-        st = self._touch(ev.mint)
+        st = self._mints.touch(ev.mint, ev.recv_ns)
         if ev.kind is EventKind.TOKEN_CREATED:
             st.creator, st.since_creation = ev.trader, True
         if is_curve(ev):
@@ -283,26 +281,6 @@ class EarlyMomentum:
         return len(st.buys) if st else 0
 
     # ---- internals -----------------------------------------------------------------------------------
-    def _touch(self, mint: str) -> _Mint:
-        st = self._mints.get(mint)
-        if st is None:
-            st = self._mints[mint] = _Mint()
-        self._mints.move_to_end(mint)
-        st.last_recv = self._now
-        while len(self._mints) > self.max_mints:
-            self._evict(*self._mints.popitem(last=False))
-        while self._mints:
-            oldest_mint, oldest = next(iter(self._mints.items()))
-            if self._now - oldest.last_recv <= self.idle_ttl_ns:
-                break
-            del self._mints[oldest_mint]
-            self._evict(oldest_mint, oldest)
-        return st
-
-    def _evict(self, mint: str, st: _Mint) -> None:
-        self.stats["evicted"] += 1
-        self._unlink(mint, st)
-
     def _reserves(self, st: _Mint, ev: MarketEvent) -> None:
         t, _ = event_time(ev)
         key = (t, ev.seq)
@@ -425,7 +403,8 @@ class EarlyMomentum:
         v, r = _sol(trigger.v_sol_lamports), _sol(trigger.real_sol_lamports)
         inside = (lambda x: None if x is None else GATE_FLOOR_SOL <= x <= GATE_CEILING_SOL)
         detail = {"virtual_sol_at_trigger": v, "real_sol_at_trigger": r, "if_virtual_sol": inside(v),
-                  "if_real_sol": inside(r)}
+                  "if_real_sol": inside(r),
+                  "standard_curve_at_trigger": standard_curve(trigger.v_sol_lamports, trigger.real_sol_lamports)}
         status = Status.UNRESOLVED if r is not None else Status.UNAVAILABLE
         return Predicate("curve_gate_0_5_to_10_sol", status, CHAD["gate_low"], detail, blocker="B-02")
 
@@ -435,7 +414,9 @@ class EarlyMomentum:
         real = [_sol(b.real_sol_lamports) for b in window]
         below = (lambda xs: None if any(x is None for x in xs) else all(x < GATE_BELOW_SOL for x in xs))
         detail = {"virtual_sol_per_buy": virtual, "real_sol_per_buy": real, "if_virtual_sol": below(virtual),
-                  "if_real_sol": below(real)}
+                  "if_real_sol": below(real),
+                  "standard_curve_at_trigger": standard_curve(window[-1].v_sol_lamports,
+                                                              window[-1].real_sol_lamports)}
         status = Status.UNRESOLVED if None not in real else Status.UNAVAILABLE
         return Predicate("curve_gate_below_35_sol", status, CHAD["gate_high"], detail, blocker="B-02")
 

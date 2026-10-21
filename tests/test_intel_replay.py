@@ -63,3 +63,18 @@ def test_detection_delay_is_reported_as_percentiles():
         assert set(em[name]) == {"p50", "p95", "p99", "max", "n"}
     assert em["detection_delay_ms"]["p50"] >= em["feed_delay_ms"]["p50"]
     assert report["per_event_processing_us"]["early_momentum"]["n"] == report["events"]
+
+
+def test_graduation_reads_every_curve_mint_and_converges_under_reordering():
+    base = replay_capture(RECORDS)
+    curve_mints = {r["raw"]["mint"] for r in RECORDS if r["raw"]["pool"] == "pump"}
+    latest = base.graduation_latest()
+    assert set(latest) == curve_mints
+    for m in curve_mints:
+        reading = base.graduation.evidence(m).latest
+        assert (reading.progress is not None) is reading.standard_curve
+    for kw in ({"shuffle_seed": 3}, {"shuffle_seed": 5, "duplicate_every": 4}):
+        assert replay_capture(RECORDS, **kw).graduation_latest() == latest
+    report = base.report()
+    assert report["graduation"]["mints"] == len(curve_mints) and report["graduation"]["not_standard_curves"] == 26
+    assert report["per_event_processing_us"]["graduation"]["n"] == report["events"]
