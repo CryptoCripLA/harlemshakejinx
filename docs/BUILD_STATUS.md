@@ -42,7 +42,7 @@ Status words: NOT STARTED / IN PROGRESS / TESTING / PASSED / FAILED / BLOCKED. E
 
 | Phase | Status |
 |---|---|
-| Phase 2 — CHAD intelligence, safety and fast signals | IN PROGRESS: Phase 1 accepted by the owner 2026-10-21. Done so far: the free PumpAPI feed adapter (PASS for Early Momentum's raw events, `docs/PUMPAPI_EVALUATION.md`) and PumpPortal's free migration stream. Completeness requirements are in `docs/SOURCE_FIDELITY_MATRIX.md` §B2 |
+| Phase 2 — CHAD intelligence, safety and fast signals | IN PROGRESS: built and live on Contabo (paper): Early Momentum (C10), graduation readings (C05), migration (M1-M3), safety gate with GMGN + RugCheck (C01, B-19 closed), developer history (C08), bundle facts (R1), whale intelligence (C04). 62 detections screened in 3 live minutes (`docs/evidence/screening_contabo_20261021.json`). Open: B-02, B-03, B-20, momentum C02, freshness C07, X/TG scouts (B-05/B-06), Phase 2 review gate |
 | Phase 3 — Size, fire, exit and realized-profit accounting | NOT STARTED |
 | Phase 4 — Hardening, full simulation and independent audit | NOT STARTED |
 

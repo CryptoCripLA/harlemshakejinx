@@ -1,0 +1,67 @@
+{
+ "generated_utc": "2026-10-21T04:23Z",
+ "host": "Contabo vmi3672752 (13.140.224.208), release 59b81eb, paper, mode OFF",
+ "window_s": 180,
+ "events_applied": 7389,
+ "curve_buys": 3814,
+ "early_momentum_detections": 62,
+ "screened": 62,
+ "listener_errors": 0,
+ "rugcheck": {
+  "requests": 98,
+  "ok": 60,
+  "unknown": 38,
+  "last_error": "not_indexed",
+  "rate_limited": 0,
+  "timeouts": 1,
+  "latency_ms": {
+   "n": 97,
+   "p50": 88.8,
+   "p95": 257.1,
+   "p99": 329.1
+  }
+ },
+ "safety": {
+  "evaluations": 99,
+  "rugcheck_calls": 99,
+  "rugcheck_skipped_gmgn_veto": 1
+ },
+ "examples": [
+  {
+   "verdict": "FAIL",
+   "checks": {
+    "honeypot": "PASS",
+    "mint_authority": "FAIL",
+    "freeze_authority": "FAIL",
+    "rugcheck": "not requested (GMGN veto)"
+   },
+   "latency_ms": 130.6
+  },
+  {
+   "verdict": "PASS",
+   "attempts": 2,
+   "latency_ms": 221.4
+  },
+  {
+   "verdict": "PASS",
+   "attempts": 3,
+   "latency_ms": 223.7,
+   "note": "RugCheck had not indexed the token on attempts 1-2"
+  }
+ ],
+ "trade_permitted": "False for every detection (B-02 curve gate and B-03 values unresolved; Phase 3 not built)",
+ "receive_to_state_ms": {
+  "n": 7389,
+  "p50": 1.012,
+  "p95": 2.936,
+  "p99": 8.876,
+  "max": 307.6
+ },
+ "service_failures": {
+  "postgres": 0,
+  "research_postgres": 0,
+  "redis": 0,
+  "object_storage": 0,
+  "ai_gateway": 0
+ }
+}
