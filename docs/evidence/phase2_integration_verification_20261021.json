@@ -1,0 +1,67 @@
+{
+ "commit": "fe01850",
+ "host": "jinx-nyc",
+ "generated_utc": "2026-10-21T07:03:21Z",
+ "results": {
+  "P2I-01": {
+   "command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_app_event_intel.py",
+   "exit_code": 0,
+   "summary": "7 passed in 1.34s"
+  },
+  "P2I-B02": {
+   "command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_b02_reserve_policy.py tests/test_intel_early_momentum.py",
+   "exit_code": 0,
+   "summary": "48 passed in 0.16s"
+  },
+  "P2I-02": {
+   "command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_migration_dedup.py tests/test_intel_live_migrations.py",
+   "exit_code": 0,
+   "summary": "12 passed in 0.20s"
+  },
+  "P2I-03": {
+   "command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_migration_dedup.py tests/test_review_phase2_intel_round2.py tests/test_lifecycle.py -k 'time or provider or clock or receipt'",
+   "exit_code": 0,
+   "summary": "19 passed, 46 deselected in 0.18s"
+  },
+  "P2I-04": {
+   "command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_early_momentum.py -k creator",
+   "exit_code": 0,
+   "summary": "1 passed, 27 deselected in 0.09s"
+  },
+  "P2I-05": {
+   "command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_early_momentum.py -k 'funder or sybil'",
+   "exit_code": 0,
+   "summary": "4 passed, 24 deselected in 0.10s"
+  },
+  "P2I-06": {
+   "command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_graduation.py tests/test_migration_dedup.py tests/test_app_event_intel.py -k 'near or trenches'",
+   "exit_code": 0,
+   "summary": "3 passed, 29 deselected in 0.36s"
+  },
+  "P2I-07": {
+   "command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_migration.py -k sells",
+   "exit_code": 0,
+   "summary": "1 passed, 21 deselected in 0.14s"
+  },
+  "P2I-08": {
+   "command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_migration.py tests/test_review_phase2_intel_round10.py -k 'holder or ownership or balances or tally or creators'",
+   "exit_code": 0,
+   "summary": "6 passed, 20 deselected in 0.17s"
+  },
+  "P2I-09-SUITE": {
+   "command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest",
+   "exit_code": 0,
+   "summary": "625 passed, 1 skipped in 35.43s"
+  },
+  "P2I-RAM": {
+   "command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_memory.py",
+   "exit_code": 0,
+   "summary": "3 passed in 4.18s"
+  },
+  "P2I-REVIEW-REPRO": {
+   "command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_review_phase2_intel_round*.py",
+   "exit_code": 0,
+   "summary": "57 passed in 1.37s"
+  }
+ }
+}

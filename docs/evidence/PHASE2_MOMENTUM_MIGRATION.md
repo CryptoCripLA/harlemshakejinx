@@ -234,5 +234,36 @@ bounds (900 bytes per event, 1.2 MB per token).
 
 ## Deployment
 
-The Contabo paper deployment runs whatever `deploy/contabo/deploy.sh` last shipped; the revision and the live
-engine measurements are recorded here once the reviewed build is deployed. Live trading is OFF.
+**fe01850 on Contabo since 2026-10-21 07:01 UTC** (`docs/evidence/phase2_contabo_deploy_fe01850_20261021.json`, 11
+samples over 20 minutes). fe01850 is the Codex-reviewed 4fa8bf5 plus the audit record. Deployed with
+`deploy/contabo/deploy.sh`; `/opt/jinx/current` and the service's working directory are the fe01850 release. Mode OFF,
+execution PAPER, 0 of 1 slots in use, paper wallet reconciled and unchanged before and after ($211.89 of paper money
+at $105.945 per SOL, Coinbase spot, 07:04 UTC). Nothing was bought. Live trading is OFF.
+
+What the running engine did in its first 21 minutes (62,011 events, no handler errors, nothing dropped):
+
+- **Early Momentum:** 253 detections. Detection delay from PumpAPI's own trade time to evidence in JINX state: p50
+  45.0 ms, p95 79.8 ms, p99 182.7 ms (n 253). Of the 253: 64 passed both B-02 reserve gates, 164 had a safety
+  verdict that passes, and 61 passed every check. In mode OFF none was traded. Blocked by B-02: 79 below or above
+  the current 0.5–10 real SOL band; 56 also over the 10 SOL peak; 11 over the peak alone; 35 with an incomplete
+  history (creation not observed), plus combinations. 89 lookups were skipped for coins B-02 can never pass.
+- **Migration:** 17 migrations from 42 merged reports, 17 verified on the named pool, 0 conflicts, 0 revoked.
+  Migration signal delay (provider time to the record in JINX state): p50 44.2 ms, p95 64.0 ms, p99 64.9 ms.
+  1,410 trades on tokens past the 1,000-wallet cap were left out of the observed flow; those tokens' flows are
+  marked incomplete.
+- **Graduation:** 40,892 readings on 900 tokens; GMGN Trenches lists 60 near completion and 60 completed per read,
+  47 of them tracked by JINX.
+- **Engine:** fast-lane admission to handled p50 1.36 ms, p95 6.4 ms, p99 24.5 ms. Per-module processing over the
+  last 20,000 events: core state p50 254 µs, Early Momentum 56 µs, graduation 54 µs, migration 149 µs (p99 2.2 ms,
+  0.50 ms, 0.34 ms, 1.18 ms). 345 background GMGN lookups, none shed. 246 duplicates rejected by the bus.
+- **Health:** "degraded" for the first ~2 minutes because the PumpPortal adapter had no message yet (it carries
+  migrations only; its trade stream needs a funded key); "ok" from its first message on.
+
+**RAM is not yet shown to stay within budget.** The process grew from 95 MB to 222 MB in 21 minutes, about 380 MB/h
+at ~173,000 events/h and ~2,500 new tokens/h (cd21cf2 was ~5.0 KB of RSS per event; fe01850 is ~2.1 KB). The
+storage monitor reads RAM "warn" (projected to reach the 1 GB budget in 2.1 h). The parent's market store levelled
+off at ~23 MB; the rest is per-token state held for 2 hours after a token's last event. Measured on the committed
+capture, the three event trackers retain ~0.86 KB per event (Early Momentum 287 B, graduation 78 B, migration
+497 B) of the engine's ~1.9 KB; the remainder is in the bus, registries, core state, bundles and whales. Eviction
+only starts 2 hours after the first tokens go quiet, so the level the process settles at is not yet observed; a
+linear estimate puts it at roughly 0.8–0.95 GB, too close to the 1 GB budget to call safe.

@@ -1,122 +1,239 @@
 {
  "schema_version": 1,
- "repo_root": "../..",
+ "repo_root": ".",
  "requirements": [
   {
-   "id": "P2-C10",
-   "requirement": "Early Momentum: event-driven buy detection, three buys from three distinct fee-paying wallets within 30 s, live reserve observations and peak historical virtual SOL reserve, common-funder investigation or UNAVAILABLE, immediate fast-path evidence; B-02 carried as two UNRESOLVED predicates; no trade while a required predicate is unresolved",
+   "id": "P2I-B02",
+   "requirement": "B-02: current curve 0.5-10 REAL SOL; historical peak never above 10 REAL SOL; 35 SOL rule retired; compatible SOL-denominated curves only; unknown or incomplete peak blocks entry; no virtual-reserve substitution; migration trading separate",
    "status": "complete",
    "changed_paths": [
     "jinx/intel/early_momentum.py",
     "jinx/intel/readings.py",
-    "jinx/intel/bounded.py"
+    "tests/test_b02_reserve_policy.py"
    ],
-   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_early_momentum.py tests/test_intel_readings.py",
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_b02_reserve_policy.py tests/test_intel_early_momentum.py",
    "exit_code": 0,
-   "evidence_path": "docs/evidence/phase2_event_intel_live_20261021.json",
-   "observed_result": "32 passed; live 600 s at 254434f: 176 detections, 0 trade_permitted, detection delay p50 45.7 / p95 50.3 / p99 53.6 ms"
+   "evidence_path": "docs/evidence/phase2_integration_verification_20261021.json",
+   "observed_result": "48 passed in 0.16s; inclusive 0.5/10 boundaries and peak strictly-above-10 rejection; receipt-only creation after a feed gap blocks (history unprovable); Codex round 11 checked early_momentum.py:482/494/514"
   },
   {
-   "id": "P2-C05",
-   "requirement": "Graduation: bonding-curve reserve and graduation-progress observations; 0-20 score only to the extent CHAD defines it, unquantified parts as B-03",
+   "id": "P2I-01",
+   "requirement": "Item 1: wire GraduationTracker.on_event and MigrationTracker.on_event into jinx/app.py (with Early Momentum) on the running engine",
    "status": "complete",
    "changed_paths": [
-    "jinx/intel/graduation.py"
+    "jinx/app.py",
+    "jinx/adapters/pumpapi/feed.py"
    ],
-   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_graduation.py",
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_app_event_intel.py",
    "exit_code": 0,
-   "evidence_path": "docs/evidence/PHASE2_MOMENTUM_MIGRATION.md",
-   "observed_result": "13 passed; no points produced (B-03); 26/118 non-standard curves flagged on the live capture"
+   "evidence_path": "docs/evidence/phase2_integration_verification_20261021.json",
+   "observed_result": "7 passed in 1.34s; real capture through the engine's own bus: 38 candidates, 118 graduation mints, 4 live migrations verified, nothing reaches the ledger; deployed fe01850 on Contabo (see P2I-10)"
   },
   {
-   "id": "P2-M1",
-   "requirement": "Migration: the actual migration transaction and the first verified post-migration liquidity (PumpAPI migrate + first pump-amm trade on the announced pool, PumpPortal migrations), feeding jinx/core/lifecycle.py",
+   "id": "P2I-02",
+   "requirement": "Item 2: PumpAPI and PumpPortal reports of one migration enrich ONE record; a partial PumpPortal report never prevents a later PumpAPI pool report from confirming; deduplicate effects, not information",
    "status": "complete",
    "changed_paths": [
     "jinx/intel/migration.py",
-    "tests/fixtures/pumpapi-migrations-live-20261021.jsonl.gz"
+    "jinx/adapters/pumpapi/normalize.py",
+    "jinx/core/events.py"
    ],
-   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_migration.py tests/test_intel_live_migrations.py",
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_migration_dedup.py tests/test_intel_live_migrations.py",
    "exit_code": 0,
-   "evidence_path": "docs/evidence/phase2_event_intel_live_20261021.json",
-   "observed_result": "21 passed; live 600 s at 254434f: 8 migrations, 8 verified on the announced pool"
+   "evidence_path": "docs/evidence/phase2_integration_verification_20261021.json",
+   "observed_result": "12 passed in 0.20s; root cause: identical event identity for both feeds (fixed with the pool as the report's leg); venue-only first then pool report confirms; resends rejected by the bus"
   },
   {
-   "id": "P2-M2",
-   "requirement": "Pre- and post-migration liquidity, large sells around graduation, developer and concentrated-holder selling (plus holder distribution and competing early transactions), no invented threshold",
+   "id": "P2I-03",
+   "requirement": "Item 3: preserve provider timestamps and provenance; never overwrite an authoritative event time with a receipt time",
+   "status": "complete",
+   "changed_paths": [
+    "jinx/intel/migration.py",
+    "jinx/core/lifecycle.py",
+    "jinx/intel/readings.py"
+   ],
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_migration_dedup.py tests/test_review_phase2_intel_round2.py tests/test_lifecycle.py -k 'time or provider or clock or receipt'",
+   "exit_code": 0,
+   "evidence_path": "docs/evidence/phase2_integration_verification_20261021.json",
+   "observed_result": "19 passed, 46 deselected in 0.18s; record and lifecycle keep the provider time over a receipt time; sources listed per report with observed_ns"
+  },
+  {
+   "id": "P2I-04",
+   "requirement": "Item 4: a verified creator purchase counts as one distinct buyer and creator participation is flagged; no creator-exclusion rule",
+   "status": "complete",
+   "changed_paths": [
+    "jinx/intel/early_momentum.py"
+   ],
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_early_momentum.py -k creator",
+   "exit_code": 0,
+   "evidence_path": "docs/evidence/phase2_integration_verification_20261021.json",
+   "observed_result": "1 passed, 27 deselected in 0.09s: test_the_creators_buy_counts_and_is_flagged"
+  },
+  {
+   "id": "P2I-05",
+   "requirement": "Item 5: three buyers sharing a verified funder trigger CHAD's emergency protection; missing funder data is never a clean result",
+   "status": "complete",
+   "changed_paths": [
+    "jinx/intel/early_momentum.py"
+   ],
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_early_momentum.py -k 'funder or sybil'",
+   "exit_code": 0,
+   "evidence_path": "docs/evidence/phase2_integration_verification_20261021.json",
+   "observed_result": "4 passed, 24 deselected in 0.10s: shared funder = FAIL + emergency exit; unknown funder = UNAVAILABLE and blocks"
+  },
+  {
+   "id": "P2I-06",
+   "requirement": "Item 6: near graduation from verified provider status (GMGN Trenches near_completion) and source-derived progress; no invented threshold or 0-20 formula",
+   "status": "complete",
+   "changed_paths": [
+    "jinx/intel/graduation.py",
+    "jinx/intel/migration.py",
+    "jinx/app.py"
+   ],
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_graduation.py tests/test_migration_dedup.py tests/test_app_event_intel.py -k 'near or trenches'",
+   "exit_code": 0,
+   "evidence_path": "docs/evidence/phase2_integration_verification_20261021.json",
+   "observed_result": "3 passed, 29 deselected in 0.36s; lifecycle APPROACHING_GRADUATION only from the provider category; score_points_produced 0 in replay"
+  },
+  {
+   "id": "P2I-C05-POINTS",
+   "requirement": "C05 graduation 0-20 points (CHAD names the range only)",
+   "status": "blocked",
+   "changed_paths": [
+    "jinx/intel/graduation.py"
+   ],
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_graduation.py tests/test_migration_dedup.py tests/test_app_event_intel.py -k 'near or trenches'",
+   "exit_code": 0,
+   "evidence_path": "docs/BLOCKERS.md",
+   "observed_result": "Not produced: CHAD gives no formula and the owner ordered no invented formula; the score stays None and blocks (B-03)"
+  },
+  {
+   "id": "P2I-07",
+   "requirement": "Item 7: large sells record actual sizes and wallet identities, no invented threshold or danger label",
    "status": "complete",
    "changed_paths": [
     "jinx/intel/migration.py"
    ],
-   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_migration.py",
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_migration.py -k sells",
    "exit_code": 0,
-   "evidence_path": "docs/evidence/PHASE2_MOMENTUM_MIGRATION.md",
-   "observed_result": "20 passed incl. sells, developer, holder and competing-transaction tests; large-sell size is B-03"
+   "evidence_path": "docs/evidence/phase2_integration_verification_20261021.json",
+   "observed_result": "1 passed, 21 deselected in 0.14s; 10 largest sells with seller, size, phase, creator flag; large_sell_rule states no approved rule"
   },
   {
-   "id": "P2-M3",
-   "requirement": "M3 confirmation delay: research variant, off by default, paper only",
+   "id": "P2I-08",
+   "requirement": "Item 8: holder concentration from verified balances where available; trade observations are not proof of ownership",
    "status": "complete",
    "changed_paths": [
-    "jinx/intel/migration.py"
+    "jinx/intel/migration.py",
+    "jinx/app.py"
    ],
-   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_migration.py::test_the_m3_confirmation_delay_is_off_by_default_and_a_paper_reference_when_set",
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_migration.py tests/test_review_phase2_intel_round10.py -k 'holder or ownership or balances or tally or creators'",
    "exit_code": 0,
-   "evidence_path": "docs/evidence/PHASE2_MOMENTUM_MIGRATION.md",
-   "observed_result": "1 passed; default None, live_policy False"
+   "evidence_path": "docs/evidence/phase2_integration_verification_20261021.json",
+   "observed_result": "6 passed, 20 deselected in 0.17s; GMGN top-holder balances with pool accounts apart; observed flow labelled not proof of ownership; untallied wallets UNAVAILABLE, never zero (R10-1)"
   },
   {
-   "id": "P2-ADVERSE",
-   "requirement": "Adverse simulations: artificial volume or repeated wallet buys; three transactions from one wallet; clusters outside the window; stale signals; reserve retraces after higher peaks; feed delays",
+   "id": "P2I-09-SUITE",
+   "requirement": "Item 9: complete test suite",
    "status": "complete",
    "changed_paths": [
-    "tests/test_intel_early_momentum.py",
-    "tests/test_intel_migration.py"
+    "tests/"
    ],
-   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_early_momentum.py tests/test_intel_migration.py",
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest",
    "exit_code": 0,
-   "evidence_path": "docs/evidence/PHASE2_MOMENTUM_MIGRATION.md",
-   "observed_result": "48 passed; mutants for boundary, wallet count, event time, peak, late merge and four migration rules each fail a test"
+   "evidence_path": "docs/evidence/phase2_integration_verification_20261021.json",
+   "observed_result": "625 passed, 1 skipped in 35.43s"
   },
   {
-   "id": "P2-REPLAY",
-   "requirement": "Deterministic replay of tests/fixtures/pumpapi-live-20261021.jsonl.gz and detection delay p50/p95/p99",
+   "id": "P2I-09-REPLAY",
+   "requirement": "Item 9: real-event replay",
    "status": "complete",
    "changed_paths": [
     "jinx/intel/replay.py",
-    "jinx/sim.py",
-    "scripts/intel_replay_report.py",
-    "tests/test_intel_replay.py"
+    "scripts/intel_replay_report.py"
    ],
-   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_replay.py",
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python scripts/intel_replay_report.py tests/fixtures/pumpapi-live-20261021.jsonl.gz --out docs/evidence/phase2_event_intel_replay_20261021.json",
    "exit_code": 0,
    "evidence_path": "docs/evidence/phase2_event_intel_replay_20261021.json",
-   "observed_result": "5 passed; 38 detections identical to an independent scan; shuffled and duplicated delivery converge"
+   "observed_result": "fe01850: 1,211 events, 38 detections (identical to the independent scan), 0 permitted; migration capture: 4 of 4 verified, first verified pool trade p50 0 slots / 63 ms"
   },
   {
-   "id": "P2-RAM",
-   "requirement": "RAM-bounded state only (TTL and caps), no files, no raw archives, no secrets; core imports no adapter",
+   "id": "P2I-09-PAPER",
+   "requirement": "Item 9: paper-mode integration tests (engine bus, shared state, no order)",
    "status": "complete",
    "changed_paths": [
-    "jinx/intel/bounded.py"
+    "jinx/app.py"
    ],
-   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_storage_hygiene.py tests/test_adapters.py tests/test_secrets.py",
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_app_event_intel.py",
    "exit_code": 0,
-   "evidence_path": "docs/evidence/PHASE2_MOMENTUM_MIGRATION.md",
-   "observed_result": "65 passed; bounded-state tests in each intel test file"
+   "evidence_path": "docs/evidence/phase2_integration_verification_20261021.json",
+   "observed_result": "7 passed in 1.34s; ledger has no active position after the run"
   },
   {
-   "id": "P2-DOCS",
-   "requirement": "Update only rows C05, C10, M1, M2, M3 in the matrix and add new B-03 items",
+   "id": "P2I-RAM",
+   "requirement": "Owner storage rule: RAM-bounded intel state",
    "status": "complete",
    "changed_paths": [
-    "docs/SOURCE_FIDELITY_MATRIX.md",
-    "docs/BLOCKERS.md"
+    "jinx/intel/bounded.py",
+    "jinx/intel/migration.py",
+    "jinx/intel/early_momentum.py",
+    "jinx/intel/graduation.py"
    ],
-   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_replay.py",
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_memory.py",
    "exit_code": 0,
-   "evidence_path": "docs/evidence/PHASE2_MOMENTUM_MIGRATION.md",
-   "observed_result": "matrix rows C05/C10/M1/M2/M3 and B-02 notes, B-03 items added"
+   "evidence_path": "docs/evidence/phase2_integration_verification_20261021.json",
+   "observed_result": "3 passed in 4.18s; 836 B/event, 660 KB extreme token (bounds 900 B, 1.2 MB)"
+  },
+  {
+   "id": "P2I-REVIEW",
+   "requirement": "Independent review verdict",
+   "status": "complete",
+   "changed_paths": [
+    "docs/audits/phase2-intel-codex-20261021-round11.md"
+   ],
+   "verification_command": "sha256sum docs/audits/phase2-intel-codex-20261021-round11.md",
+   "exit_code": 0,
+   "evidence_path": "docs/audits/phase2-intel-codex-20261021-round11.md",
+   "observed_result": "Codex round 11 on 4fa8bf5: VERDICT PASS (sha256 4C151A30...47E81738); review reproductions 57 passed in 1.37s"
+  },
+  {
+   "id": "P2I-10",
+   "requirement": "Item 10: redeploy only the verified paper-mode build to Contabo; keep live trading OFF",
+   "status": "complete",
+   "changed_paths": [
+    "deploy/contabo/deploy.sh"
+   ],
+   "verification_command": "ssh -i ~/.ssh/jinx_contabo ubuntu@13.140.224.208 'cat /opt/jinx/current/REVISION; curl -sf http://127.0.0.1:8080/health'",
+   "exit_code": 0,
+   "evidence_path": "docs/evidence/phase2_contabo_deploy_fe01850_20261021.json",
+   "observed_result": "fe01850 (reviewed 4fa8bf5 + audit record) live since 07:01 UTC; process cwd = release; mode OFF, PAPER, 0/1 slots, paper wallet unchanged; 21 min: 62,011 events, 253 detections (p50 45.0 ms), 17/17 migrations verified (p50 44.2 ms), 0 handler errors, nothing bought"
+  },
+  {
+   "id": "P2I-SHARED-STATE",
+   "requirement": "Delivery: real detected events flowing through shared JINX state; safety and blocked-trade behavior",
+   "status": "complete",
+   "changed_paths": [
+    "jinx/app.py"
+   ],
+   "verification_command": "ssh -i ~/.ssh/jinx_contabo ubuntu@13.140.224.208 'cat /opt/jinx/current/REVISION; curl -sf http://127.0.0.1:8080/health'",
+   "exit_code": 0,
+   "evidence_path": "docs/evidence/phase2_contabo_deploy_fe01850_20261021.json",
+   "observed_result": "live entry_summary: 253 checked, 64 reserve ok, 164 safety ok, 61 all checks ok but mode OFF so none traded; B-02 blocks recorded per reason; 89 never-eligible lookups skipped"
+  },
+  {
+   "id": "P2I-RAM-LIVE",
+   "requirement": "Owner storage rule 2 on the live engine: RAM stays within the 1 GB budget",
+   "status": "partial",
+   "changed_paths": [
+    "jinx/intel/bounded.py",
+    "jinx/intel/migration.py",
+    "jinx/intel/early_momentum.py",
+    "jinx/intel/graduation.py"
+   ],
+   "verification_command": "ssh -i ~/.ssh/jinx_contabo ubuntu@13.140.224.208 'cat /opt/jinx/current/REVISION; curl -sf http://127.0.0.1:8080/health'",
+   "exit_code": 0,
+   "evidence_path": "docs/evidence/phase2_contabo_deploy_fe01850_20261021.json",
+   "observed_result": "95 -> 222 MB in 21 min (~380 MB/h, ~2.1 KB RSS per event vs ~5.0 KB on cd21cf2); monitor RAM 'warn' (2.1 h to budget); per-token state kept 2 h after last event, so the settled level is not yet observed (linear estimate 0.8-0.95 GB)"
   }
  ]
 }

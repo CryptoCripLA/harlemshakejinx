@@ -1,0 +1,105 @@
+{
+ "capture": "pumpapi-migrations-live-20261021.jsonl.gz",
+ "records": 244,
+ "commit": "fe01850",
+ "host": "jinx-nyc",
+ "python": "3.12.3",
+ "generated_utc": "2026-10-21T07:01:19Z",
+ "events": 246,
+ "refused": 0,
+ "per_event_processing_us": {
+  "early_momentum": {
+   "p50": 5.28,
+   "p95": 17.711,
+   "p99": 77.711,
+   "max": 119.901,
+   "n": 246
+  },
+  "graduation": {
+   "p50": 0.41,
+   "p95": 15.04,
+   "p99": 33.47,
+   "max": 360.432,
+   "n": 246
+  },
+  "migration": {
+   "p50": 25.44,
+   "p95": 86.249,
+   "p99": 266.191,
+   "max": 1826.876,
+   "n": 246
+  }
+ },
+ "early_momentum": {
+  "detections": 3,
+  "feed_delay_ms": {
+   "p50": 44.825423,
+   "p95": 55.77065,
+   "p99": 55.77065,
+   "max": 55.77065,
+   "n": 3
+  },
+  "processing_us": {
+   "p50": 20.509,
+   "p95": 25.69,
+   "p99": 25.69,
+   "max": 25.69,
+   "n": 3
+  },
+  "detection_delay_ms": {
+   "p50": 44.842323,
+   "p95": 55.79634,
+   "p99": 55.79634,
+   "max": 55.79634,
+   "n": 3
+  },
+  "trade_permitted": 0,
+  "blocking": [
+   "current_reserve_0_5_to_10_real_sol",
+   "peak_reserve_max_10_real_sol",
+   "sybil_funder"
+  ]
+ },
+ "graduation": {
+  "mints": 4,
+  "not_standard_curves": 1,
+  "complete_observed": 4,
+  "latest_progress": {
+   "p50": 1.0,
+   "p95": 1.0,
+   "p99": 1.0,
+   "max": 1.0,
+   "n": 3
+  },
+  "late_readings": 0,
+  "score_points_produced": 0
+ },
+ "migration": {
+  "migrations": 4,
+  "verified": 4,
+  "evicted": 0,
+  "signal_delay_ms": {
+   "p50": 46.339662,
+   "p95": 55.212782,
+   "p99": 55.212782,
+   "max": 55.212782,
+   "n": 4
+  },
+  "migration_to_first_verified_trade_ms": {
+   "p50": 63.0,
+   "p95": 227.0,
+   "p99": 227.0,
+   "max": 227.0,
+   "n": 4
+  },
+  "slots_to_first_verified_trade": {
+   "p50": 0,
+   "p95": 1,
+   "p99": 1,
+   "max": 1,
+   "n": 4
+  },
+  "unverifiable": 0,
+  "foreign_pool_trades": 0
+ }
+}

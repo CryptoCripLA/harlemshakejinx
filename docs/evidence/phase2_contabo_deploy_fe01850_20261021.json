@@ -1,0 +1,317 @@
+{
+ "host": "Contabo vmi3672752 (13.140.224.208)",
+ "revision": "fe01850ba8be",
+ "release": "/opt/jinx/releases/fe01850ba8be",
+ "process_cwd_matches_release": true,
+ "service_started_utc": "2026-10-21T07:01:14Z",
+ "reviewed_code": "4fa8bf5 (Codex round 11 PASS); fe01850 adds only the audit record",
+ "before": {
+  "revision": "cd21cf2f3ade",
+  "mode": "OFF",
+  "execution_mode": "PAPER",
+  "process_bytes": 707985408,
+  "paper_wallet_lamports": 2000000000,
+  "health": "degraded",
+  "ram_status": "critical"
+ },
+ "sol_usd": {
+  "rate": 105.945,
+  "source": "Coinbase spot SOL-USD",
+  "read_utc": "2026-10-21T07:04:18Z",
+  "paper_wallet_usd": 211.89,
+  "note": "paper money; unchanged before and after"
+ },
+ "samples": [
+  {
+   "utc": "2026-10-21T07:01:51Z",
+   "rss_mb": 94.7,
+   "health": "ok",
+   "ram_status": null,
+   "ram_growth_mb_per_h": 0,
+   "market_store_mb": 0.0,
+   "events": 996,
+   "tokens_tracked": 84,
+   "mode": "OFF",
+   "execution_mode": "PAPER",
+   "paper_wallet_lamports": 2000000000,
+   "active_slots": 0
+  },
+  {
+   "utc": "2026-10-21T07:03:53Z",
+   "rss_mb": 109.6,
+   "health": "ok",
+   "ram_status": "ok",
+   "ram_growth_mb_per_h": 0,
+   "market_store_mb": 4.6,
+   "events": 4885,
+   "tokens_tracked": 203,
+   "mode": "OFF",
+   "execution_mode": "PAPER",
+   "paper_wallet_lamports": 2000000000,
+   "active_slots": 0
+  },
+  {
+   "utc": "2026-10-21T07:05:55Z",
+   "rss_mb": 123.2,
+   "health": "ok",
+   "ram_status": "ok",
+   "ram_growth_mb_per_h": 0,
+   "market_store_mb": 8.8,
+   "events": 9142,
+   "tokens_tracked": 291,
+   "mode": "OFF",
+   "execution_mode": "PAPER",
+   "paper_wallet_lamports": 2000000000,
+   "active_slots": 0
+  },
+  {
+   "utc": "2026-10-21T07:07:56Z",
+   "rss_mb": 136.7,
+   "health": "ok",
+   "ram_status": "ok",
+   "ram_growth_mb_per_h": 0,
+   "market_store_mb": 12.0,
+   "events": 13927,
+   "tokens_tracked": 365,
+   "mode": "OFF",
+   "execution_mode": "PAPER",
+   "paper_wallet_lamports": 2000000000,
+   "active_slots": 0
+  },
+  {
+   "utc": "2026-10-21T07:09:57Z",
+   "rss_mb": 149.7,
+   "health": "ok",
+   "ram_status": "ok",
+   "ram_growth_mb_per_h": 0,
+   "market_store_mb": 14.8,
+   "events": 20305,
+   "tokens_tracked": 462,
+   "mode": "OFF",
+   "execution_mode": "PAPER",
+   "paper_wallet_lamports": 2000000000,
+   "active_slots": 0
+  },
+  {
+   "utc": "2026-10-21T07:11:59Z",
+   "rss_mb": 162.2,
+   "health": "ok",
+   "ram_status": "ok",
+   "ram_growth_mb_per_h": 0,
+   "market_store_mb": 17.0,
+   "events": 26616,
+   "tokens_tracked": 543,
+   "mode": "OFF",
+   "execution_mode": "PAPER",
+   "paper_wallet_lamports": 2000000000,
+   "active_slots": 0
+  },
+  {
+   "utc": "2026-10-21T07:14:02Z",
+   "rss_mb": 173.8,
+   "health": "ok",
+   "ram_status": "warn",
+   "ram_growth_mb_per_h": 397,
+   "market_store_mb": 19.2,
+   "events": 33469,
+   "tokens_tracked": 607,
+   "mode": "OFF",
+   "execution_mode": "PAPER",
+   "paper_wallet_lamports": 2000000000,
+   "active_slots": 0
+  },
+  {
+   "utc": "2026-10-21T07:16:05Z",
+   "rss_mb": 188.5,
+   "health": "ok",
+   "ram_status": "warn",
+   "ram_growth_mb_per_h": 407,
+   "market_store_mb": 22.2,
+   "events": 41746,
+   "tokens_tracked": 677,
+   "mode": "OFF",
+   "execution_mode": "PAPER",
+   "paper_wallet_lamports": 2000000000,
+   "active_slots": 0
+  },
+  {
+   "utc": "2026-10-21T07:18:08Z",
+   "rss_mb": 200.9,
+   "health": "ok",
+   "ram_status": "warn",
+   "ram_growth_mb_per_h": 399,
+   "market_store_mb": 23.9,
+   "events": 48631,
+   "tokens_tracked": 744,
+   "mode": "OFF",
+   "execution_mode": "PAPER",
+   "paper_wallet_lamports": 2000000000,
+   "active_slots": 0
+  },
+  {
+   "utc": "2026-10-21T07:20:11Z",
+   "rss_mb": 212.6,
+   "health": "ok",
+   "ram_status": "warn",
+   "ram_growth_mb_per_h": 391,
+   "market_store_mb": 23.7,
+   "events": 55653,
+   "tokens_tracked": 827,
+   "mode": "OFF",
+   "execution_mode": "PAPER",
+   "paper_wallet_lamports": 2000000000,
+   "active_slots": 0
+  },
+  {
+   "utc": "2026-10-21T07:22:13Z",
+   "rss_mb": 221.9,
+   "health": "ok",
+   "ram_status": "warn",
+   "ram_growth_mb_per_h": 379,
+   "market_store_mb": 23.3,
+   "events": 62011,
+   "tokens_tracked": 902,
+   "mode": "OFF",
+   "execution_mode": "PAPER",
+   "paper_wallet_lamports": 2000000000,
+   "active_slots": 0
+  }
+ ],
+ "final": {
+  "bus": {
+   "published": 62011,
+   "duplicates": 246,
+   "dispatched_fast": 62011,
+   "dispatched_background": 62011,
+   "fast_dropped": 0,
+   "background_dropped": 0,
+   "persist_errors": 0,
+   "handler_errors": {}
+  },
+  "early_momentum": {
+   "events": 62011,
+   "curve_buys": 22399,
+   "detections": 253,
+   "duplicates": 0,
+   "listener_errors": 0,
+   "detection_delay_ms": {
+    "p50": 45.021719,
+    "p95": 79.802884,
+    "p99": 182.701322,
+    "max": 220.865942,
+    "n": 253
+   }
+  },
+  "entry_summary": {
+   "checked": 253,
+   "reserve_ok": 64,
+   "safety_ok": 164,
+   "reserve_and_safety_ok": 64,
+   "all_checks_ok": 61,
+   "reserve_blocked": {
+    "current_reserve_0_5_to_10_real_sol: FAIL": 79,
+    "current_reserve_0_5_to_10_real_sol: FAIL; peak_reserve_max_10_real_sol: FAIL (verified real SOL already exceeded 10)": 56,
+    "peak_reserve_max_10_real_sol: UNAVAILABLE (history incomplete: creation not observed)": 35,
+    "peak_reserve_max_10_real_sol: FAIL (verified real SOL already exceeded 10)": 11,
+    "current_reserve_0_5_to_10_real_sol: FAIL; peak_reserve_max_10_real_sol: UNAVAILABLE (history incomplete: creation not observed)": 8
+   }
+  },
+  "screening": {
+   "screened": 164,
+   "skipped": 89,
+   "funder_lookups_skipped": 89
+  },
+  "migration": {
+   "events": 62011,
+   "migrations": 17,
+   "reports": 42,
+   "enriched": 0,
+   "confirmed": 17,
+   "revoked": 0,
+   "pool_conflicts": 0,
+   "duplicates": 0,
+   "beyond_dedup_horizon": 0,
+   "reports_dropped": 0,
+   "wallets_untracked": 1410,
+   "lifecycle_refused": 0,
+   "listener_errors": 0,
+   "provider_reports_untracked": 0,
+   "tracked": 902,
+   "verified": 17,
+   "signal_delay_ms": {
+    "p50": 44.225489,
+    "p95": 63.996349,
+    "p99": 64.860232,
+    "max": 64.860232,
+    "n": 17
+   }
+  },
+  "graduation": {
+   "readings": 40892,
+   "late_readings": 0,
+   "score_errors": 0,
+   "duplicates": 0,
+   "tracked": 900
+  },
+  "gmgn_trenches": {
+   "near_completion": 60,
+   "completed": 60,
+   "tracked": 47
+  },
+  "background": {
+   "spawned": 345,
+   "shed": 0,
+   "deduplicated": 0,
+   "running": 0
+  },
+  "fast_lane_admission_to_handled_ms": {
+   "p50": 1.355611,
+   "p95": 6.445174,
+   "p99": 24.4988,
+   "max": 551.630431,
+   "n": 62011
+  },
+  "handler_processing_us": {
+   "core_state": {
+    "p50": 253.884,
+    "p95": 846.971,
+    "p99": 2209.524,
+    "max": 131816.884,
+    "n": 20000
+   },
+   "early_momentum": {
+    "p50": 55.574,
+    "p95": 166.782,
+    "p99": 503.27,
+    "max": 22535.711,
+    "n": 20000
+   },
+   "graduation": {
+    "p50": 53.91,
+    "p95": 116.187,
+    "p99": 341.247,
+    "max": 13449.486,
+    "n": 20000
+   },
+   "migration": {
+    "p50": 148.507,
+    "p95": 390.299,
+    "p99": 1183.079,
+    "max": 92501.681,
+    "n": 20000
+   }
+  },
+  "safety": {
+   "evaluations": 418,
+   "cache_hits": 0,
+   "errors": 0,
+   "rugcheck_calls": 418,
+   "rugcheck_skipped_veto": 0
+  }
+ },
+ "notes": [
+  "Timings are local processing in JINX (PumpAPI provider time to evidence for detection_delay_ms and signal_delay_ms); not order execution.",
+  "Mode OFF: no paper or live order is placed; all_checks_ok counts detections that would have passed every check.",
+  "health 'degraded' for ~2 min after restart: the PumpPortal adapter had no message yet (migration-only stream); ok from the first message."
+ ]
+}
