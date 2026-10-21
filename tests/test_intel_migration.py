@@ -54,6 +54,8 @@ def test_the_first_trade_on_the_announced_pool_confirms_and_is_the_first_verifie
     first = ev.first_verified_liquidity
     assert first["quote_reserve_lamports"] == 85_200_000_000 and first["slots_after_migration"] == 1
     assert first["ms_after_migration"] == pytest.approx(400)
+    # the reserve is the one after that trade, so the trade itself is part of the record (live: 139.6 SOL buys)
+    assert (first["side"], first["sol_lamports"], first["fee_payer"]) == ("buy", 500_000_000, "S1")
     life = m.lifecycle("MintApump")
     assert life.state is State.POST_MIGRATION_MARKET and life.post_pool == "AMM1"
     assert feed(m, [pool("buy", "S2", 0.9, slot=501)]) == []          # later trades update, emit nothing new

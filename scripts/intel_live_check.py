@@ -97,7 +97,14 @@ class IntelBus:
                 self._recent.popitem(last=False)
 
 
-def summary(bus: IntelBus, feed: PumpApiFeed, seconds: float, started: str) -> dict:
+def code_identity() -> dict:
+    """The code the run loads, taken at start: HEAD and whether any file under jinx/ or scripts/ differs from it."""
+    git = (lambda *a: subprocess.run(["git", *a], capture_output=True, text=True).stdout.strip())
+    return {"commit": git("rev-parse", "--short", "HEAD"),
+            "code_changes_since_commit": bool(git("status", "--porcelain", "--", "jinx", "scripts"))}
+
+
+def summary(bus: IntelBus, feed: PumpApiFeed, seconds: float, started: str, code: dict) -> dict:
     em = bus.momentum
     first = {}
     for e in bus.migrations:
@@ -105,9 +112,8 @@ def summary(bus: IntelBus, feed: PumpApiFeed, seconds: float, started: str) -> d
     finals = {m: bus.mig.evidence(m) for m in first}
     verified = [e for e in finals.values() if e.verified]
     lag = [e.feed_delay_ns / 1e6 for e in em]
-    commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
     return {
-        "started_utc": started, "seconds": seconds, "host": socket.gethostname(), "commit": commit,
+        "started_utc": started, "seconds": seconds, "host": socket.gethostname(), "code_at_start": code,
         "feed": {k: feed.stats[k] for k in ("received", "published", "duplicates", "amm_not_followed", "malformed",
                                              "not_quoted_in_sol", "connections", "disconnects", "stalls")},
         "feed_receipt_lag_ms": feed.health()["receipt_lag_ms"], "connections": list(feed.connection_log),
@@ -148,6 +154,7 @@ def summary(bus: IntelBus, feed: PumpApiFeed, seconds: float, started: str) -> d
 
 
 async def main(args) -> dict:
+    code = code_identity()
     bus = IntelBus(args.curve_before, args.pool_after)
     feed = PumpApiFeed(bus)
     started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -155,7 +162,7 @@ async def main(args) -> dict:
     await asyncio.sleep(args.seconds)
     await asyncio.sleep(args.tail)                 # let the last migrations get their first pool trades
     task.cancel()
-    report = summary(bus, feed, args.seconds, started)
+    report = summary(bus, feed, args.seconds, started, code)
     if args.fixture:
         rows = sorted((r for rows in bus.fixture.values() for r in rows), key=lambda r: r["recv_ns"])
         with gzip.open(args.fixture, "wt") as f:

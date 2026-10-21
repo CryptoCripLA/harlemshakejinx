@@ -366,10 +366,12 @@ class MigrationTracker:
         if trade is None:
             return None
         slots = trade.slot - m.slot if trade.slot is not None and m.slot is not None else None
+        # the reserves are those after this trade, so the trade itself belongs to the record
         return {"signature": trade.signature, "slot": trade.slot, "event_ns": trade.event_ns,
-                "clock": str(trade.clock), "pool_id": trade.pool_id, "quote_reserve_lamports": trade.quote_reserve_lamports,
-                "token_reserve": trade.token_reserve, "slots_after_migration": slots,
-                "ms_after_migration": (trade.event_ns - m.event_ns) / 1e6}
+                "clock": str(trade.clock), "pool_id": trade.pool_id, "side": str(trade.side),
+                "sol_lamports": trade.sol_lamports, "fee_payer": trade.fee_payer,
+                "quote_reserve_lamports": trade.quote_reserve_lamports, "token_reserve": trade.token_reserve,
+                "slots_after_migration": slots, "ms_after_migration": (trade.event_ns - m.event_ns) / 1e6}
 
     def _sell_row(self, trade: Trade, tok: _Token) -> dict:
         return {"signature": trade.signature, "fee_payer": trade.fee_payer, "venue": trade.venue,
