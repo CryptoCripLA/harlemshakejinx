@@ -6,6 +6,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PINS = json.loads((ROOT / "UPSTREAM_PINS.json").read_text())["repos"]
 TRANSLATED = {"d3ad": ROOT / "jinx" / "paper.py", "gmgn": ROOT / "jinx" / "adapters" / "gmgn" / "bridge.mjs"}
+# Owner-ordered port outside the four donor pins (2026-10-21): BigMac's exit, Ms-PL, pinned in its own record
+# (third_party/bigmac/SOURCE.json) and checked in tests/test_bigmac_license.py.
+OWNER_PORTS = {"bigmac": ROOT / "jinx" / "exits" / "bigmac_exit.py"}
 
 
 def test_translated_upstreams_ship_their_exact_license_file():
@@ -32,7 +35,8 @@ def test_no_other_jinx_file_claims_upstream_source_without_a_notice():
             continue
         text = path.read_text()
         if "# SRC:" in text or "// SRC:" in text:
-            assert path in TRANSLATED.values(), f"{path} contains translated code but is not in the notice list"
+            assert path in (*TRANSLATED.values(), *OWNER_PORTS.values()), \
+                f"{path} contains translated code but is not in the notice list"
 
 
 def test_docker_image_includes_the_notices_and_licenses():

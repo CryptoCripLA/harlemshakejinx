@@ -18,6 +18,14 @@ License: `third_party/gmgn/LICENSE`.
 |---|---|---|
 | `jinx/adapters/gmgn/bridge.mjs` | `src/config.ts:62` (escaped-newline handling of the private key), `src/config.ts:67` (default API host) | Re-expressed in the bridge's own credential loader. GMGN's `OpenApiClient` itself runs unmodified, compiled from the pinned source by `scripts/build_gmgn_bridge.sh`. |
 
+## bigmacman1129/solana-sniper-trading-mev-bot @ 829f251d4e371102b406176c5bd459ebf4ac87ac, Microsoft Public License (Ms-PL)
+
+Owner-ordered port (2026-10-21), not one of the four donor repositories. License: `third_party/bigmac/LICENSE.md` (identical to the upstream `LICENSE.md`; the upstream carries no separate copyright line or NOTICE file). The original file is vendored unmodified as `third_party/bigmac/helpers/exit-strategy.ts`; pin and hashes in `third_party/bigmac/SOURCE.json`. Ms-PL 3(D): the source-form portion is distributed only under Ms-PL, so `jinx/exits/bigmac_exit.py` is licensed under Ms-PL (not JINX's MIT license) and says so in its header.
+
+| JINX file | Translated from | Changes |
+|---|---|---|
+| `jinx/exits/bigmac_exit.py` | `helpers/exit-strategy.ts:15-47` (`evaluateExit`), `:107-114` (`applyPercent`) | TypeScript → Python (the owner's supplied port); amounts are Python ints for TypeScript bigint, with `applyPercent`'s floor-and-clamp to a whole percent and BigInt's truncating division reproduced exactly; the take-profit price is computed only when it is used (the original computes it first, so only a non-finite take-profit percent behaves differently; JINX's config refuses those); `waitForExitCondition` (`:49-105`) is not ported: no duration/timeout exit, and the peak is persisted by JINX instead of starting at zero. Equivalence is checked against the original TypeScript run by node 22 (`tests/test_bigmac_differential.py`). |
+
 ## Upstream code run unmodified
 
 The Docker image ships `upstream/gmgn` and `upstream/mako` with their own `LICENSE` files (MIT). JINX imports and runs them without changes: Mako's `src/pumpportal.py::PumpPortalStream` and `src/config.py`, and GMGN's compiled `OpenApiClient`.

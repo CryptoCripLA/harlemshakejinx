@@ -143,6 +143,19 @@ CREATE TABLE IF NOT EXISTS outbox (
 );
 CREATE INDEX IF NOT EXISTS outbox_record ON outbox(tbl, pk);
 
+CREATE TABLE IF NOT EXISTS order_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    intent_id TEXT NOT NULL,            -- the entry or exit intent this stage belongs to
+    position_id INTEGER,
+    side TEXT NOT NULL,                 -- 'buy' or 'sell'
+    stage TEXT NOT NULL,                -- DECIDED, QUOTED, SUBMITTED, FILLED, FAILED, REFUSED
+    ts_ns INTEGER NOT NULL,
+    simulated INTEGER NOT NULL,
+    cost_lamports INTEGER NOT NULL DEFAULT 0 CHECK (cost_lamports >= 0),  -- e.g. a failed transaction's fee
+    detail TEXT
+);
+CREATE INDEX IF NOT EXISTS order_events_intent ON order_events(intent_id);
+
 CREATE TABLE IF NOT EXISTS paper_wallet (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     starting_lamports INTEGER NOT NULL,
@@ -157,7 +170,7 @@ CREATE TABLE IF NOT EXISTS paper_wallet_entries (
 """
 
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 # v1 (up to commit 1ad0d65): no entry budget, no exit_intents, no amount CHECK constraints.
 # v2: positions.entry_budget_lamports (NULL = unknown for positions created by v1), exit_intents, CHECKs.
 # v3: exit_intents.legacy_fill_id; v1 sell fills ("<intent>:sell") become historical exit bindings, so a
@@ -177,11 +190,30 @@ SCHEMA_VERSION = 9
 #     2026-10-21). The triggers are rebuilt from the live columns on every open, so they follow schema changes.
 #     Bounded (owner storage rule 7): a change to a record replaces that record's pending row, so the outbox never
 #     holds more than one row per trading record, and the replicator deletes rows once PostgreSQL has them.
+# v10 (Phase 3): positions record their owning strategy, their paper exit policy (with its settings), the persisted
+#     price peak, the entry score/threshold/filter and the sizing decision; exit_intents record the owner's ExitIntent
+#     fields; order_events records each order's lifecycle stages (decided, quoted, submitted, filled, failed) with
+#     times and failure costs. Columns are added in place (ALTER TABLE), so every existing row is kept.
 
 # trading-record tables replicated to PostgreSQL, with their primary keys
 OUTBOX_TABLES = {"positions": ("position_id",), "fills": ("fill_id",), "exit_intents": ("intent_id",),
                  "paper_wallet": ("id",), "paper_wallet_entries": ("entry_id",), "settings": ("key",),
-                 "settings_audit": ("id",)}
+                 "settings_audit": ("id",), "order_events": ("id",)}
+
+# Phase 3 columns (schema v10), added in place to existing tables. Types are INTEGER or TEXT only (the PostgreSQL
+# replica maps exactly those); decimal values (scores, fractions) are stored as exact decimal text.
+PHASE3_COLUMNS = {
+    "positions": (("strategy", "TEXT"), ("exit_policy", "TEXT"), ("exit_policy_json", "TEXT"),
+                  ("peak_value_lamports", "INTEGER"), ("peak_ns", "INTEGER"), ("entry_score", "TEXT"),
+                  ("entry_threshold", "TEXT"), ("entry_filter", "TEXT"), ("sizing_json", "TEXT"),
+                  ("signal_ns", "INTEGER"), ("last_mark_lamports", "INTEGER"), ("last_mark_ns", "INTEGER")),
+    "exit_intents": (("source_strategy", "TEXT"), ("exit_policy", "TEXT"), ("reason_code", "TEXT"),
+                     ("exit_urgency", "TEXT"), ("required_sell_pct", "TEXT"), ("event_ns", "INTEGER"),
+                     ("triggering_evidence", "TEXT"), ("previously_executed_fraction", "TEXT"),
+                     ("remaining_confirmed_balance", "INTEGER"), ("venue", "TEXT"), ("quote_status", "TEXT"),
+                     ("quote_lamports", "INTEGER")),
+    "fills": (("quote_lamports", "INTEGER"),),   # the proceeds/cost quoted at the decision, for slippage
+}
 
 V2_POSITIONS = SCHEMA[SCHEMA.index("CREATE TABLE IF NOT EXISTS positions ("):SCHEMA.index("CREATE INDEX IF NOT EXISTS positions_active")]
 V2_FILLS = SCHEMA[SCHEMA.index("CREATE TABLE IF NOT EXISTS fills ("):SCHEMA.index("CREATE TABLE IF NOT EXISTS exit_intents")]
@@ -234,6 +266,7 @@ class Store:
             self.conn.execute("DROP TABLE outbox")   # pre-release layout; the replicator's full resync covers it
         self.conn.executescript(SCHEMA)
         self._bind_legacy_exits()
+        self._phase3_columns()
         self._outbox_triggers()
         self.conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
@@ -254,6 +287,14 @@ class Store:
                 intent_id = fill_id[:-len(SELL_SUFFIX)] if fill_id.endswith(SELL_SUFFIX) else fill_id
                 c.execute("INSERT OR IGNORE INTO historical_exits (fill_id, intent_id, position_id) VALUES (?,?,?)",
                           (fill_id, intent_id, position_id))
+
+    def _phase3_columns(self) -> None:
+        with self.transaction() as c:
+            for tbl, cols in PHASE3_COLUMNS.items():
+                have = self._columns(tbl)
+                for name, kind in cols:
+                    if name not in have:
+                        c.execute(f"ALTER TABLE {tbl} ADD COLUMN {name} {kind}")
 
     def _outbox_triggers(self) -> None:
         def value(row: str, col: str) -> str:   # a binary value cannot be JSON: tag it instead of failing the write

@@ -43,8 +43,46 @@ Status words: NOT STARTED / IN PROGRESS / TESTING / PASSED / FAILED / BLOCKED. E
 | Phase | Status |
 |---|---|
 | Phase 2 — CHAD intelligence, safety and fast signals | IN PROGRESS: built and live on Contabo (paper): Early Momentum (C10), graduation readings (C05), migration (M1-M3), safety gate with GMGN + RugCheck (C01, B-19 closed), developer history (C08), bundle facts (R1), whale intelligence (C04). 62 detections screened in 3 live minutes (`docs/evidence/screening_contabo_20261021.json`). Open: B-02, B-03, B-20, momentum C02, freshness C07, X/TG scouts (B-05/B-06), Phase 2 review gate |
-| Phase 3 — Size, fire, exit and realized-profit accounting | NOT STARTED |
+| Phase 3 — Size, fire, exit and realized-profit accounting | IN PROGRESS (p3 builder, branch `phase3/size-fire-exit`; map and checklist below) |
 | Phase 4 — Hardening, full simulation and independent audit | NOT STARTED |
+
+## Phase 3 — Size, fire, exit and realized-profit accounting (p3 builder, 2026-10-21)
+
+Owner orders: CLAUDE.md § PHASE 3 and `docs/OWNER_DIRECTIVES_20261021.md` § "Storage repair, BigMac exit install, Phase 3 and Phase 4 agents" (BigMac part and §6). File ownership: `docs/AGENT_COORDINATION.md`. Skills evidence: `docs/evidence/SKILLS_INVOCATION_p3_20261021.md`. Paper only: no live signing, no live orders; GMGN trading methods stay refused by the bridge.
+
+Implementation map (one path, one gateway, one ledger):
+
+```text
+price update (PumpAPI/PumpPortal trade, reserves) ──► PositionMonitor (jinx/exits/monitor.py, also a ≤10 s sweep)
+   read open position + entry basis + persisted peak (ledger)
+   1. CHAD mandatory protective exits (Sybil emergency exit; Confluence Collapse via the Executioner)
+   2. else the position's paper exit policy (BIGMAC_PAPER = jinx/exits/bigmac_exit.py::evaluate_exit)
+   3. persist the new peak
+   4. at most ONE ExitIntent (jinx/execution.py, owner fields) ──► ExecutionGateway.submit_exit
+        ──► PaperExecutor.sell (curve fees + price impact) ──► PositionLedger (remaining tokens, proceeds, P&L)
+Early Momentum detection + safety ──► confluence state (jinx/confluence/) ──► sizing (jinx/sizing/, quarter-Kelly)
+   ──► EntryIntent ──► ExecutionGateway.submit_entry (slot rule) ──► PaperExecutor.buy
+Executioner (jinx/exits/executioner.py): every open position ≤10 s; Confluence Collapse; Negative Divergence partials
+Operator view: /operator (jinx/operator_view.py)
+```
+
+| Component | Status | Source | Tests | Evidence |
+|---|---|---|---|---|
+| P3-01 BigMac source pinned, Ms-PL license vendored | NOT STARTED | bigmac `helpers/exit-strategy.ts` @ 829f251d | `tests/test_bigmac_license.py` | `third_party/bigmac/` |
+| P3-02 BigMac exit port (owner code; Ms-PL header; integer `applyPercent`) | NOT STARTED | owner `bigmac_exit.py`; TS `evaluateExit` 15-47, `applyPercent` 107-114 | `tests/test_bigmac_differential.py` (node 22 runs the original) | — |
+| P3-03 ExitIntent with the owner's fields (one class) | NOT STARTED | owner order §2 | `tests/test_p3_exit_intent.py` | — |
+| P3-04 Exit ownership + persisted peak per position | NOT STARTED | owner order §3 | `tests/test_p3_monitor.py` | — |
+| P3-05 Position monitor wired to the existing gateway/paper/ledger | NOT STARTED | owner order §2 | `tests/test_bigmac_integration.py` | — |
+| P3-06 OFF blocks entries, protective exits continue | NOT STARTED | owner contract | `tests/test_bigmac_integration.py` | — |
+| P3-07 Confluence state and entry (freshness, hard vetoes, fast path) | NOT STARTED | CHAD C12, C10 | `tests/test_p3_confluence.py` | — |
+| P3-08 Quarter-Kelly sizing (per user and bucket, cold start, 20-trade recalibration, filter reset) | NOT STARTED | CHAD C13; values B-03 | `tests/test_p3_sizing.py` | — |
+| P3-09 Execution lifecycle (intent idempotency, quote/submit/confirm, uncertain outcomes) | NOT STARTED | INTEGRATION_MAP §2 | `tests/test_p3_execution.py` | — |
+| P3-10 The Executioner (10 s sweep, Confluence Collapse, Negative Divergence partials) | NOT STARTED | CHAD C09 | `tests/test_p3_executioner.py` | — |
+| P3-11 Accounting (simulated vs actual, costs, realized vs unrealized, trade report) | NOT STARTED | CLAUDE.md Phase 3 | `tests/test_p3_accounting.py` | — |
+| P3-12 Operator view | NOT STARTED | CHAD C19 | `tests/test_p3_operator_view.py` | — |
+| P3-13 Phase 3 simulations (replay of real captures + live paper run) | NOT STARTED | CLAUDE.md Phase 3 | `tests/test_p3_simulation.py` | `docs/evidence/PHASE3_*` |
+| P3-14 Latency: signal→decision, decision→submission, submission→fill measured separately | NOT STARTED | CLAUDE.md Phase 3 | `tests/test_p3_simulation.py` | — |
+| P3-15 Independent Codex review (Phase 3) | NOT STARTED | Codex on the owner's PC | — | `docs/audits/phase3-codex-20261021-roundN.md` |
 
 ## Environment notes
 

@@ -1,0 +1,19 @@
+{
+  "repo": "https://github.com/bigmacman1129/solana-sniper-trading-mev-bot",
+  "commit": "829f251d4e371102b406176c5bd459ebf4ac87ac",
+  "checked": "2026-10-21: git ls-remote HEAD and refs/heads/main both 829f251d4e371102b406176c5bd459ebf4ac87ac; raw.githubusercontent.com bytes at that commit match the files below",
+  "license": "Microsoft Public License (Ms-PL)",
+  "license_file": "third_party/bigmac/LICENSE.md",
+  "license_sha256": "95bf34e4886fb4d08843bc5e1d831fc53fef861a69d402a7b72eb3ea6679e945",
+  "files": {
+    "helpers/exit-strategy.ts": "8bb8b099fd25aee4940e561730c74a8ff438a42c70634df56db69632921c1681"
+  },
+  "ported": {
+    "evaluateExit": {"file": "helpers/exit-strategy.ts", "lines": [15, 47], "sha256": "90ba5f9ab52562b6bab0c0964be752db966f5c75d5a4657a057df3ce23b7aed1"},
+    "applyPercent": {"file": "helpers/exit-strategy.ts", "lines": [107, 114], "sha256": "b11570676f42c3ca49e395f9ca02ccee681ffc78c51976292e29bd8898510a9f"}
+  },
+  "not_ported": {
+    "waitForExitCondition": {"file": "helpers/exit-strategy.ts", "lines": [49, 105], "reason": "owner order 2026-10-21 §6: no five-minute (duration) forced-exit policy as a default; its 'timeout' exit is not installed. Its in-memory peak (reset to 0n on every call) is replaced by a peak persisted in the ledger. JINX's position monitor drives evaluate_exit on every valid price update instead of a sleep loop."}
+  },
+  "jinx_port": "jinx/exits/bigmac_exit.py"
+}

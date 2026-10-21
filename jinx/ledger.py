@@ -53,6 +53,7 @@ class Fill:
     network_fee_lamports: int
     simulated: bool
     ts_ns: int
+    quote_lamports: int | None = None   # what the decision was quoted (slippage = quote - actual); not identity
 
     def __post_init__(self) -> None:
         if not isinstance(self.fill_id, str) or not self.fill_id:
@@ -92,6 +93,27 @@ class Position:
     opened_ns: int
     closed_ns: int | None
     note: str | None
+    # Phase 3 (schema v10); None for positions opened before it
+    strategy: str | None = None
+    exit_policy: str | None = None
+    exit_policy_json: str | None = None
+    peak_value_lamports: int | None = None
+    peak_ns: int | None = None
+    entry_score: str | None = None
+    entry_threshold: str | None = None
+    entry_filter: str | None = None
+    sizing_json: str | None = None
+    signal_ns: int | None = None
+    last_mark_lamports: int | None = None
+    last_mark_ns: int | None = None
+
+
+POSITION_FIELDS = ("strategy", "exit_policy", "exit_policy_json", "entry_score", "entry_threshold", "entry_filter",
+                   "sizing_json", "signal_ns")
+EXIT_META = ("source_strategy", "exit_policy", "reason_code", "exit_urgency", "required_sell_pct", "event_ns",
+             "triggering_evidence", "previously_executed_fraction", "remaining_confirmed_balance", "venue",
+             "quote_status", "quote_lamports")
+ORDER_STAGES = ("DECIDED", "QUOTED", "SUBMITTED", "FILLED", "FAILED", "REFUSED")
 
 
 class PositionLedger:
@@ -116,7 +138,8 @@ class PositionLedger:
         return self.store.conn.execute(q, [s.value for s in ACTIVE]).fetchone()[0]
 
     # ---- entry --------------------------------------------------------
-    def reserve_entry(self, intent_id: str, mint: str, budget_lamports: int, simulated: bool = True) -> Result:
+    def reserve_entry(self, intent_id: str, mint: str, budget_lamports: int, simulated: bool = True,
+                      fields: dict | None = None) -> Result:
         _check_int("budget_lamports", budget_lamports, 1)
         with self.store.transaction() as c:
             existing = c.execute("SELECT position_id, mint, entry_budget_lamports FROM positions"
@@ -138,10 +161,11 @@ class PositionLedger:
                 return Result(False, None, "DUPLICATE_POSITION")
             if self.active_slots() >= limit:
                 return Result(False, None, "SLOT_LIMIT")
-            cur = c.execute("INSERT INTO positions (entry_intent_id, entry_budget_lamports, mint, status, simulated,"
-                            " opened_ns) VALUES (?,?,?,?,?,?)", (intent_id, budget_lamports, mint,
-                                                                 Status.PENDING_OPEN.value, int(simulated),
-                                                                 self.clock_ns()))
+            extra = {k: v for k, v in (fields or {}).items() if k in POSITION_FIELDS}
+            cols = ["entry_intent_id", "entry_budget_lamports", "mint", "status", "simulated", "opened_ns", *extra]
+            cur = c.execute(f"INSERT INTO positions ({', '.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+                            (intent_id, budget_lamports, mint, Status.PENDING_OPEN.value, int(simulated),
+                             self.clock_ns(), *extra.values()))
             return Result(True, cur.lastrowid)
 
     def record_buy_fill(self, position_id: int, fill: Fill) -> None:
@@ -175,7 +199,8 @@ class PositionLedger:
                 return "NEW"
             return "SAME" if (row["position_id"], row["token_amount"]) == (position_id, token_amount) else "CONFLICT"
 
-    def claim_exit(self, intent_id: str, position_id: int, token_amount: int | None, fill_id: str) -> Result:
+    def claim_exit(self, intent_id: str, position_id: int, token_amount: int | None, fill_id: str,
+                   meta: dict | None = None) -> Result:
         """Atomically: check the intent binding, validate the amount, and take exit ownership.
         Nothing is bound or locked unless every check passes."""
         with self.store.transaction() as c:
@@ -214,8 +239,10 @@ class PositionLedger:
             if pos.status is not Status.OPEN:
                 return Result(False, position_id, f"NOT_OPEN:{pos.status}")
             if row is None:
-                c.execute("INSERT INTO exit_intents (intent_id, position_id, token_amount, created_ns)"
-                          " VALUES (?,?,?,?)", (intent_id, position_id, token_amount, self.clock_ns()))
+                m = {k: v for k, v in (meta or {}).items() if k in EXIT_META}
+                cols = ["intent_id", "position_id", "token_amount", "created_ns", *m]
+                c.execute(f"INSERT INTO exit_intents ({', '.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+                          (intent_id, position_id, token_amount, self.clock_ns(), *m.values()))
             c.execute("UPDATE positions SET status=?, exit_intent_id=? WHERE position_id=?",
                       (Status.PENDING_CLOSE.value, intent_id, position_id))
             return Result(True, position_id)
@@ -299,11 +326,62 @@ class PositionLedger:
                           (Status.CLOSED.value, proceeds, fill.protocol_fee_lamports, network,
                            proceeds - pos.cost_lamports - network, self.clock_ns(), position_id))
             else:
-                # a partial sell completes this exit intent; the position is OPEN again for the next exit
+                # a partial sell completes this exit intent; the position is OPEN again for the next exit. The peak
+                # is the value of the tokens held, so it is rescaled to the tokens still held (same ratio to the
+                # entry basis, which scales the same way).
+                peak = None if pos.peak_value_lamports is None else pos.peak_value_lamports * remaining // pos.token_amount
                 c.execute("UPDATE positions SET status=?, exit_intent_id=NULL, token_amount=?, proceeds_lamports=?,"
-                          " protocol_fees_lamports=protocol_fees_lamports+?, network_fees_lamports=?"
-                          " WHERE position_id=?",
-                          (Status.OPEN.value, remaining, proceeds, fill.protocol_fee_lamports, network, position_id))
+                          " protocol_fees_lamports=protocol_fees_lamports+?, network_fees_lamports=?,"
+                          " peak_value_lamports=? WHERE position_id=?",
+                          (Status.OPEN.value, remaining, proceeds, fill.protocol_fee_lamports, network, peak,
+                           position_id))
+
+    # ---- exit state (Phase 3) -------------------------------------------
+    def raise_peak(self, position_id: int, value_lamports: int, ts_ns: int) -> int:
+        """Persist the highest observed value of the held tokens; a peak is never lowered. Returns the peak."""
+        _check_int("value_lamports", value_lamports, 0)
+        with self.store.transaction() as c:
+            row = c.execute("SELECT peak_value_lamports FROM positions WHERE position_id = ?",
+                            (position_id,)).fetchone()
+            if row is None:
+                raise KeyError(f"unknown position {position_id}")
+            if row[0] is None or value_lamports > row[0]:
+                c.execute("UPDATE positions SET peak_value_lamports=?, peak_ns=? WHERE position_id=?",
+                          (value_lamports, ts_ns, position_id))
+                return value_lamports
+            return row[0]
+
+    def mark(self, position_id: int, value_lamports: int, ts_ns: int) -> None:
+        """The latest executable value of the held tokens (unrealized P&L); never a fill."""
+        self.store.conn.execute("UPDATE positions SET last_mark_lamports=?, last_mark_ns=? WHERE position_id=?",
+                                (value_lamports, ts_ns, position_id))
+
+    def bought_tokens(self, position_id: int) -> int:
+        return self.store.conn.execute("SELECT COALESCE(SUM(token_amount), 0) FROM fills WHERE position_id = ?"
+                                       " AND side = 'buy'", (position_id,)).fetchone()[0]
+
+    def entry_basis(self, position_id: int) -> int | None:
+        """What the tokens still held cost (protocol fee included, network fee not): the position's cost scaled
+        to the tokens remaining. None when the position holds nothing or has no buy fill."""
+        pos = self.get(position_id)
+        bought = self.bought_tokens(position_id)
+        if pos is None or bought == 0 or pos.token_amount == 0:
+            return None
+        return pos.cost_lamports * pos.token_amount // bought
+
+    def record_order_event(self, intent_id: str, position_id: int | None, side: str, stage: str, ts_ns: int,
+                           simulated: bool, cost_lamports: int = 0, detail: str | None = None) -> None:
+        if stage not in ORDER_STAGES:
+            raise ValueError(f"unknown order stage {stage}")
+        _check_int("cost_lamports", cost_lamports, 0)
+        with self.store.transaction() as c:
+            c.execute("INSERT INTO order_events (intent_id, position_id, side, stage, ts_ns, simulated, cost_lamports,"
+                      " detail) VALUES (?,?,?,?,?,?,?,?)", (intent_id, position_id, side, stage, ts_ns,
+                                                           int(simulated), cost_lamports, detail))
+
+    def order_events(self, intent_id: str) -> list[dict]:
+        return [dict(r) for r in self.store.conn.execute("SELECT * FROM order_events WHERE intent_id = ? ORDER BY id",
+                                                         (intent_id,))]
 
     # ---- reads --------------------------------------------------------
     def get(self, position_id: int) -> Position | None:
@@ -342,11 +420,11 @@ class PositionLedger:
         if cls._is_replay(c, position_id, fill):
             return False
         cur = c.execute("INSERT OR IGNORE INTO fills (fill_id, position_id, side, token_amount, sol_lamports,"
-                        " protocol_fee_lamports, network_fee_lamports, simulated, ts_ns, exit_intent_id)"
-                        " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                        " protocol_fee_lamports, network_fee_lamports, simulated, ts_ns, exit_intent_id, quote_lamports)"
+                        " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                         (fill.fill_id, position_id, fill.side.value, fill.token_amount, fill.sol_lamports,
                          fill.protocol_fee_lamports, fill.network_fee_lamports, int(fill.simulated), fill.ts_ns,
-                         exit_intent_id))
+                         exit_intent_id, fill.quote_lamports))
         return cur.rowcount == 1
 
 

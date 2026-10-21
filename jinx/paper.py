@@ -158,7 +158,8 @@ class PaperExecutor:
             self.ledger.record_buy_fill(position_id, fill)
         return ExecResult(True, position_id)
 
-    def sell(self, position_id: int, intent_id: str, token_amount: int | None) -> ExecResult:
+    def sell(self, position_id: int, intent_id: str, token_amount: int | None,
+             quote_lamports: int | None = None) -> ExecResult:
         pos = self.ledger.get(position_id)
         tok = self.registry.get(pos.mint)
         if tok is None or tok.v_sol_lamports is None or tok.v_tokens is None:
@@ -167,7 +168,7 @@ class PaperExecutor:
         amount = pos.token_amount if token_amount is None else token_amount
         net, fee = sell_proceeds(tok.v_sol_lamports, tok.v_tokens, amount, self.fees.total_bps)
         fill = Fill(sell_fill_id(position_id, intent_id), Side.SELL, amount, net, fee, self.network_fee, simulated=True,
-                    ts_ns=self.clock_ns())
+                    ts_ns=self.clock_ns(), quote_lamports=quote_lamports)
         try:
             with self.store.transaction():
                 self.wallet.apply(fill.fill_id, net - self.network_fee, f"paper sell {pos.mint}", fill.ts_ns)
