@@ -30,6 +30,7 @@ CURVE_VENUE = "pump"
 WSOL = "So11111111111111111111111111111111111111112"   # wrapped SOL mint: PumpAPI's `quoteMint` for SOL quotes
 PUMPSWAP_VENUE = "pump-amm"
 INITIAL_VIRTUAL_SOL = 30_000_000_000   # D3AD shred-sniper/sniper/src/pumpfun.rs:538 (recorded mainnet global value)
+INITIAL_REAL_TOKENS = 793_100_000_000_000   # D3AD pumpfun.rs:540: a standard curve's sellable tokens at creation
 
 
 class Clock(StrEnum):
@@ -113,3 +114,15 @@ def standard_curve(v_sol_lamports: int | None, real_sol_lamports: int | None) ->
     if v_sol_lamports is None or real_sol_lamports is None:
         return None
     return abs(v_sol_lamports - real_sol_lamports - INITIAL_VIRTUAL_SOL) <= 1
+
+
+def reserves_continuous(net_tokens_bought: int, trades: int, v_sol_lamports: int | None,
+                        real_sol_lamports: int | None, real_tokens: int | None) -> bool | None:
+    """Whether every trade since creation was seen, by the curve's own accounting: on a standard curve the real token
+    reserve PumpAPI reports equals the initial sellable tokens minus the net tokens of all trades seen (each buy
+    takes its tokens from the curve, each sell returns them). Clock-free, so it holds whatever the delivery order or
+    timing. Each converted amount can be off by one raw unit; held exactly on all 109 standard readings of the live
+    captures (Codex Phase 2 round 4, R4-1). None when it cannot be checked (no verified reading, non-standard curve)."""
+    if real_tokens is None or not standard_curve(v_sol_lamports, real_sol_lamports):
+        return None
+    return abs((INITIAL_REAL_TOKENS - net_tokens_bought) - real_tokens) <= 2 * trades + 2

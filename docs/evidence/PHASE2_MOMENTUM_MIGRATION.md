@@ -36,7 +36,11 @@ reports each (re)connection; the engine then marks as incomplete the history of 
 every token with an event that was received, or that happened (provider time), before that moment but is processed
 later (trades sent while disconnected are lost), so B-02's peak gate blocks those tokens. The comparison mixes JINX's
 receipt clock with PumpAPI's clock, which differ by the ~50 ms delivery lag; the error can only block a token that
-started just after a reconnect, never pass one that started before it. `trade_permitted` on Early Momentum evidence covers that module's own
+started just after a reconnect, never pass one that started before it. A creation timed only by JINX's receipt
+(PumpPortal's copy) that arrives after a gap cannot be placed in time, so its history counts as complete only if the
+curve's own reserves prove every trade was seen: on a standard curve the real token reserve PumpAPI reports must equal
+793.1M minus the net tokens of all trades seen (exact on all 109 standard readings of the live captures); otherwise,
+or on a non-standard curve, entry is blocked. `trade_permitted` on Early Momentum evidence covers that module's own
 predicates only; safety and the entry re-check are combined in `JinxApp.entry_check`, which also refuses any token the
 lifecycle has seen migrate (the Early Momentum path is pre-graduation only), whichever module heard the migration
 first; Early Momentum itself remembers a migration even when it arrives before the token's creation.
@@ -90,7 +94,9 @@ first; Early Momentum itself remembers a migration even when it arrives before t
   provider time, in the record and in the lifecycle. Effects happen once: first report, pool learned, verification
   change; a later report from the same source with better facts (a provider time, a slot) is kept. At most 8 reports
   are held per migration; at the cap the oldest report that adds nothing (neither the record's time nor the first to
-  name its pool) makes room, so a new pool, a contradiction or a better time is never refused. Reports naming
+  name its pool, nor a source's first report, nor the earliest observation) makes room, so a new pool, a
+  contradiction, a better time, a source or the first-observation time is never lost; `reports_seen` counts every
+  report received. Reports naming
   different pools are a conflict: nothing is verified, and after a confirmation the lifecycle becomes CONFLICTING
   whatever the precision of the conflicting report's time. The PumpAPI adapter refuses a migrate without its
   timestamp.
@@ -111,8 +117,9 @@ first; Early Momentum itself remembers a migration even when it arrives before t
   is counted once; one older than that window is not counted and the token's flow is marked incomplete, so a total
   is never inflated. The seller's creator flag and phase are read when the evidence is built, so they follow facts
   that arrive later.
-- **M3:** off by default; `confirmation_delay_ms` names a paper reference trade (`live_policy: False`), tracked as
-  trades arrive so the trade retention cap cannot lose it.
+- **M3:** off by default; `confirmation_delay_ms` names a paper reference trade (`live_policy: False`), derived from
+  the current record every time; with M3 on, 4,096 trades per pool are kept so the reference past the delay is not
+  lost.
 - **Measured:** live module run at 254434f (600 s): 8 migrations, 8 verified; migrate to evidence p50 45.4 ms; first
   pool trade p50 1 slot / 245 ms after the migrate (max 5 slots / 1,056 ms).
 
@@ -148,8 +155,13 @@ R2-3, R2-4, R2-5 confirmed FIXED. Fixed (`tests/test_review_phase2_intel_round3.
 the creation keeps the token out of Early Momentum, and `entry_check` refuses any token the lifecycle has seen
 migrate; R3-2 an event that happened before a feed gap marks its token whenever it is received; R3-3 the report cap
 never refuses new facts; R3-4 the M3 reference survives the retention cap; R3-5 the replay report survives tracker
-eviction (counted as `evicted`); R3-6 replay delays are measured on the final record. Later rounds are listed in
-`docs/audits/`.
+eviction (counted as `evicted`); R3-6 replay delays are measured on the final record.
+
+Codex round 4 on b978908 (`docs/audits/phase2-intel-codex-20261021-round4.md`): FAIL with 1 HIGH, 2 MEDIUM; F6, R2-2,
+R2-6, R3-1, R3-5, R3-6 confirmed FIXED. Fixed (`tests/test_review_phase2_intel_round4.py`): R4-1 a receipt-only
+creation after a gap is provable only by reserve continuity (both trackers); R4-2 the M3 reference is derived from the
+current record with its own retention; R4-3 the report cap never folds a source's first report or the first
+observation, and every report is counted. Later rounds are listed in `docs/audits/`.
 
 ## Deployment
 

@@ -37,12 +37,12 @@ from typing import Callable
 
 from jinx.core.events import LAMPORTS_PER_SOL, EventKind, MarketEvent
 from jinx.intel.bounded import MintTable
-from jinx.intel.readings import INITIAL_VIRTUAL_SOL, Clock, event_time, is_curve, real_reserves, standard_curve
+from jinx.intel.readings import (INITIAL_REAL_TOKENS, INITIAL_VIRTUAL_SOL, Clock, event_time, is_curve,
+                                 real_reserves, standard_curve)
 
 SIGNAL_TYPE = "graduation"
 SCORE_MIN, SCORE_MAX = 0.0, 20.0                    # CHAD "(0–20 pts)"
 INITIAL_VIRTUAL_TOKENS = 1_073_000_000_000_000      # D3AD pumpfun.rs:539
-INITIAL_REAL_TOKENS = 793_100_000_000_000           # D3AD pumpfun.rs:540
 MAKO_GRADUATION_SOL = 85.0                          # Mako src/onchain.py:546 GRADUATION_SOL
 CHAD_TEXT = ("Monitors every pump.fun bonding curve in real time via Helius gRPC. Scores each token's progress "
              "toward graduation (0–20 pts) and feeds it into the Confluence board. Tokens near the threshold get "
