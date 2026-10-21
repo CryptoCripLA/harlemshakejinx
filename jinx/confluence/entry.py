@@ -56,7 +56,7 @@ class EntryCoordinator:
         self.decisions: deque[dict] = deque(maxlen=50)      # newest decisions for the operator view (RAM, bounded)
 
     def _done(self, d: EntryDecision, detail: dict | None = None) -> EntryDecision:
-        key = "entered" if d.ok else (d.reason or "refused")
+        key = ("entered" if d.reason is None else "submitted_pending_fill") if d.ok else (d.reason or "refused")
         self.stats[key] = self.stats.get(key, 0) + 1
         self.decisions.append({"mint": d.mint, "ok": d.ok, "reason": d.reason, "intent_id": d.intent_id,
                                "position_id": d.position_id, "ts_ns": self.clock_ns(), **(detail or {})})
@@ -108,7 +108,8 @@ class EntryCoordinator:
             self.ledger.record_order_event(intent_id, None, "buy", "QUOTED", self.clock_ns(), simulated,
                                            detail=json.dumps({"expected_tokens": quote}))
         res = self.gateway.submit_entry(intent)
-        return self._done(EntryDecision(res.ok, res.reason, mint, intent_id, res.position_id),
+        accepted = res.ok or res.reason == "PENDING_FILL"   # a delayed paper fill is accepted, not yet filled
+        return self._done(EntryDecision(accepted, res.reason, mint, intent_id, res.position_id),
                           {"budget_lamports": size.budget_lamports, "signal_ns": evidence.event_ns,
                            "decided_ns": decided})
 
