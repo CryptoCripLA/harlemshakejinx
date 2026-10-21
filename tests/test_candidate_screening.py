@@ -70,3 +70,24 @@ def test_a_detection_is_screened_rechecked_until_indexed_and_funders_are_recorde
     assert app.gmgn.calls.count("getWalletStats") == 3          # one request per wallet
     assert "getWalletStats" in app.gmgn.calls
     app.market.close(); app.store.close()
+
+
+
+def test_a_coin_that_can_never_qualify_spends_no_gmgn_or_rugcheck_requests(tmp_path):
+    """B-02: a verified peak above the ceiling is permanent, so no safety or funder lookups are spent on it."""
+    app = JinxApp(config.load_settings(str(tmp_path)))
+    app._build_core()
+    app.gmgn, rc = Gmgn(), RugCheck()
+    app.safety = SafetyService(app.gmgn, rugcheck=rc)
+
+    async def main():
+        for m in [create(initial_buy=0.0, v_quote=30.0), buy("A", 1, v_quote=45.0), buy("B", 2, v_quote=46.0),
+                  buy("C", 3, v_quote=47.0)]:
+            for ev in events(m):
+                app.early.on_event(ev)
+        await asyncio.sleep(0.05)
+    asyncio.run(main())
+    [(mint, entry)] = app.candidates.items()
+    assert "skipped" in entry["safety"] and app.gmgn.calls == [] and rc.calls == []
+    assert app.screen_stats == {"screened": 0, "skipped": 1, "funder_lookups_skipped": 1}
+    app.market.close(); app.store.close()

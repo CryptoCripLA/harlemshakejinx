@@ -99,6 +99,7 @@ class JinxApp:
         self.bus.subscribe(Lane.FAST, self.early.on_event, name="early_momentum")
         self.candidates: OrderedDict[str, dict] = OrderedDict()   # newest 500 detections and their safety (RAM)
         self._background: set[asyncio.Task] = set()
+        self.screen_stats = {"screened": 0, "skipped": 0, "funder_lookups_skipped": 0}
         self.whales = WhaleBook()                          # CHAD C04: Layer-1 alerts and discovery candidates
         self.bus.subscribe(Lane.BACKGROUND, self.whales.on_event, name="whales")
         self.last_discovery: dict | None = None
@@ -189,7 +190,25 @@ class JinxApp:
             self.candidates.popitem(last=False)
         if "screening" not in entry:
             entry["screening"] = True
-            self._spawn(self._screen(evidence.mint, evidence.creator))
+            never = self._never_eligible(evidence.mint)
+            if never:                       # spend no GMGN or RugCheck requests on a coin that cannot qualify
+                entry["safety"] = {"skipped": never}
+                entry["entry_check"] = self.entry_check(evidence.mint)
+                self.screen_stats["skipped"] += 1
+            else:
+                self.screen_stats["screened"] += 1
+                self._spawn(self._screen(evidence.mint, evidence.creator))
+
+    def _never_eligible(self, mint: str) -> str | None:
+        """A reason the B-02 entry rule can never pass for this coin, whatever happens next: its verified peak
+        already exceeded the ceiling, its history cannot be proven, or it migrated. None while it still can."""
+        check = self.early.reserve_check(mint, feed_live=True)
+        peak = check.get("peak") or {}
+        if "migrated" in check.get("reason", ""):
+            return "migrated"
+        if peak.get("status") in ("FAIL", "UNAVAILABLE"):
+            return f"entry rule: {(peak.get('detail') or {}).get('reason')}"
+        return None
 
     # Engineering bound, not a trading rule: RugCheck indexes a new token 7.9-10.2 s after creation (measured
     # 2026-10-21), so a not-yet-indexed candidate is asked again every 2 s, at most 8 times.
@@ -246,6 +265,9 @@ class JinxApp:
 
     def _request_funders(self, mint: str, wallets: tuple[str, ...]) -> None:
         """CHAD's Sybil funder check needs each buyer's SOL funder: GMGN wallet stats carry `fund_from_address`."""
+        if self._never_eligible(mint):
+            self.screen_stats["funder_lookups_skipped"] += 1
+            return
         if getattr(self, "gmgn", None) is not None and self.gmgn.running:
             self._spawn(self._fetch_funders(tuple(wallets)))
 
@@ -320,7 +342,7 @@ class JinxApp:
                                                      "trade_permitted": c.get("trade_permitted"),
                                                      "entry_check": c.get("entry_check")}
                                                     for m, c in list(self.candidates.items())[-5:]],
-                                         "entry_summary": self._entry_summary()},
+                                         "entry_summary": self._entry_summary(), "screening": dict(self.screen_stats)},
                       "whales": {"tracked": len(self.whales.tracked), "candidates": len(self.whales._candidates),
                                  "alerts": len(self.whales.alerts), "last_discovery": self.last_discovery}}
         h["storage"] = self.monitor.report()
