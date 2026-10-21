@@ -78,8 +78,9 @@ class ReplayRun:
         first = {}
         for e in self.migrations:
             first.setdefault(e.mint, e)
-        verified = {e.mint: e for e in self.migrations if e.verified}
         finals = [self.migration.evidence(m) for m in first]
+        # the final evidence decides: a verification later revoked is not counted (Codex round 2, R2-6)
+        verified = {e.mint: e for e in finals if e.verified}
         return {"migrations": len(first), "verified": len(verified),
                 "signal_delay_ms": percentiles([(e.observed_ns - e.event_ns + e.processing_ns) / 1e6
                                                 for e in first.values()]),

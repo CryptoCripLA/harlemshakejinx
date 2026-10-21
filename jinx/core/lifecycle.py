@@ -252,6 +252,8 @@ class TokenLifecycle:
         return True
 
     def _is_late(self, e: Evidence, base: State, migrated: bool) -> bool:
+        if e.kind is Kind.MIGRATION_CONFIRMED and self.post_pool and e.payload.get("post_pool") != self.post_pool:
+            return False  # another destination pool contradicts the confirmation, whatever its time's precision
         latest = self._latest_by_kind.get(e.kind)
         if latest is not None and e.event_ns < latest:
             return True   # older than the latest accepted report of the same kind

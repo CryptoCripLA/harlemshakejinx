@@ -183,6 +183,8 @@ class EarlyMomentumEvidence:
 
     @property
     def trade_permitted(self) -> bool:
+        """Early Momentum's own predicates only. Safety (C01/C08) and the re-check at the entry decision are combined
+        in `JinxApp.entry_check`; Phase 2 places no order either way."""
         return not self.blocking
 
     @property
@@ -259,6 +261,7 @@ class EarlyMomentum:
                                                   on_evict=self._unlink)
         self._funding: OrderedDict[str, Funding] = OrderedDict()
         self._wallet_mints: dict[str, set[str]] = {}
+        self._gap: tuple[int, str] | None = None   # (receipt time of the latest trade-feed gap, reason)
         self.stats = {"events": 0, "curve_buys": 0, "detections": 0, "late_beyond_retention": 0,
                       "buys_dropped_over_cap": 0, "duplicates": 0, "listener_errors": 0}
 
@@ -274,6 +277,8 @@ class EarlyMomentum:
         if ev.kind not in (EventKind.TOKEN_CREATED, EventKind.TRADE):
             return []
         st = self._mints.touch(ev.mint, ev.recv_ns)
+        if self._gap is not None and ev.recv_ns < self._gap[0] and st.gap is None:
+            st.gap = self._gap[1]          # received before the gap (queued while it happened): history spans it
         if ev.kind is EventKind.TOKEN_CREATED:
             st.creator, st.since_creation, st.create_sig = ev.trader, True, ev.signature
         if ev.kind is EventKind.TRADE and not is_curve(ev) and ev.raw.get("pool") not in (None, "pump"):
@@ -305,8 +310,11 @@ class EarlyMomentum:
 
     def mark_feed_gap(self, gap_ns: int, reason: str) -> None:
         """The trade feed (re)connected at `gap_ns`: anything may have traded unseen before that, so every token
-        tracked so far has an incomplete history and its peak can no longer be proven (Codex round 1, F1). Tokens
-        first seen after the gap are unaffected."""
+        tracked so far has an incomplete history and its peak can no longer be proven (Codex round 1, F1). An event
+        received before the gap but processed after it marks its token too (round 2, R2-1); tokens whose events
+        were all received after the gap are unaffected."""
+        if self._gap is None or gap_ns >= self._gap[0]:
+            self._gap = (gap_ns, f"{reason} at {gap_ns} ns")
         for _, st in self._mints.items():
             st.gap = f"{reason} at {gap_ns} ns"
 

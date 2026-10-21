@@ -90,6 +90,8 @@ def normalize(msg: Any, recv_ns: int, next_seq: Callable[[], int]) -> list[Marke
     raw = compact(msg)
     if action == "migrate":
         pool = _str(msg, "poolId")   # the new pool must be named
+        if _num(msg, "timestamp") <= 0:  # and its time: PumpAPI documents it for every migrate
+            raise MalformedEvent("timestamp missing")
         # PumpPortal reports the same migration without the pool. The pool makes this a richer fact, so it gets its
         # own identity (`leg`) and both reports reach the migration module, which merges them into one record
         # (owner order 2026-10-21: deduplicate effects, not information). A resend of this report still deduplicates.

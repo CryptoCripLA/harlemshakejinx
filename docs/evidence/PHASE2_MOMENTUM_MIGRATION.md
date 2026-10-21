@@ -31,8 +31,11 @@ idle 2 h on the receipt clock, per-token caps) and rebuilt from the feeds after 
 
 `intel_health()` (inside `/health`) shows every module's counters, the newest detections and migrations read from
 the trackers (never a stale copy), the GMGN Trenches read, background-task counts and the fast lane's measured
-admission-to-handled delay. The PumpAPI feed reports each (re)connection; the engine then marks every history
-tracked so far as incomplete (trades sent while disconnected are lost), so B-02's peak gate blocks those tokens.
+admission-to-handled delay, and each module's own processing time (`handler_processing_us`). The PumpAPI feed
+reports each (re)connection; the engine then marks as incomplete the history of every token tracked so far and of
+every token with an event received before that moment but processed later (trades sent while disconnected are
+lost), so B-02's peak gate blocks those tokens. `trade_permitted` on Early Momentum evidence covers that module's own
+predicates only; safety and the entry re-check are combined in `JinxApp.entry_check`.
 
 ## C10 Early Momentum — TESTING; entries blocked until every check passes
 
@@ -81,11 +84,15 @@ tracked so far as incomplete (trades sent while disconnected are lost), so B-02'
   which merges every report (PumpAPI, PumpPortal, GMGN Trenches `completed`, GMGN `migrated_pool`) into one record.
   Time comes from the best clock (chain, then provider with slot, then receipt) and a receipt time never replaces a
   provider time, in the record and in the lifecycle. Effects happen once: first report, pool learned, verification
-  change. Reports naming different pools are a conflict: nothing is verified, and after a confirmation the lifecycle
-  becomes CONFLICTING.
+  change; a later report from the same source with better facts (a provider time, a slot) is kept. Reports naming
+  different pools are a conflict: nothing is verified, and after a confirmation the lifecycle becomes CONFLICTING
+  whatever the precision of the conflicting report's time. The PumpAPI adapter refuses a migrate without its
+  timestamp.
 - **M1, first verified post-migration liquidity (derived, never sticky):** the earliest PumpSwap trade on the
   record's single pool that has both reserves and is provably at or after the migration (slot against slot, otherwise
-  provider time against provider time), with the migration time on a provider clock. Later evidence that invalidates
+  provider time against provider time), with the migration time on a provider clock. Trades are kept per pool as the
+  earliest 256 by event time (not by arrival), trades with both reserves separately, so later or reserve-less trades
+  never crowd out verification evidence. Later evidence that invalidates
   it revokes the verification (a lifecycle failure) until another trade qualifies. The record names the trade it was
   read after (side, size, fee payer), because a first trade can itself be a 100+ SOL buy.
 - **M2:** pre-migration liquidity and peak; first and latest post-migration liquidity; the 10 largest sells of the
@@ -94,6 +101,10 @@ tracked so far as incomplete (trades sent while disconnected are lost), so B-02'
   concentration from GMGN top-holder balances where available, pool accounts kept apart from wallets (owner item 8),
   and separately the observed trade flow, labelled not proof of ownership, incomplete after a feed gap, with an
   at-migration view computed from trades before the migration; the first 20 pool trades with slot and time offsets.
+  Duplicates: a trade delivered again within the token's identity window (the last 2 × (256 + 256) trade identities)
+  is counted once; one older than that window is not counted and the token's flow is marked incomplete, so a total
+  is never inflated. The seller's creator flag and phase are read when the evidence is built, so they follow facts
+  that arrive later.
 - **M3:** off by default; `confirmation_delay_ms` names a paper reference trade (`live_policy: False`).
 - **Measured:** live module run at 254434f (600 s): 8 migrations, 8 verified; migrate to evidence p50 45.4 ms; first
   pool trade p50 1 slot / 245 ms after the migrate (max 5 slots / 1,056 ms).
@@ -115,7 +126,16 @@ Fixed: F1 feed gaps now make the history incomplete; F2 background lookups bound
 lists bounded with totals; F4 verification requires reserves, provable order and a provider-clock migration time and
 is revoked by contrary evidence; F5 shared state reads the tracker and the confirmation is published after the market
 transition; F6 conflicting pools never verify; F7 duplicate trades counted once and the at-migration view converges;
-F8 largest sells survive the caps; F9 this document. Later rounds are listed in `docs/audits/`.
+F8 largest sells survive the caps; F9 this document.
+
+Codex round 2 on 6b2ec43 (`docs/audits/phase2-intel-codex-20261021-round2.md`): FAIL with 1 HIGH, 5 MEDIUM, 1 LOW;
+F2, F3, F4, F5, F8 confirmed FIXED, F1, F6, F7, F9 PARTIAL. Fixed (`tests/test_review_phase2_intel_round2.py`): R2-1 an
+event received before a feed gap but processed after it marks its token; R2-2 a better report from the same source is
+kept and the adapter refuses a timestamp-less migrate; R2-3 per-pool retention by event time with reserve-carrying
+trades kept apart; R2-4 a conflicting pool is a lifecycle conflict whatever its time precision; R2-5 duplicates beyond
+the identity window are not counted (flow marked incomplete) and sell annotations are read at build time; R2-6 the
+replay report counts the final verification; R2-7 this document's claims qualified. Later rounds are listed in
+`docs/audits/`.
 
 ## Deployment
 

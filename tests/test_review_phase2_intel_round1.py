@@ -158,10 +158,12 @@ def test_f4_a_trade_without_reserves_is_not_verified_liquidity():
 
 def test_f4_a_migration_time_on_jinxs_receipt_clock_cannot_verify():
     m = tracked()
-    no_time = migrate(pool_id=POOL, t_ms=MIG_T, slot=499)
-    del no_time["timestamp"]
-    for ev in events(no_time, recv_ns=(MIG_T + 50) * 1_000_000):
-        m.on_event(ev)
+    # the PumpAPI adapter now refuses a migrate without its timestamp (round 2, R2-2); the tracker must still
+    # handle a pool-naming report that has only JINX's receipt time
+    from jinx.core.events import EventKind, MarketEvent
+    m.on_event(MarketEvent(kind=EventKind.MIGRATION, source="pumpapi.stream", mint="MintApump", signature="M0",
+                           slot=499, recv_ns=(MIG_T + 50) * 1_000_000, seq=999_999,
+                           raw={"pool": "pump-amm", "poolId": POOL, "leg": f"pool:{POOL}"}))
     feed(m, [pool_trade(300, slot=500)])
     ev = m.evidence("MintApump")
     assert ev.verified is False and m.lifecycle("MintApump").state is State.MIGRATION_OBSERVED

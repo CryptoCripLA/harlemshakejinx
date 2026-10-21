@@ -22,7 +22,7 @@ import logging
 import os
 import signal
 import time
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from pathlib import Path
 
 from jinx import config
@@ -97,20 +97,21 @@ class JinxApp:
                                    config.NETWORK_FEE_LAMPORTS)
         self.gateway = ExecutionGateway(self.store, self.ledger, self.paper)
         self.bus = EventBus(persist=self.market.record_event)
-        self.bus.subscribe(Lane.FAST, self.core.apply, name="core_state")
+        self._handler_ns: dict[str, deque] = {}            # per-handler processing time (bounded, RAM)
+        self.bus.subscribe(Lane.FAST, self._timed("core_state", self.core.apply), name="core_state")
         self.bundles = BundleTracker()                     # R1 evidence, off the fast lane
         self.bus.subscribe(Lane.BACKGROUND, self.bundles.on_event, name="bundles")
         # CHAD Bot 10 (C10) on the fast lane: synchronous, no I/O; detections are screened in the background
         self.early = EarlyMomentum(notify=self._on_early_momentum, request_funders=self._request_funders)
-        self.bus.subscribe(Lane.FAST, self.early.on_event, name="early_momentum")
+        self.bus.subscribe(Lane.FAST, self._timed("early_momentum", self.early.on_event), name="early_momentum")
         # CHAD Bot 5 (C05) and migration intelligence (M1-M3) on the fast lane too: synchronous, no I/O, and the
         # lifecycle must not lose a migration (the background lane drops when full). GMGN lookups they ask for run
         # as background tasks, never on the event path.
         self.graduation = GraduationTracker()
-        self.bus.subscribe(Lane.FAST, self.graduation.on_event, name="graduation")
+        self.bus.subscribe(Lane.FAST, self._timed("graduation", self.graduation.on_event), name="graduation")
         self.migration = MigrationTracker(notify=self._on_migration, request_pool=self._request_pool,
                                           request_holders=self._request_holders)
-        self.bus.subscribe(Lane.FAST, self.migration.on_event, name="migration")
+        self.bus.subscribe(Lane.FAST, self._timed("migration", self.migration.on_event), name="migration")
         self.migrations: OrderedDict[str, dict] = OrderedDict()   # newest 500 migrations and their status (RAM)
         self.candidates: OrderedDict[str, dict] = OrderedDict()   # newest 500 detections and their safety (RAM)
         self._background: set[asyncio.Task] = set()
@@ -194,6 +195,19 @@ class JinxApp:
     # Engineering bound (owner storage rule 2), not a trading rule: background lookups waiting on GMGN or RugCheck
     # are capped; a shed lookup leaves its evidence UNAVAILABLE, which blocks (Codex Phase 2 round 1, F2).
     MAX_BACKGROUND_TASKS = 64
+
+    def _timed(self, name: str, handler):
+        """Each fast-lane handler's own processing time, the newest 20,000 per handler (local processing only)."""
+        samples = self._handler_ns.setdefault(name, deque(maxlen=20_000))
+        clock = time.perf_counter_ns
+
+        def run(ev):
+            t0 = clock()
+            try:
+                return handler(ev)
+            finally:
+                samples.append(clock() - t0)
+        return run
 
     def _spawn(self, coro, key=None) -> None:
         """Run a lookup in the background, never on the event path. At most MAX_BACKGROUND_TASKS at once; a lookup
@@ -318,7 +332,7 @@ class JinxApp:
         """The PumpAPI trade feed (re)connected: trades sent while it was down are lost, so every history tracked so
         far is incomplete from here on (Codex Phase 2 round 1, F1)."""
         self.early.mark_feed_gap(now_ns, "PumpAPI trade feed (re)connected")
-        self.migration.mark_feed_gap(f"PumpAPI trade feed (re)connected at {now_ns} ns")
+        self.migration.mark_feed_gap(f"PumpAPI trade feed (re)connected at {now_ns} ns", gap_ns=now_ns)
 
     def _gmgn_live(self) -> bool:
         return getattr(self, "gmgn", None) is not None and self.gmgn.running
@@ -495,9 +509,15 @@ class JinxApp:
     def intel_health(self) -> dict:
         """What the intelligence modules hold in shared state right now, and the fast lane's measured delay."""
         lat = percentiles([x / 1e6 for x in self.bus.latency_ns(Lane.FAST)])
+        detection = percentiles([c["evidence"]["freshness"]["detection_delay_ms"] for c in self.candidates.values()
+                                 if c.get("evidence")])
+        summaries = [s_ for s_ in (self.migration.summary(m) for m in self.migrations) if s_]
+        signal = percentiles([(s_["observed_ns"] - s_["event_ns"]) / 1e6 for s_ in summaries
+                              if s_["clock"] != "receipt"])
         return {"safety": dict(self.safety.stats) if self.safety else {"configured": False},
                 "bundles_tracked": len(self.bundles._tokens),
                 "early_momentum": {**self.early.stats, "candidates": len(self.candidates),
+                                   "detection_delay_ms": detection,
                                    "latest": [{"mint": m, "safety": c.get("safety"),
                                                "trade_permitted": c.get("trade_permitted"),
                                                "entry_check": c.get("entry_check")}
@@ -505,14 +525,15 @@ class JinxApp:
                                    "entry_summary": self._entry_summary(), "screening": dict(self.screen_stats)},
                 "graduation": {**self.graduation.stats, "tracked": self.graduation.tracked_mints()},
                 "migration": {**self.migration.stats, "tracked": self.migration.tracked_mints(),
-                              "verified": self.migration.verified_mints(),
+                              "verified": self.migration.verified_mints(), "signal_delay_ms": signal,
                               "latest": [{"mint": m, **(self.migration.summary(m) or {"state": "evicted"})}
                                          for m in list(self.migrations)[-5:]]},
                 "background": {**self.background_stats, "running": len(self._background)},
                 "gmgn_trenches": self.last_trenches,
                 "whales": {"tracked": len(self.whales.tracked), "candidates": len(self.whales._candidates),
                            "alerts": len(self.whales.alerts), "last_discovery": self.last_discovery},
-                "fast_lane_admission_to_handled_ms": lat}
+                "fast_lane_admission_to_handled_ms": lat,
+                "handler_processing_us": {n: percentiles([x / 1e3 for x in v]) for n, v in self._handler_ns.items()}}
 
     async def _http(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:

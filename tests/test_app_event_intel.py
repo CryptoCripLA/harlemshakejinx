@@ -168,3 +168,20 @@ def test_creation_then_three_wallets_through_the_engine_reaches_screening_once(t
     [(mint, entry)] = app.candidates.items()
     assert entry["trade_permitted"] is False and entry["evidence"]["payload"]["fee_payers"] == ["A", "B", "C"]
     close(app)
+
+
+def test_intel_health_reports_each_modules_own_processing_and_the_detection_delay(tmp_path):
+    """Owner delivery item: measured processing delays, per module, in the running engine (local processing only,
+    not order execution)."""
+    app = make_app(tmp_path)
+    deliveries = capture_events(CAPTURE, source="pumpapi")
+    publish(app, deliveries)
+    intel = app.intel_health()
+    events_seen = sum(len(evs) for evs in deliveries if evs)
+    for name in ("core_state", "early_momentum", "graduation", "migration"):
+        t = intel["handler_processing_us"][name]
+        assert t["n"] == events_seen and 0 < t["p50"] <= t["p99"]
+    delay = intel["early_momentum"]["detection_delay_ms"]
+    assert delay["n"] == 38 and delay["p50"] > 0
+    assert "signal_delay_ms" in intel["migration"]
+    close(app)

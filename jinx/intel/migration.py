@@ -40,6 +40,7 @@ seen trade identities, wallets, ranked sells, holders).
 """
 from __future__ import annotations
 
+import bisect
 import logging
 import math
 import time
@@ -71,6 +72,7 @@ MAX_CURVE_TRADES = 256
 MAX_POOL_TRADES = 256
 MAX_WALLETS = 5_000
 MAX_REPORTS = 8
+MAX_POOLS = 8
 MAX_HOLDERS_KEPT = 100
 
 
@@ -256,27 +258,52 @@ class _Flow:
         return self.bought_pre + self.bought_post - self.pre[2] - self.post[2]
 
 
+class _Pool:
+    """PumpSwap trades on one pool, kept as the earliest by event time (not by arrival), so a late-delivered earlier
+    trade still counts; trades with both reserves are kept apart so verification evidence is never crowded out."""
+    __slots__ = ("all", "full", "latest", "count", "cap")
+
+    def __init__(self, cap: int) -> None:
+        self.all: list[Trade] = []
+        self.full: list[Trade] = []
+        self.latest: Trade | None = None
+        self.count = 0
+        self.cap = cap
+
+    def add(self, trade: Trade) -> None:
+        self.count += 1
+        lists = (self.all, self.full) if (trade.quote_reserve_lamports is not None
+                                          and trade.token_reserve is not None) else (self.all,)
+        for kept in lists:
+            bisect.insort(kept, trade, key=lambda t: t.key)
+            if len(kept) > self.cap:
+                kept.pop()
+        if self.latest is None or trade.key > self.latest.key:
+            self.latest = trade
+
+
 class _Token:
     def __init__(self, mint: str, max_curve: int, max_seen: int) -> None:
         self.life = TokenLifecycle(mint)
         self.creator: str | None = None
         self.since_creation = False
-        self.seen: OrderedDict[str, None] = OrderedDict()    # trade identities (duplicate deliveries count once)
+        self.seen: OrderedDict[str, int] = OrderedDict()     # trade identity -> event time (duplicates count once)
         self.max_seen = max_seen
+        self.seen_floor: int | None = None         # newest event time whose identity has left `seen`
         self.curve: deque[Trade] = deque(maxlen=max_curve)
         self.curve_pool: str | None = None
         self.latest_curve: Trade | None = None
         self.peak_v = 0
         self.migration: MigrationTx | None = None
-        self.amm: list[Trade] = []                 # PumpSwap trades on any pool, first arrivals (bounded)
-        self.latest_amm: dict[str, Trade] = {}     # newest trade per pool
+        self.pools: dict[str, _Pool] = {}          # PumpSwap trades per pool (at most MAX_POOLS pools)
+        self.other_pool_trades = 0                 # trades on pools beyond MAX_POOLS
         self.verified_by: Trade | None = None
         self.status = ""
         self.confirmed = False                     # the lifecycle accepted a confirmation for the current pool
         self.flow: dict[str, _Flow] = {}
         self.flow_complete = True
         self.gaps: list[str] = []
-        self.sells: list[dict] = []                # largest sells, ranked at arrival, independent of trade caps
+        self.sells: list[Trade] = []               # largest sells, ranked at arrival, independent of trade caps
         self.verified_holders: dict | None = None  # GMGN balances
         self.detection: tuple[int, int] | None = None   # (observed_ns, processing_ns) of the first report
 
@@ -295,14 +322,17 @@ class MigrationTracker:
         self._tokens: MintTable[_Token] = MintTable(lambda mint: _Token(mint, self.max_curve, max_seen), max_mints,
                                                     int(idle_ttl_s * 1_000_000_000))
         self.stats = {"events": 0, "migrations": 0, "reports": 0, "enriched": 0, "confirmed": 0, "revoked": 0,
-                      "pool_conflicts": 0, "duplicates": 0, "wallets_untracked": 0, "lifecycle_refused": 0,
-                      "listener_errors": 0, "provider_reports_untracked": 0}
+                      "pool_conflicts": 0, "duplicates": 0, "beyond_dedup_horizon": 0, "wallets_untracked": 0,
+                      "lifecycle_refused": 0, "listener_errors": 0, "provider_reports_untracked": 0}
+        self._gap: tuple[int, str] | None = None   # (receipt time of the latest trade-feed gap, reason)
 
     # ---- API -----------------------------------------------------------------------------------------
     def on_event(self, ev: MarketEvent) -> list[MigrationEvidence]:
         started = time.perf_counter_ns()
         self.stats["events"] += 1
         tok = self._tokens.touch(ev.mint, ev.recv_ns)
+        if self._gap is not None and ev.recv_ns < self._gap[0]:
+            self._incomplete(tok, self._gap[1])     # received before the gap: the token's flow spans it
         if ev.kind is EventKind.TOKEN_CREATED:
             tok.creator, tok.since_creation = ev.trader, True
             tok.curve_pool = tok.curve_pool or pool_id(ev)
@@ -314,13 +344,20 @@ class MigrationTracker:
             return self._report(tok, report, started)
         if ev.kind is not EventKind.TRADE:
             return []
+        trade = self._trade(ev)
         if ev.idempotency_key in tok.seen:
             self.stats["duplicates"] += 1
             return []
-        tok.seen[ev.idempotency_key] = None
+        if tok.seen_floor is not None and trade.event_ns <= tok.seen_floor:
+            # older than the duplicate-detection window: it may be a resend, so it is not counted, and the token's
+            # flow is marked incomplete instead of possibly counting a trade twice
+            self.stats["beyond_dedup_horizon"] += 1
+            self._incomplete(tok, "a trade older than the duplicate-detection window arrived and was not counted")
+            return []
+        tok.seen[ev.idempotency_key] = trade.event_ns
         while len(tok.seen) > tok.max_seen:
-            tok.seen.popitem(last=False)
-        trade = self._trade(ev)
+            _, old_ns = tok.seen.popitem(last=False)
+            tok.seen_floor = max(tok.seen_floor or old_ns, old_ns)
         if is_curve(ev):
             self._curve_trade(tok, trade, ev)
             return []
@@ -383,11 +420,19 @@ class MigrationTracker:
             "top10_wallet_share": sum(shares) if shares and None not in shares else None,
             "pool_accounts": [r for r in rows if r["pool_account"]], "holders_listed": len(rows)}
 
-    def mark_feed_gap(self, reason: str) -> None:
+    def mark_feed_gap(self, reason: str, gap_ns: int | None = None) -> None:
         """The trade feed reconnected: trades may have been missed for every token tracked so far, so their observed
-        trade flow is no longer complete."""
+        trade flow is no longer complete. With `gap_ns`, an event received before it but processed later marks its
+        token too."""
+        if gap_ns is not None and (self._gap is None or gap_ns >= self._gap[0]):
+            self._gap = (gap_ns, reason)
         for _, tok in self._tokens.items():
-            tok.flow_complete = False
+            self._incomplete(tok, reason)
+
+    @staticmethod
+    def _incomplete(tok: _Token, reason: str) -> None:
+        tok.flow_complete = False
+        if reason not in tok.gaps:
             tok.gaps = (tok.gaps + [reason])[-4:]
 
     def evidence(self, mint: str) -> MigrationEvidence | None:
@@ -402,7 +447,7 @@ class MigrationTracker:
         m = tok.migration
         return {"state": tok.life.state.name, "verified": tok.verified_by is not None, "status": tok.status,
                 "pool": m.pool_id, "pools_named": list(m.pools_named), "sources": list(m.sources),
-                "event_ns": m.event_ns, "clock": str(m.clock)}
+                "event_ns": m.event_ns, "clock": str(m.clock), "observed_ns": m.observed_ns}
 
     def lifecycle(self, mint: str) -> TokenLifecycle | None:
         tok = self._tokens.get(mint)
@@ -464,9 +509,8 @@ class MigrationTracker:
     def _flow(self, tok: _Token, trade: Trade) -> None:
         after = self._after_migration(tok, trade)
         if trade.side is Side.SELL:
-            row = self._sell_row(trade, tok, after)
-            tok.sells.append(row)
-            tok.sells.sort(key=lambda r: (-r["sol_lamports"], r["event_ns"], r["signature"]))
+            tok.sells.append(trade)
+            tok.sells.sort(key=lambda t: (-t.sol_lamports, t.key))
             del tok.sells[2 * TOP_SELLS:]
         f = tok.flow.get(trade.fee_payer)
         if f is None:
@@ -488,9 +532,9 @@ class MigrationTracker:
 
     def _report(self, tok: _Token, report: MigrationReport, started: int) -> list[MigrationEvidence]:
         old = tok.migration
-        if old is not None and any((r.source, r.signature, r.pool_id) == (report.source, report.signature,
-                                                                        report.pool_id) for r in old.reports):
-            return []                                          # the same report again: no effect at all
+        same = (lambda r: (r.source, r.signature, r.slot, r.event_ns, r.clock, r.pool_id, r.venue))
+        if old is not None and any(same(r) == same(report) for r in old.reports):
+            return []          # the same report again: no effect at all (a better report from a source is kept)
         if old is not None and len(old.reports) >= MAX_REPORTS:
             return []
         self.stats["reports"] += 1
@@ -518,12 +562,13 @@ class MigrationTracker:
 
     def _pool_trade(self, tok: _Token, trade: Trade) -> list[MigrationEvidence]:
         self._flow(tok, trade)                                   # a PumpSwap trade is after the migration
-        if len(tok.amm) < self.max_pool:
-            tok.amm.append(trade)
-        latest = tok.latest_amm.get(trade.pool_id)
-        if latest is None or trade.key > latest.key:
-            if trade.pool_id is not None and (latest is not None or len(tok.latest_amm) < 8):
-                tok.latest_amm[trade.pool_id] = trade
+        pool = tok.pools.get(trade.pool_id)
+        if pool is None and trade.pool_id is not None and len(tok.pools) < MAX_POOLS:
+            pool = tok.pools[trade.pool_id] = _Pool(self.max_pool)
+        if pool is None:
+            tok.other_pool_trades += 1
+        else:
+            pool.add(trade)
         if tok.migration is None:
             return []
         out = self._reverify(tok)                                # a new verification posts its trades itself
@@ -556,11 +601,11 @@ class MigrationTracker:
                           "only the venue); GMGN's migrated_pool is requested")
         if m.clock is Clock.RECEIPT:
             return None, "the migration time is only JINX's receipt time, not on a provider clock: not verifiable"
-        on_pool = [t for t in tok.amm if t.pool_id == pools[0]]
-        valid = [t for t in on_pool if self._qualifies(t, m)]
-        if valid:
-            return min(valid, key=lambda t: t.key), "verified: first trade with reserves on the pool after the migration"
-        if any(self._ordered(t, m) for t in on_pool):
+        pool = tok.pools.get(pools[0])
+        valid = next((t for t in pool.full if self._ordered(t, m)), None) if pool else None
+        if valid is not None:
+            return valid, "verified: first trade with reserves on the pool after the migration"
+        if pool is not None and any(self._ordered(t, m) for t in pool.all):
             return None, "waiting: trades on the pool carry no reserves"
         return None, "waiting: no trade on the pool provably at or after the migration"
 
@@ -576,8 +621,7 @@ class MigrationTracker:
             if not tok.confirmed:
                 tok.verified_by, tok.status = None, "the lifecycle refused the confirmation"
                 return [] if before is None else [self._emit(tok)]
-            for t in sorted((t for t in tok.amm if t.pool_id == m.pool_id and self._qualifies(t, m)),
-                            key=lambda t: t.key):
+            for t in (t for t in tok.pools[m.pool_id].full if self._ordered(t, m)):
                 self._life(tok, Kind.POST_MIGRATION_MARKET, PUMPAPI, t.recv_ns, t.event_ns, t.clock,
                            {"pool": t.pool_id, "liquidity": t.quote_reserve_lamports, "signature": t.signature})
             if before is None:
@@ -629,8 +673,9 @@ class MigrationTracker:
                 "quote_reserve_lamports": trade.quote_reserve_lamports, "token_reserve": trade.token_reserve,
                 "slots_after_migration": slots, "ms_after_migration": (trade.event_ns - m.event_ns) / 1e6}
 
-    @staticmethod
-    def _sell_row(trade: Trade, tok: _Token, after: bool) -> dict:
+    def _sell_row(self, trade: Trade, tok: _Token) -> dict:
+        """Phase and creator flag are read now, so they follow facts that arrived after the sell."""
+        after = self._after_migration(tok, trade)
         return {"signature": trade.signature, "fee_payer": trade.fee_payer, "venue": trade.venue,
                 "pool_id": trade.pool_id, "phase": "after" if after else "before", "slot": trade.slot,
                 "event_ns": trade.event_ns, "sol_lamports": trade.sol_lamports, "tokens": trade.token_amount,
@@ -646,28 +691,31 @@ class MigrationTracker:
             "real_tokens": pre.token_reserve, "standard_curve": standard_curve(pre.v_sol_lamports,
                                                                                pre.quote_reserve_lamports),
             "peak_virtual_sol": _sol(tok.peak_v)}
-        on_pool = sorted((t for t in tok.amm if m.pool_id and t.pool_id == m.pool_id and self._ordered(t, m)),
-                         key=lambda t: t.key)
+        pool = tok.pools.get(m.pool_id) if m.pool_id else None
+        on_pool = [t for t in pool.all if self._ordered(t, m)] if pool else []
         research = None
         if self.confirmation_delay_ms is not None:
             due = m.event_ns + self.confirmation_delay_ms * 1_000_000
-            ref = next((t for t in on_pool if t.event_ns >= due and self._qualifies(t, m)), None)
+            ref = next((t for t in pool.full if t.event_ns >= due and self._ordered(t, m)), None) if pool else None
             research = {"variant": "M3 confirmation delay", "live_policy": False,
                         "delay_ms": self.confirmation_delay_ms, "due_event_ns": due,
                         "reference_trade": None if ref is None else {**self._liquidity(ref, m),
                                                                      "fee_payer": ref.fee_payer}}
-        latest = tok.latest_amm.get(m.pool_id) if m.pool_id else None
+        latest = pool.latest if pool else None
+        named = set(m.pools_named)
         observed_ns, processing_ns = tok.detection
         return MigrationEvidence(
             mint=mint, state=tok.life.state.name, migration=m, verified=tok.verified_by is not None,
             verification_status=tok.status, first_verified_liquidity=self._liquidity(tok.verified_by, m),
             latest_post_liquidity=self._liquidity(latest, m), pre_migration_liquidity=pre_liq,
-            sells_around_graduation=list(tok.sells[:TOP_SELLS]),
+            sells_around_graduation=[self._sell_row(t, tok) for t in tok.sells[:TOP_SELLS]],
             developer_selling=self._developer(tok), holder_selling=self._holder_selling(tok),
             holder_distribution=self._holder_distribution(tok),
             competing_early_transactions=self._competing(on_pool, m),
-            foreign_pool_trades=sum(1 for t in tok.amm if m.pools_named and t.pool_id not in m.pools_named),
-            unverified_pool_trades=len(tok.amm) if not m.pools_named else 0, research=research,
+            foreign_pool_trades=(sum(p.count for pid, p in tok.pools.items() if pid not in named)
+                                 + tok.other_pool_trades) if named else 0,
+            unverified_pool_trades=(sum(p.count for p in tok.pools.values()) + tok.other_pool_trades)
+            if not named else 0, research=research,
             observed_ns=observed_ns, processing_ns=processing_ns)
 
     def _complete(self, tok: _Token) -> bool:
