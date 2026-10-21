@@ -1,0 +1,24 @@
+VERDICT: PASS
+
+No reproducible CRITICAL, HIGH, MEDIUM or LOW defect remains in scope at `4fa8bf5`. Reviewed the full `cf4569c..HEAD` diff for `jinx`, `tests` and `docs`. Repository files remained unchanged.
+
+| Prior finding | Disposition and evidence |
+|---|---|
+| **R10-1 — false zero sells beyond wallet cap** | **FIXED.** `jinx/intel/migration.py:869` returns `UNAVAILABLE` with no numerical tally for untracked wallets; incomplete tracked tallies are qualified. Creator and holder views use it at `:861`, `:890`, `:891`. Reproductions pass: `tests/test_review_phase2_intel_round10.py:22`, `:34`, `:54`. |
+| **R10-2 — resend inflates pool count** | **FIXED.** Horizon detection sets `counted=False` at `jinx/intel/migration.py:399`; `_Pool.add` separates counted and uncounted deliveries at `:304`; overflow pools follow the same policy at `:684`. Evidence exposes `pool_trades_uncounted` at `:849`. Reproduction passes: `tests/test_review_phase2_intel_round10.py:43`. |
+
+| Requested check | Result and file:line evidence |
+|---|---|
+| **1. B-02** | Exact inclusive current comparison: `jinx/intel/early_momentum.py:482`; strictly-above historical peak rejection and incomplete-history blocking: `:494`; migrated exclusion and decision-time recheck: `:514`. Verified reserve provenance excludes virtual substitution: `jinx/intel/readings.py:93`. Boundary tests pass at `tests/test_b02_reserve_policy.py:51`, `:59`. |
+| **2. Migration merging, effects and clocks** | Distinct report identities: `jinx/adapters/pumpapi/normalize.py:98`, `jinx/core/events.py:81`. Reports merge and effects deduplicate at `jinx/intel/migration.py:592`; clock preference at `:117`; lifecycle preserves provider time at `jinx/core/lifecycle.py:241`. RAM bus/store reproduction confirmed partial-first enrichment, two rejected resends, three notifications, one holder request and one pool request. |
+| **Other identity consumers** | Registries exclude migration statistics: `jinx/registry.py:66`, `:135`; whales consume migration candidates once: `jinx/intel/whales.py:129`; bundles filter unrelated events: `jinx/intel/bundles.py:55`. Store and recovery retain identity-based application: `jinx/store.py:346`, `jinx/core_state.py:30`, `jinx/recovery.py:30`. No additional regression established. |
+| **3. Graduation** | Provider category controls near-graduation at `jinx/intel/graduation.py:223`; default points remain unresolved at `:209`. Progress at `:84` matches the pinned D3AD constants/cap and Mako calculation. No invented threshold or default scoring formula found. |
+| **4. Creator and common funders** | Creator participation counts and is flagged: `jinx/intel/early_momentum.py:448`. Shared verified funders fail; missing data remains unavailable: `:532`. Emergency flag: `:191`. Relevant tests pass. |
+| **5. Sells and ownership** | Actual sellers and sizes, without invented danger classification: `jinx/intel/migration.py:805`. Verified balances remain separate from explicitly qualified observed flow: `:882`, `:897`. |
+| **6. Engine integration** | All three trackers subscribe on FAST after core state: `jinx/app.py:102`, `:107`, `:112`, `:115`. Shared evidence reaches candidates, entry checks, migration views and health: `:237`, `:292`, `:326`, `:516`. GMGN requests run through bounded background admission at `:213`; polling runs separately at `:413`. No tracker connection to order placement or sizing found. |
+| **7. Bounds and correctness** | Reviewed `_same_trade`/`_held` (`jinx/intel/migration.py:276`), counted flow (`:557`), wallet cap (`:571`), and tally uncertainty (`:869`). Untallied overflow conservatively qualifies every affected answer. Independent signed-key and 64/65-entry transition checks passed for `jinx/intel/bounded.py:55`. Slotted serialization and memory tests pass. |
+| **8. Documentation** | C05/C10/M1/M2/M3 claims at `docs/SOURCE_FIDELITY_MATRIX.md:42`, `:47`, `:70`, `:71`, `:72` are supported within scope. Updated deduplication/tally qualifications at `docs/evidence/PHASE2_MOMENTUM_MIGRATION.md:116` match implementation. Historical deployment and performance statements were not independently remeasured. |
+
+Validation: **205 tests passed**. Four filesystem-dependent tests were blocked by temporary-directory permissions; app integration collection was blocked by denied access to installed `psycopg`. RAM-only integration checks passed. Committed capture replay processed **1,211 events**, produced **38 detections**, tracked **118 graduation mints**, and permitted **zero entries**.
+
+This verdict covers the reviewed code, not deployment verification or owner Phase 2 acceptance.

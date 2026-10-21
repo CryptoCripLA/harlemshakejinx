@@ -210,6 +210,15 @@ trade behind the window is `may be incomplete`, and the creator's view follows t
 the window could add 1 to a pool-trade count; such trades are now counted separately as `pool_trades_uncounted`
 (`tests/test_review_phase2_intel_round10.py`).
 
+**Codex round 11 on 4fa8bf5 (`docs/audits/phase2-intel-codex-20261021-round11.md`): VERDICT: PASS** — R10-1 and R10-2
+confirmed FIXED; the whole diff since the round-8 PASS (cf4569c..4fa8bf5: the RAM work and the round 9–10 fixes)
+reviewed with no CRITICAL, HIGH, MEDIUM or LOW defect in scope; B-02, migration merging, graduation, creator and
+funders, sells and ownership, engine wiring (no tracker reaches order placement or sizing), bounds and this document
+checked with file:line evidence. Codex ran 205 tests in its sandbox (the app tests and four temporary-directory tests
+were blocked there, as in round 8; they pass in the full suite on jinx-nyc: 625 passed, 1 skipped at 4fa8bf5) and
+replayed the committed capture: 1,211 events, 38 detections, 118 graduation mints, zero entries permitted. The verdict
+covers the reviewed code; it is not deployment verification or the owner's Phase 2 acceptance.
+
 ## RAM (owner storage rule 2)
 
 Contabo, running cd21cf2 on 2026-10-21 (~08:40 UTC): process 546 MB of the 1 GB RAM budget, growing ~400 MB/h with
