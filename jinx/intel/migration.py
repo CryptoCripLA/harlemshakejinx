@@ -308,7 +308,7 @@ class _Token:
         self.sells: list[Trade] = []               # largest sells, ranked at arrival, independent of trade caps
         self.verified_holders: dict | None = None  # GMGN balances
         self.receipt_creation_after_gap = False    # creation timed only by JINX's receipt, after a gap
-        self.m3_ref: tuple[int, Trade] | None = None   # (due time, reference) tracked as trades arrive (M3 only)
+        self.m3: tuple[int, Trade | None, str] | None = None   # M3 only: (due time, reference, status)
         self.detection: tuple[int, int] | None = None   # (observed_ns, processing_ns) of the first report
 
 
@@ -569,6 +569,8 @@ class MigrationTracker:
                 self._life(tok, Kind.MIGRATION_CONFIRMED, report.source, report.observed_ns, report.event_ns,
                            report.clock, {"post_pool": report.pool_id, "exchange": report.venue or PUMPSWAP_VENUE})
         out += self._reverify(tok)
+        if self.confirmation_delay_ms is not None and tok.migration.pool_id is not None:
+            self._research_reference(tok, tok.migration)          # settle M3 for the new migration time now
         if not tok.migration.pools_named:
             self._call(self.request_pool, tok.life.mint)
         return out
@@ -594,27 +596,33 @@ class MigrationTracker:
         reports.remove(victim)
         return True
 
+    LOST = "not determinable"
+
     def _research_reference(self, tok: _Token, m: MigrationTx) -> tuple[Trade | None, str]:
         """M3: the earliest qualifying pool trade at or after migration + delay, for the current record (round 4,
-        R4-2). Taken from the kept trades and from a reference tracked as trades arrive, so a cap on kept trades
-        cannot hide it (round 5, R5-2); when neither can answer, the status says so instead of a silent None."""
+        R4-2), from the kept trades and from the reference tracked as trades arrive (round 5, R5-2). When the
+        migration time changed after trades past the new boundary had left the kept set, the first one cannot be
+        known; that answer is kept for this migration time, so a later trade is never reported in its place
+        (round 6, R6-1)."""
         due = m.event_ns + self.confirmation_delay_ms * 1_000_000
+        if tok.m3 is not None and tok.m3[0] == due and tok.m3[2].startswith(self.LOST):
+            return None, tok.m3[2]
         pool = tok.pools.get(m.pool_id) if m.pool_id else None
         kept = next((t for t in pool.full if t.event_ns >= due and self._ordered(t, m)), None) if pool else None
         tracked = None
-        if tok.m3_ref is not None and tok.m3_ref[0] == due:
-            t = tok.m3_ref[1]
+        if tok.m3 is not None and tok.m3[0] == due and tok.m3[1] is not None:
+            t = tok.m3[1]
             if t.pool_id == m.pool_id and self._qualifies(t, m):
                 tracked = t
         found = [t for t in (kept, tracked) if t is not None]
         if found:
-            ref = min(found, key=lambda t: t.key)
-            tok.m3_ref = (due, ref)
-            return ref, "found"
-        if pool is not None and len(pool.full) >= pool.cap and pool.full[-1].event_ns < due:
-            return None, (f"not determinable: the first {pool.cap} trades kept on the pool all came before "
-                          "migration + delay, and none was tracked for the current migration time")
-        return None, "no qualifying trade yet"
+            tok.m3 = (due, min(found, key=lambda t: t.key), "found")
+        elif pool is not None and len(pool.full) >= pool.cap and pool.full[-1].event_ns < due:
+            tok.m3 = (due, None, f"{self.LOST}: trades past migration + delay left the {pool.cap} kept on the pool "
+                                 "before the migration time was known")
+        else:
+            tok.m3 = (due, None, "no qualifying trade yet")
+        return tok.m3[1], tok.m3[2]
 
     def _pool_trade(self, tok: _Token, trade: Trade) -> list[MigrationEvidence]:
         self._flow(tok, trade)                                   # a PumpSwap trade is after the migration
@@ -629,13 +637,14 @@ class MigrationTracker:
             return []
         if self.confirmation_delay_ms is not None and trade.pool_id == tok.migration.pool_id \
                 and self._qualifies(trade, tok.migration):
-            due = tok.migration.event_ns + self.confirmation_delay_ms * 1_000_000
-            if trade.event_ns >= due and (tok.m3_ref is None or tok.m3_ref[0] != due
-                                          or trade.key < tok.m3_ref[1].key):
-                if tok.m3_ref is not None and tok.m3_ref[0] != due:
-                    self._research_reference(tok, tok.migration)   # re-derive for the new time first
-                if tok.m3_ref is None or tok.m3_ref[0] != due or trade.key < tok.m3_ref[1].key:
-                    tok.m3_ref = (due, trade)
+            m = tok.migration
+            due = m.event_ns + self.confirmation_delay_ms * 1_000_000
+            if trade.event_ns >= due:
+                if tok.m3 is None or tok.m3[0] != due:
+                    self._research_reference(tok, m)              # the state for the current migration time
+                ref, status = tok.m3[1], tok.m3[2]
+                if not status.startswith(self.LOST) and (ref is None or trade.key < ref.key):
+                    tok.m3 = (due, trade, "found")
         out = self._reverify(tok)                                # a new verification posts its trades itself
         if not out and tok.verified_by is not None and tok.confirmed and trade.pool_id == tok.migration.pool_id \
                 and self._qualifies(trade, tok.migration):

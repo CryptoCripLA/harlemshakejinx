@@ -118,9 +118,10 @@ first; Early Momentum itself remembers a migration even when it arrives before t
   is never inflated. The seller's creator flag and phase are read when the evidence is built, so they follow facts
   that arrive later.
 - **M3:** off by default; `confirmation_delay_ms` names a paper reference trade (`live_policy: False`) for the current
-  record, taken from the kept trades (4,096 per pool with M3 on) and from a reference tracked as trades arrive; when
-  neither can answer (the migration time changed after the reference left the kept trades), `reference_status` says
-  "not determinable" instead of returning nothing silently.
+  record, taken from the kept trades (4,096 per pool with M3 on) and from a reference tracked as trades arrive. When
+  the migration time changes after trades past the new boundary have left the kept set, the first such trade cannot
+  be known: `reference_status` says "not determinable", and that answer stands for that migration time, so a later
+  trade is never reported in its place.
 - **Measured:** live module run at 254434f (600 s): 8 migrations, 8 verified; migrate to evidence p50 45.4 ms; first
   pool trade p50 1 slot / 245 ms after the migrate (max 5 slots / 1,056 ms).
 
@@ -168,7 +169,13 @@ Codex round 5 on be5eff9 (`docs/audits/phase2-intel-codex-20261021-round5.md`): 
 confirmed FIXED. R5-1 was right that net reserve equality cannot prove a complete history (an unseen round trip
 restores it), so the continuity exception was removed: a receipt-only creation after a gap is unprovable and blocked
 in both trackers. R5-2: the M3 reference is also tracked as trades arrive, with an explicit status when it cannot be
-determined (`tests/test_review_phase2_intel_round5.py`). Later rounds are listed in `docs/audits/`.
+determined (`tests/test_review_phase2_intel_round5.py`).
+
+Codex round 6 on 872be0d (`docs/audits/phase2-intel-codex-20261021-round6.md`): FAIL with 1 MEDIUM only (no HIGH; F1,
+R3-2, R4-1, R5-1 confirmed FIXED): R6-1, in the off-by-default M3 variant, a later trade could replace an
+undeterminable reference after the migration time changed. Fixed: "not determinable" stands for that migration time
+and the reference is settled as soon as the record's time changes (`tests/test_review_phase2_intel_round6.py`).
+Later rounds are listed in `docs/audits/`.
 
 ## Deployment
 
