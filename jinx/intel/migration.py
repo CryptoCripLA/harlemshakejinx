@@ -270,6 +270,21 @@ class _Flow:
         return self.bought_pre + self.bought_post - self.pre_tok - self.post_tok
 
 
+def _same_trade(a: Trade, b: Trade) -> bool:
+    return (a.signature, a.fee_payer, a.side, a.token_amount, a.event_ns) == \
+        (b.signature, b.fee_payer, b.side, b.token_amount, b.event_ns)
+
+
+def _held(kept: list[Trade], trade: Trade) -> bool:
+    """Whether the same trade is already in a list sorted by key (resends share the event time)."""
+    i = bisect.bisect_left(kept, trade.event_ns, key=lambda t: t.event_ns)
+    while i < len(kept) and kept[i].event_ns == trade.event_ns:
+        if _same_trade(kept[i], trade):
+            return True
+        i += 1
+    return False
+
+
 class _Pool:
     """PumpSwap trades on one pool, kept as the earliest by event time (not by arrival), so a late-delivered earlier
     trade still counts; trades with both reserves are kept apart so verification evidence is never crowded out."""
@@ -283,9 +298,11 @@ class _Pool:
         self.cap = cap
 
     def add(self, trade: Trade) -> None:
-        self.count += 1
         lists = (self.all, self.full) if (trade.quote_reserve_lamports is not None
                                           and trade.token_reserve is not None) else (self.all,)
+        if _held(self.all, trade) or _held(self.full, trade):
+            return                                           # the same trade again (a resend): kept once
+        self.count += 1
         for kept in lists:
             bisect.insort(kept, trade, key=lambda t: t.key)
             if len(kept) > self.cap:
@@ -367,20 +384,23 @@ class MigrationTracker:
         if ident in tok.seen:
             self.stats["duplicates"] += 1
             return []
+        counted = True
         if tok.seen_floor is not None and trade.event_ns <= tok.seen_floor:
-            # older than the duplicate-detection window: it may be a resend, so it is not counted, and the token's
-            # flow is marked incomplete instead of possibly counting a trade twice
+            # older than the duplicate-detection window: it may be a resend, so it is left out of the wallet tallies
+            # and the token's flow is marked incomplete; it still counts as ordering evidence (pool and sell lists
+            # deduplicate by the trade itself), so a genuinely new old trade is never lost (round 9, R9-1)
             self.stats["beyond_dedup_horizon"] += 1
-            self._incomplete(tok, "a trade older than the duplicate-detection window arrived and was not counted")
-            return []
+            self._incomplete(tok, "a trade older than the duplicate-detection window arrived; it is left out of the "
+                                  "wallet tallies")
+            counted = False
         old_ns = tok.seen.add(ident, trade.event_ns)
         if old_ns is not None:
             tok.seen_floor = max(tok.seen_floor or old_ns, old_ns)
         if is_curve(ev):
-            self._curve_trade(tok, trade, ev)
+            self._curve_trade(tok, trade, ev, counted)
             return []
         if venue(ev) == PUMPSWAP_VENUE:
-            return self._pool_trade(tok, trade)
+            return self._pool_trade(tok, trade, counted)
         return []
 
     def record_report(self, mint: str, source: str, event_ns: int, clock: Clock, observed_ns: int,
@@ -506,12 +526,12 @@ class MigrationTracker:
             self.stats["lifecycle_refused"] += 1
             return False
 
-    def _curve_trade(self, tok: _Token, trade: Trade, ev: MarketEvent) -> None:
+    def _curve_trade(self, tok: _Token, trade: Trade, ev: MarketEvent, counted: bool = True) -> None:
         tok.curve_pool = tok.curve_pool or trade.pool_id
         tok.peak_v = max(tok.peak_v, trade.v_sol_lamports)
         if tok.latest_curve is None or trade.key > tok.latest_curve.key:
             tok.latest_curve = trade
-        self._flow(tok, trade)
+        self._flow(tok, trade, counted)
         self._observe(tok, Kind.ON_CURVE, ev, {"v_sol_lamports": ev.v_sol_lamports, "pre_pool": trade.pool_id,
                                                "liquidity": trade.quote_reserve_lamports})
 
@@ -523,12 +543,14 @@ class MigrationTracker:
         m = tok.migration
         return m is not None and trade.slot is not None and m.slot is not None and trade.slot > m.slot
 
-    def _flow(self, tok: _Token, trade: Trade) -> None:
+    def _flow(self, tok: _Token, trade: Trade, counted: bool = True) -> None:
         after = self._after_migration(tok, trade)
-        if trade.side is Side.SELL:
+        if trade.side is Side.SELL and not any(_same_trade(t, trade) for t in tok.sells):
             tok.sells.append(trade)
             tok.sells.sort(key=lambda t: (-t.sol_lamports, t.key))
             del tok.sells[2 * TOP_SELLS:]
+        if not counted:
+            return                                           # left out of the wallet tallies (dedup horizon)
         f = tok.flow.get(trade.fee_payer)
         if f is None:
             if len(tok.flow) >= self.max_wallets:
@@ -638,8 +660,8 @@ class MigrationTracker:
             tok.m3 = (due, None, "no qualifying trade yet")
         return tok.m3[1], tok.m3[2]
 
-    def _pool_trade(self, tok: _Token, trade: Trade) -> list[MigrationEvidence]:
-        self._flow(tok, trade)                                   # a PumpSwap trade is after the migration
+    def _pool_trade(self, tok: _Token, trade: Trade, counted: bool = True) -> list[MigrationEvidence]:
+        self._flow(tok, trade, counted)                          # a PumpSwap trade is after the migration
         pool = tok.pools.get(trade.pool_id)
         if pool is None and trade.pool_id is not None and len(tok.pools) < MAX_POOLS:
             pool = tok.pools[trade.pool_id] = _Pool(self.max_pool)

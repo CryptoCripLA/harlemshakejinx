@@ -113,9 +113,10 @@ first; Early Momentum itself remembers a migration even when it arrives before t
   concentration from GMGN top-holder balances where available, pool accounts kept apart from wallets (owner item 8),
   and separately the observed trade flow, labelled not proof of ownership, incomplete after a feed gap, with an
   at-migration view computed from trades before the migration; the first 20 pool trades with slot and time offsets.
-  Duplicates: a trade delivered again within the token's identity window (the last 2 × (256 + 256) trade identities)
-  is counted once; one older than that window is not counted and the token's flow is marked incomplete, so a total
-  is never inflated. The seller's creator flag and phase are read when the evidence is built, so they follow facts
+  Duplicates: a trade delivered again within the token's identity window (the last 512 trade identities) is counted
+  once; one older than that window is left out of the wallet tallies and the token's flow is marked incomplete, so a
+  total is never inflated, while it still counts as ordering evidence (pool and sell lists hold each trade once), so
+  a genuinely new old trade still decides the first verified liquidity. The seller's creator flag and phase are read when the evidence is built, so they follow facts
   that arrive later.
 - **M3:** off by default; `confirmation_delay_ms` names a paper reference trade (`live_policy: False`) for the current
   record, taken from the kept trades (4,096 per pool with M3 on) and from a reference tracked as trades arrive. When
