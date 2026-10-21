@@ -228,3 +228,239 @@ Notes the owner pasted with it:
 > 10. Redeploy only the verified paper-mode build to Contabo. Keep live trading OFF.
 > YOUR DELIVERY — Show me: the three modules connected to the actual running engine; B-02 implemented and tested; migration deduplication fixed; real detected events flowing through shared JINX state; safety and blocked-trade behavior; full test results; measured processing delays; remaining genuine blockers; independent review verdict.
 > Do not call Phase 2 complete merely because the modules exist. Do not start Phase 3 without approval. No additional infrastructure. No new phases. No competing engines. No strategy invention.
+
+## Storage repair, BigMac exit install, Phase 3 and Phase 4 agents (owner, 2026-10-21 ~14:30 UTC, to the momentum/migration session; verbatim)
+
+Source: `C:\Users\kevin\ClaudeDrop\DELEGATE 1AGENT TO FINISH PHASE 3 A.txt`, sha256 `adc49b94a522ad44491bea39d1898ac7928070801f78d64d13eac61328bd80f8` (13,061 bytes, CRLF). Quoted below with LF line endings. The code fragment inside it is owner-supplied Python for `jinx/exits/bigmac_exit.py`; its closing `return None, new_peak` line sits at the very end of the file in the original.
+
+How it is carried out: `docs/AGENT_COORDINATION.md` (who builds what, file ownership). This order supersedes the earlier "do not start Phase 3" instruction: the owner ordered Phase 3 and Phase 4 to be built now by delegated agents. Each phase still closes with an independent Codex review and the owner's acceptance.
+
+> DELEGATE 1AGENT TO FINISH PHASE 3 AND AGENT FOR PHASE 4 THEY ALL INVOKE SKILLS N MUST SHOW ME NOT JUST VLINDLY SAY EQUPIING SKILLS . U NEED A PLAN BECUASE YOU ARENT GETTING THIS U KEEP CODING LIKE A SECOND GRADER AND TAKING FOREVER JINX SHOULD HAVE BEEN BUILD ALREADY.. THIS IS COMMON SENSE SHIT CLAUDE ITS LIKE YOU DEFAULT TO THE WORST DUMBEST 5TH GRADE CHOICE THAT EXIST. JINX — STORAGE REPAIR ORDER. EXECUTE, DON'T REPLAN.
+> Claude, stop Plan Mode and implement this correction in the existing Phase 2.
+> THIS IS A MEMORY ARCHITECTURE REPAIR. IT IS NOT AN EXIT-STRATEGY DECISION. BEFORE U DO ANYTHING DEPLOY AGENTS TO COMPLETE PHASE 3 AND 4!!!!!!!!!!!!!!!! FIX MY FUCKING STORAGE CATASROPHY U MADE  MAKE SURE YOU OR ANY OTHER AGENT NEVER MAKES THE SAME DUMB ASS MISTAKE YOU MADE
+> Do not ask me about stop-loss percentages, five-minute test exits or additional infrastructure before fixing storage.
+> 1. FIX THESE SPECIFIC FILES
+> jinx/core/dedup.py
+> Replace the 200,000-key permanent rolling collection with an expiring, bounded duplicate filter. Initially test a 120-second expiry and a 16,000-key capacity against measured duplicate delivery and feed rates.
+> Keep durable order-intent and fill idempotency in the trading ledger. Never rely on an expiring event cache to prevent duplicate actual orders.
+> jinx/core/bus.py
+> Remove the two 100,000-sample latency arrays.
+> Use constant-memory rolling counters/histograms for p50, p95, p99 and queue diagnostics.
+> Reduce oversized queue capacities based on measured throughput. Preserve fast-path events; prioritize exits and mandatory safety. If the system cannot keep up, backpressure or mark candidate evidence incomplete rather than silently treating dropped events as clean data.
+> jinx/intel/whales.py
+> Remove the massive general-purpose per-token buyer archive.
+> Preserve pinned and qualified tracked wallets, short-lived co-buy evidence, active candidate wallet relationships and GMGN references.
+> Query GMGN for historical wallet analysis instead of hoarding unrelated buyer histories.
+> jinx/intel/bundles.py
+> Stop retaining lists of full MarketEvent objects for thousands of unknown tokens.
+> Retain only bounded, short-lived event identifiers, wallet identities, slot information and bundle counters needed to establish the same-block relationship.
+> Evict expired pending groups.
+> jinx/intel/early_momentum.py
+> Remove the 20,000-token/two-hour general retention model.
+> Keep only active entry candidates, the required 30-second buy window with measured lateness allowance, current verified reserve, historical peak and history-completeness status.
+> Evict expired inactive candidates.
+> If peak history becomes incomplete, never mark that token eligible by assuming the missing history was safe.
+> jinx/intel/graduation.py and jinx/intel/migration.py
+> Replace broad historical trade collections with compact current-state records.
+> Keep relevant reserves, confirmed lifecycle, pool, essential migration timestamps, verified liquidity and necessary sell evidence.
+> Preserve active positions and unresolved migrations until safely reconciled.
+> jinx/store.py and market-memory consumers
+> Stop permanently saving every raw market event with full JSON payloads.
+> The durable trading ledger must retain orders, fills, costs, position ownership, paper balances and recovery records.
+> Normal raw market chatter is transient. Research history should be obtained from GMGN when needed, not copied into our local databases.
+> Do not destroy existing data until the replacement passes migration and recovery tests.
+> 2. ONE OWNER FOR EACH PIECE OF INFORMATION
+> Avoid duplicating full event objects across the bus, registries and intelligence modules.
+> Normalize each incoming event once.
+> Feed the necessary fields to each consumer.
+> Maintain one authoritative current token state.
+> Do not copy complete provider payloads into every tracker.
+> Use compact counters and records instead of growing transaction lists.
+> RAM IS A WORKBENCH. NOT A WAREHOUSE.
+> 3. HARD RESOURCE REQUIREMENTS
+> Contabo has a 1 GB RAM budget.
+> Use these initial engineering performance targets:
+> Target steady-state JINX RSS: approximately 200 MB or less if practical.
+> Investigate immediately above 256 MB.
+> Treat 384 MB as a resource guardrail requiring overload protection and diagnostics.
+> No sustained upward RSS growth at steady incoming traffic.
+> Every per-token collection must have explicit lifecycle expiry and a finite capacity.
+> Every queue must have a finite capacity and a defined overflow behavior.
+> Every cache must have explicit invalidation and completeness handling.
+> Open positions and pending orders must not be evicted merely to meet a market-cache limit.
+> These are engineering memory budgets, not trading-entry rules. Measure and adjust based on actual correctness and traffic.
+> No silent dropping of critical exits.
+> 4. PROVE THE REPAIR
+> Run the existing tests plus:
+> A high-volume replay equivalent to at least two hours of observed traffic.
+> A sustained live-feed memory test.
+> Repeated migrations and token revivals.
+> Duplicate and out-of-order events.
+> Restart with active positions.
+> Feed interruption and recovery.
+> Cache eviction during a pending entry.
+> Heavy whale/bundle activity.
+> Cloud database interruption.
+> Show before-and-after RSS, memory consumption by subsystem, candidate count, queue depth, event loss, and p99 processing latency.
+> Show that memory stabilizes instead of growing continuously.
+> Do not pass by merely raising the memory warning threshold.
+> 5. NO SERVER WIPE
+> Do not erase Contabo, Neon, Railway, Redis, credentials or existing trading ledgers.
+> Perform a versioned application deployment after tests pass, with a rollback path.
+> Remove obsolete raw market storage only after ensuring that trading records and necessary recovery state are preserved.
+> No new services. No fifth phase.
+> 6. PAPER EXIT QUESTION — NOT A STORAGE BLOCKER
+> Stop tying the storage repair to unspecified exit parameters.
+> Preserve approved CHAD exits.
+> For buy/sell plumbing tests, use explicit TEST-ONLY synthetic exit events or controlled scenarios to verify closing and reconciliation. Do not install a five-minute forced-exit policy as the default JINX strategy.
+> Continue building the existing AUTO + PAPER pipeline with live-money signing disabled.
+> No manufactured profitability claims.
+> 7. DELIVERY
+> I want one concise report:
+> Files changed.
+> Memory before.
+> Memory after.
+> Largest collections eliminated.
+> Test count and failures.
+> Sustained RAM trend.
+> Processing latency.
+> Position/ledger recovery verified.
+> Deployment commit.
+> Codex verdict.
+> Fix failures before requesting review.
+> DO NOT SPEND ANOTHER SESSION RESEARCHING EXIT STRATEGIES. GROK HANDLES THAT.
+> YOUR ASSIGNMENT IS TO REPAIR STORAGE, PROVE IT, AND KEEP JINX FAST.
+> SMALL MEMORY. FAST DECISIONS. NO LOST POSITIONS. NO DATA WAREHOUSE.# jinx/exits/bigmac_exit.py
+> # Port of bigmacman1129/helpers/exit-strategy.ts evaluateExit()
+> # MIT. No grace periods. No suppressions. Peak = max observed.
+>
+> from dataclasses import dataclass
+> from decimal import Decimal
+> from typing import Optional
+> from enum import Enum
+>
+> class ExitReason(str, Enum):
+>     STOP_LOSS = "stop_loss"
+>     TAKE_PROFIT = "take_profit"
+>     TRAILING_STOP = "trailing_stop"
+>
+> @dataclass
+> class ExitIntent:
+>     position_id: str
+>     source_strategy: str
+>     triggering_evidence: str
+>     required_sell_pct: Decimal          # 0–1
+>     event_timestamp: int
+>     exit_urgency: str                   # "normal" | "protective"
+>     previously_executed_fraction: Decimal
+>     remaining_confirmed_balance: Decimal
+>     reason_code: ExitReason
+>     idempotency_id: str
+>     venue: str
+>     quote_status: str
+>
+> def apply_percent(amount: Decimal, percent: float, add: bool) -> Decimal:
+>     """Exact equivalent of the original applyPercent (bigint version)."""
+>     factor = Decimal(percent) / Decimal(100)
+>     delta = amount * factor
+>     return amount + delta if add else amount - delta
+>
+> def evaluate_exit(
+>     current: Decimal,
+>     entry: Decimal,
+>     peak: Decimal,
+>     take_profit_pct: float,
+>     stop_loss_pct: float,
+>     trailing_stop_pct: float,
+>     trailing_stop_activation_pct: float,
+> ) -> tuple[Optional[ExitReason], Decimal]:
+>     """
+>     Source-faithful port of evaluateExit().
+>     Returns (reason or None, updated_peak).
+>     """
+>     new_peak = max(current, peak)
+>
+>     stop_loss_price = apply_percent(entry, stop_loss_pct, add=False)
+>     if current <= stop_loss_price:
+>         return ExitReason.STOP_LOSS, new_peak
+>
+>     if take_profit_pct > 0:
+>         take_profit_price = apply_percent(entry, take_profit_pct, add=True)
+>         if current >= take_profit_price:
+>             return ExitReason.TAKE_PROFIT, new_peak
+>
+>     if trailing_stop_pct > 0:
+>         activation = apply_percent(entry, trailing_stop_activation_pct, add=True)
+>         if new_peak >= activation:
+>             trail_floor = apply_percent(new_peak, trailing_stop_pct, add=False)
+>             if current <= trail_floor:
+>                 return ExitReason.TRAILING_STOP, new_peakThe math isn't exactly copied. BigMac's original code rounds percentages down to whole numbers and uses integer arithmetic. Grok's Python version uses fractional decimal percentages. That can change when JINX sells. Claude must match the original arithmetic and prove it with identical test inputs.
+> GitHub
+>
+> The license header is wrong. Grok labels the port MIT, but the repository's actual LICENSE.md is Microsoft Public License (Ms-PL). Preserve the correct license and attribution.
+> GitHub
+>
+> The good news: the main decision order matches the source—stop-loss first, take-profit second, activated trailing stop third.
+> Also, what you've pasted defines the exit calculation and ExitIntent structure. It doesn't yet create an exit intent or execute a paper sale. Claude must wire those pieces together.JINX — INSTALL THE PROVIDED BIGMAC EXIT CODE NOW
+> Claude, the owner has supplied the actual bigmac_exit.py source.
+> STOP RESEARCHING. STOP SELECTING REPOSITORIES. DO NOT REBUILD OUR PAPER ENGINE.
+> Integrate this code into the existing JINX system during the current build phase.
+> 1. Fix two source-fidelity errors
+> Original source:
+> https://github.com/bigmacman1129/solana-sniper-trading-mev-bot/blob/main/helpers/exit-strategy.ts
+> Correct the license declaration to Ms-PL and preserve its required notices.
+> Correct apply_percent() to match the original TypeScript applyPercent() integer rounding, clamping and division semantics.
+> Test Python versus the original source at percentage boundaries, fractional percentages, exact stop prices and trailing activation prices.
+> Do not silently change the strategy while fixing the arithmetic.
+> 2. Integrate with JINX
+> The supplied evaluate_exit() is the exit-decision function.
+> Connect it to the existing paper position monitor.
+> On each valid price update:
+> Read the open position.
+> Read its entry price and persisted highest observed price.
+> Evaluate mandatory CHAD protective exits.
+> If none triggers, evaluate BigMac's selected paper policy.
+> Update the recorded price peak.
+> Generate one ExitIntent if an exit triggers.
+> Send that intent to JINX's EXISTING paper order coordinator.
+> Simulate the fill, including applicable fees and slippage.
+> Reconcile remaining tokens, proceeds and paper P&L.
+> Do not create a second execution gateway or position ledger.
+> 3. Preserve protection
+> No fabricated exit thresholds.
+> No grace-period suppression.
+> No duplicate exit submission.
+> No selling more tokens than remain.
+> No treating an unconfirmed order as filled.
+> No forgetting the peak after restart.
+> No selling positions belonging to another strategy.
+> No live signing or live orders.
+> Keep the BigMac policy labeled BIGMAC_PAPER. Its numerical settings must be explicitly configured for paper testing, not inherited as live trading defaults.
+> If a necessary setting is missing, test with an explicitly labeled fixture instead of inventing production parameters.
+> 4. Run the actual trading test
+> Configuration:
+> STRATEGY=AUTO
+> EXECUTION=PAPER
+> LIVE_SIGNING=DISABLED
+> Run:
+> PAPER BUY → PRICE CHANGES → HARD STOP / TAKE PROFIT / TRAILING STOP → PAPER SELL → LEDGER RECONCILIATION
+> Test all three exits separately, including cases where multiple conditions are true.
+> Also verify that OFF prevents new entries but does not stop protective monitoring of existing positions.
+> 5. Do not turn this into another project
+> The memory repair continues separately. Coordinate file ownership so the storage agent and exit-integration agent do not overwrite each other's changes.
+> Use existing infrastructure.
+> Keep the four phases unchanged.
+> 6. Completion proof
+> Report only:
+> Files installed and modified.
+> Source-equivalence tests.
+> Integration test results.
+> A completed paper-trade example.
+> Final simulated wallet balance and P&L.
+> Ledger reconciliation status.
+> Commit SHA.
+> Remaining blockers.
+> NO MORE RESEARCH. INSTALL THE EXIT LOGIC AND GET THE PAPER BUY/SELL LOOP WORKING.
+> ENTER EARLY. EXIT SMARTER.
+>
+>     return None, new_peak
