@@ -31,6 +31,7 @@ from jinx.adapters.gmgn.adapter import GmgnAdapter
 from jinx.adapters.mako.feed import MakoPumpPortalFeed
 from jinx.adapters.neonai.gateway import NeonAiGateway
 from jinx.adapters.pumpapi.feed import PumpApiFeed
+from jinx.adapters.rugcheck.client import RugCheckClient
 from jinx.core.bus import EventBus, Lane
 from jinx.core_state import CoreState
 from jinx.execution import ExecutionGateway
@@ -117,7 +118,8 @@ class JinxApp:
             await self.gmgn.start()
         self._build_services()
         # CHAD C01/C08: candidates get their safety and developer check in parallel, from GMGN, off the trading path
-        self.safety = SafetyService(self.gmgn) if self.gmgn.running else None
+        self.rugcheck = RugCheckClient() if s.rugcheck_enabled else None
+        self.safety = SafetyService(self.gmgn, rugcheck=self.rugcheck) if self.gmgn.running else None
         self._tasks = {"bus": asyncio.create_task(self.bus.run(), name="bus"),
                        "mako-feed": asyncio.create_task(self.feed.run(), name="mako-feed"),
                        "status": asyncio.create_task(self._status_loop(), name="status")}
@@ -125,6 +127,8 @@ class JinxApp:
             self._tasks["pumpapi-feed"] = asyncio.create_task(self.pumpapi.run(), name="pumpapi-feed")
         if self.replicator is not None:
             self._tasks["postgres"] = asyncio.create_task(self.replicator.run(), name="postgres")
+        if self.rugcheck is not None:
+            self._tasks["rugcheck"] = asyncio.create_task(self.rugcheck.run(), name="rugcheck")
         if self.safety is not None:
             self._tasks["whale-discovery"] = asyncio.create_task(self._whale_discovery_loop(), name="whale-discovery")
         if self.ai_gateway is not None:
@@ -151,6 +155,13 @@ class JinxApp:
         log.info("services: postgres=%s research=%s redis=%s object_storage=%s ai_gateway=%s",
                  self.replicator is not None, self.research is not None, self.redis_state is not None,
                  self.backups is not None, self.ai_gateway is not None)
+
+    async def check_candidate(self, mint: str, creator: str | None, priority: int = 10):
+        """CHAD C01/C08 for one candidate before execution eligibility: GMGN security and developer history in
+        parallel, then RugCheck unless GMGN already vetoed it. Off the trading path; exits never call this."""
+        if self.safety is None:
+            return None
+        return await self.safety.evaluate(mint, creator, time.time(), priority=priority)
 
     async def _whale_discovery_loop(self) -> None:
         """CHAD: discovery "runs every 4 hours". Promoted whales persist in the research store and come back on start."""
@@ -185,6 +196,8 @@ class JinxApp:
         adapters = [self.feed.health(), await self.gmgn.health(), self.d3ad.health(), self.datanomad.health()]
         if getattr(self, "pumpapi", None) is not None:
             adapters.append(self.pumpapi.health())
+        if getattr(self, "rugcheck", None) is not None:
+            adapters.append(self.rugcheck.health())
         h = build_health(self.store, self.ledger, self.wallet, adapters, self.bus.stats, time.time_ns(),
                          latency_ns=self.bus.latency_ns(Lane.FAST),
                          feed_stale_after_ns=self.s.feed_stale_after_s * 1_000_000_000,
@@ -317,6 +330,8 @@ class JinxApp:
     def _supervise(self) -> None:
         """Restart the bus or feed task if it ended unexpectedly (an exception, not a cancel)."""
         starters = {"bus": lambda: self.bus.run(), "mako-feed": lambda: self.feed.run()}
+        if getattr(self, "rugcheck", None) is not None:
+            starters["rugcheck"] = lambda: self.rugcheck.run()
         if getattr(self, "pumpapi", None) is not None:
             starters["pumpapi-feed"] = lambda: self.pumpapi.run()
         if self.replicator is not None:

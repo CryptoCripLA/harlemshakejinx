@@ -1,0 +1,76 @@
+{
+ "_provenance": "RugCheck public API GET https://api.rugcheck.xyz/v1/tokens/{mint}/report, unauthenticated, live 2026-10-21 04:03 UTC; trimmed to the fields JINX parses; public on-chain data",
+ "report": {
+  "mint": "BRWwkoLwPRnnCxQddey7Vy63fjvuR1GpviFYoiYdpump",
+  "creator": "EjcwXG6ywzorxLcX7565C614LdhxiHF6uJhkYyRTDVgZ",
+  "rugged": false,
+  "score": 120167,
+  "score_normalised": 80,
+  "mintAuthority": null,
+  "freezeAuthority": null,
+  "risks": [
+   {
+    "name": "Creator history of rugged tokens",
+    "value": "",
+    "description": "Creator has a history of rugging tokens.",
+    "score": 115200,
+    "level": "danger"
+   },
+   {
+    "name": "Single holder ownership",
+    "value": "49.66%",
+    "description": "One user holds a large amount of the token supply",
+    "score": 4966,
+    "level": "danger"
+   }
+  ],
+  "totalMarketLiquidity": 94.39705457166392,
+  "totalStableLiquidity": 1.0573432927196725e-07,
+  "totalLPProviders": 0,
+  "totalHolders": 4,
+  "detectedAt": "2026-10-21T00:22:34.1350678Z",
+  "tokenType": "",
+  "transferFee": {
+   "pct": 0,
+   "maxAmount": 0,
+   "authority": "11111111111111111111111111111111"
+  },
+  "markets": [
+   {
+    "pubkey": "6AdrGJZ9kqk4vddmmgGsoghBdxjGBKtK8NEyD1BoLAgt",
+    "marketType": "pump_fun",
+    "lp": {
+     "lpLockedPct": 100,
+     "lpLockedUSD": 94.39705457166392,
+     "baseUSD": 94.39705446592959,
+     "quoteUSD": 1.0573432927196725e-07
+    }
+   }
+  ]
+ },
+ "summary_bonk": {
+  "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+  "tokenType": "",
+  "risks": [
+   {
+    "name": "Mutable metadata",
+    "value": "",
+    "description": "Token metadata can be changed by the owner",
+    "score": 100,
+    "level": "warn"
+   }
+  ],
+  "score": 101,
+  "score_normalised": 7,
+  "lpLockedPct": 15.833647273489529
+ },
+ "bad_mint_400": {
+  "error": "invalid length, expected 32, got 6"
+ },
+ "latency_ms": {
+  "bonk_summary": 256.8,
+  "pump_summary": 234.2,
+  "pump_report": 86.0,
+  "bad_mint": 85.0
+ }
+}

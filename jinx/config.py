@@ -44,6 +44,7 @@ class Settings:
     market_event_ttl_s: int = 300      # applied raw events kept this long (cross-feed dedup window)
     market_idle_ttl_s: int = 7200      # tokens and wallets with no activity this long are evicted from RAM
     pumpapi_enabled: bool = True       # PumpAPI.io free stream (one connection per IP)
+    rugcheck_enabled: bool = True      # official public RugCheck API, 1 request/s unauthenticated (B-19)
     # RAM hard caps on top of the TTLs (owner storage rule 2: no unbounded caches). Engineering bounds, not strategy.
     market_max_events: int = 60_000    # ~2 KB each in the in-memory store (measured 2026-10-21) -> ~120 MB worst case
     market_max_tokens: int = 20_000
@@ -90,6 +91,7 @@ def load_settings(data_dir: str | None = None, port: int | None = None) -> Setti
         market_event_ttl_s=int(env.get("JINX_MARKET_EVENT_TTL_S") or 300),
         market_idle_ttl_s=int(env.get("JINX_MARKET_IDLE_TTL_S") or 7200),
         pumpapi_enabled=(env.get("JINX_PUMPAPI", "1") != "0"),
+        rugcheck_enabled=(env.get("JINX_RUGCHECK", "1") != "0"),
         market_max_events=int(env.get("JINX_MARKET_MAX_EVENTS") or 60_000),
         market_max_tokens=int(env.get("JINX_MARKET_MAX_TOKENS") or 20_000),
         market_max_wallets=int(env.get("JINX_MARKET_MAX_WALLETS") or 200_000),

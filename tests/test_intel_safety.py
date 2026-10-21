@@ -19,7 +19,7 @@ def with_(**kw):
     return {**SEC, **kw}
 
 
-def test_a_real_gmgn_security_report_passes_the_checks_it_covers_but_rugcheck_stays_unknown():
+def test_a_real_gmgn_security_report_without_a_rugcheck_report_stays_unknown():
     ev = assess("M", SEC, observed_ns=1)
     by = {c.name: c.verdict for c in ev.checks}
     assert by == {"honeypot": Verdict.PASS, "mint_authority": Verdict.PASS, "freeze_authority": Verdict.PASS,
@@ -97,3 +97,53 @@ def test_the_service_fetches_in_parallel_caches_briefly_and_turns_api_failures_i
     assert broken.safety.verdict is Verdict.UNKNOWN and "TimeoutError" in broken.safety.errors[0]
     assert len(svc._cache) <= 2                                             # bounded cache (owner storage rule 2)
     assert a.latency_ms is not None
+
+
+RC = json.loads((Path(__file__).parent / "fixtures" / "rugcheck_report_sample_20261021.json").read_text())["report"]
+
+
+class FakeGmgn:
+    def __init__(self, sec):
+        self.sec = sec
+
+    async def call(self, method, chain, address):
+        return self.sec if method == "getTokenSecurity" else CREATED
+
+
+class FakeRugCheck:
+    def __init__(self, result):
+        self.result, self.calls = result, []
+
+    async def report(self, mint, priority=10):
+        self.calls.append((mint, priority))
+        return self.result
+
+
+def test_rugcheck_completes_the_gate_and_a_full_pass_is_eligible():
+    from jinx.adapters.rugcheck.client import interpret
+    rc = FakeRugCheck(interpret(RC))
+    out = asyncio.run(SafetyService(FakeGmgn(SEC), rugcheck=rc).evaluate("M", "DEV", 2e9, priority=0))
+    assert out.safety.verdict is Verdict.PASS and out.safety.eligible
+    assert out.safety.facts["rugcheck"]["danger_findings"]          # recorded as evidence, not a veto
+    assert rc.calls == [("M", 0)]                                    # GMGN-clean fast-path candidate: top priority
+
+
+def test_a_gmgn_hard_veto_spends_no_rugcheck_request():
+    rc = FakeRugCheck({"verdict": "PASS"})
+    svc = SafetyService(FakeGmgn(with_(honeypot=1)), rugcheck=rc)
+    out = asyncio.run(svc.evaluate("M", "DEV", 2e9))
+    assert out.safety.verdict is Verdict.FAIL and rc.calls == [] and svc.stats["rugcheck_skipped_veto"] == 1
+
+
+def test_rugcheck_failures_and_rate_limits_never_pass():
+    from jinx.adapters.rugcheck.client import interpret, unknown
+    for result in (interpret({**RC, "rugged": True}), unknown("rate_limited"), unknown("timeout"), unknown("malformed")):
+        out = asyncio.run(SafetyService(FakeGmgn(SEC), rugcheck=FakeRugCheck(result)).evaluate("M", "DEV", 2e9))
+        assert not out.safety.eligible
+        assert out.safety.verdict is (Verdict.FAIL if result["verdict"] == "FAIL" else Verdict.UNKNOWN)
+
+
+def test_gmgn_unclear_candidates_queue_behind_clean_ones():
+    rc = FakeRugCheck({"verdict": "PASS", "facts": {}})
+    asyncio.run(SafetyService(FakeGmgn(with_(renounced_mint=None)), rugcheck=rc).evaluate("M", "DEV", 2e9, priority=0))
+    assert rc.calls == [("M", 1)]

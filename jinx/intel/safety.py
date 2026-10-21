@@ -5,15 +5,18 @@ candidate." Each named check is a predicate with three outcomes:
 
 - PASS     the data source says the token is clean on that check;
 - FAIL     the data source says it is not: a hard safety veto, the token can never be entered;
-- UNKNOWN  no data, unreadable data, or no approved source (RugCheck: B-19). Never treated as a pass.
+- UNKNOWN  no data, unreadable data, a timeout or rate limit. Never treated as a pass.
 
 The overall verdict is FAIL if any check fails, PASS only if every check passes, otherwise UNKNOWN; only PASS makes a
 token eligible. CHAD's 0-100 score and its pass threshold are not specified (B-03), so no score is produced.
 Holder concentration, taxes, flags and lock data are recorded as facts (R1) with no invented rejection threshold.
 
-Source of the data: GMGN `getTokenSecurity` (field formats pinned by
-tests/fixtures/gmgn_security_sample_20261021.json). `SafetyService` fetches security and developer history in
-parallel, off the trading path, with a short bounded cache.
+Sources: GMGN `getTokenSecurity` (formats pinned by tests/fixtures/gmgn_security_sample_20261021.json) and the
+official RugCheck API (B-19 resolved 2026-10-21; jinx/adapters/rugcheck/client.py maps only RugCheck's own `rugged`
+and authority findings, and records its score and risk findings as evidence). `SafetyService` fetches GMGN security
+and developer history in parallel, then RugCheck for every candidate GMGN has not already vetoed, prioritized by the
+caller's priority and GMGN's result (RugCheck's free tier allows one request per second). Off the trading path, with
+a short bounded cache.
 """
 from __future__ import annotations
 
@@ -110,8 +113,7 @@ def _renounced(sec: dict, name: str, key: str) -> Check:
 
 def _rugcheck(report: dict | None) -> Check:
     if not report:
-        return Check("rugcheck", Verdict.UNKNOWN, None, "none",
-                     "CHAD names RugCheck; no approved RugCheck source yet (B-19)")
+        return Check("rugcheck", Verdict.UNKNOWN, None, "rugcheck", "no RugCheck report")
     v = Verdict(report["verdict"]) if report.get("verdict") in Verdict.__members__ else Verdict.UNKNOWN
     return Check("rugcheck", v, report.get("verdict"), report.get("source", "rugcheck"), report.get("detail", ""))
 
@@ -135,6 +137,10 @@ def assess(mint: str, security: dict | None, observed_ns: int, rugcheck: dict | 
                      flags=list(sec.get("flags") or []), hide_risk=flag(sec.get("hide_risk")),
                      dev_token_burn_ratio=number(sec.get("dev_token_burn_ratio")),
                      lp_locked=flag(lock.get("is_locked")) if isinstance(lock, dict) else None)
+    if rugcheck:
+        facts["rugcheck"] = rugcheck.get("facts") or {}
+        if rugcheck.get("error"):
+            facts["rugcheck_error"] = rugcheck["error"]
     return SafetyEvidence(mint, verdict, checks, facts, observed_ns, tuple(errors))
 
 
@@ -152,10 +158,12 @@ class SafetyService:
     candidate waits for nothing here except its own eligibility. Failures become UNKNOWN with the error recorded.
     Results are cached for `cache_ttl_s` in a bounded LRU (owner storage rule 2)."""
 
-    def __init__(self, gmgn, cache_ttl_s: float = 60.0, max_entries: int = 2_000, timeout_s: float = 10.0) -> None:
-        self.gmgn, self.cache_ttl_s, self.max_entries, self.timeout_s = gmgn, cache_ttl_s, max_entries, timeout_s
+    def __init__(self, gmgn, rugcheck=None, cache_ttl_s: float = 60.0, max_entries: int = 2_000,
+                 timeout_s: float = 10.0) -> None:
+        self.gmgn, self.rugcheck = gmgn, rugcheck
+        self.cache_ttl_s, self.max_entries, self.timeout_s = cache_ttl_s, max_entries, timeout_s
         self._cache: OrderedDict[str, tuple[float, CandidateSafety]] = OrderedDict()
-        self.stats = {"evaluations": 0, "cache_hits": 0, "errors": 0}
+        self.stats = {"evaluations": 0, "cache_hits": 0, "errors": 0, "rugcheck_calls": 0, "rugcheck_skipped_veto": 0}
 
     async def _fetch(self, method: str, address: str):
         try:
@@ -165,7 +173,7 @@ class SafetyService:
             return None, f"{method}: {type(e).__name__}"
 
     async def evaluate(self, mint: str, creator: str | None, decision_ts_s: float,
-                       rugcheck: dict | None = None) -> CandidateSafety:
+                       rugcheck: dict | None = None, priority: int = 10) -> CandidateSafety:
         now = time.monotonic()
         hit = self._cache.get(mint)
         if hit and now - hit[0] < self.cache_ttl_s:
@@ -176,8 +184,18 @@ class SafetyService:
         (sec, sec_err), (created, dev_err) = await asyncio.gather(
             self._fetch("getTokenSecurity", mint),
             self._fetch("getCreatedTokens", creator) if creator else asyncio.sleep(0, (None, None)))
+        errors = tuple(e for e in (sec_err,) if e)
+        if rugcheck is None and self.rugcheck is not None:
+            gmgn_only = assess(mint, sec, time.time_ns(), None, errors)
+            if gmgn_only.hard_veto:                     # already vetoed: spend no RugCheck request on it
+                self.stats["rugcheck_skipped_veto"] += 1
+                rugcheck = {"verdict": "UNKNOWN", "source": "rugcheck", "detail": "not requested: GMGN hard veto"}
+            else:                                       # GMGN-clean candidates first, then the rest
+                gmgn_clean = all(c.verdict is Verdict.PASS for c in gmgn_only.checks if c.name != "rugcheck")
+                self.stats["rugcheck_calls"] += 1
+                rugcheck = await self.rugcheck.report(mint, priority=priority * 2 + (0 if gmgn_clean else 1))
         observed = time.time_ns()
-        result = CandidateSafety(mint, assess(mint, sec, observed, rugcheck, tuple(e for e in (sec_err,) if e)),
+        result = CandidateSafety(mint, assess(mint, sec, observed, rugcheck, errors),
                                  dev_history(creator, created, decision_ts_s, observed,
                                              error=dev_err) if creator else dev_history(None, None, decision_ts_s, observed),
                                  latency_ms=(time.perf_counter() - t0) * 1000)
