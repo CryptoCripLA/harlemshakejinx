@@ -1,0 +1,42 @@
+You are an independent reviewer of the JINX repository in the current directory. You did not write this code.
+This is a read-only correctness review of Phase 4 ("real-time hardening, full simulation and independent audit").
+Do not modify any file.
+
+Reviewer inputs (CLAUDE.md, Phase 4 "Independent panel audit"):
+- CHAD.txt: docs/CHAD_BLUEPRINT.md (the owner's architecture source, verbatim).
+- The upstream commit map: UPSTREAM_PINS.json and the pinned trees under upstream/.
+- The JINX source: jinx/ (all of it), scripts/, deploy/.
+- CLAUDE.md (the owner's binding contract; read the PHASE 4 section, the speed requirement, the storage rules and
+  the dollars-only rule) and docs/AGENT_COORDINATION.md (who owns which file).
+- The source-fidelity matrix: docs/SOURCE_FIDELITY_MATRIX.md.
+- The Phase 4 verification matrix: docs/PHASE4_VERIFICATION_MATRIX.md (every row claims a status and evidence).
+- Contract and integration tests: tests/ (Phase 4's are tests/phase4/, with the shared harness tests/phase4/harness.py).
+- Simulation, replay, reconciliation, latency, secrets and license evidence: docs/evidence/PHASE4_*.json.
+- Known unresolved strategy parameters: docs/BLOCKERS.md (B-02, B-03, B-30, B-50 and the rest).
+
+Please check, with file:line evidence for every finding:
+1. For each row of docs/PHASE4_VERIFICATION_MATRIX.md: does the named test or script actually verify what the row
+   claims, through the real JINX code path (not a stand-in that bypasses it)? Is the stated status (PASSED, FAILED,
+   BLOCKED) supported by the code, the test and the committed evidence? Flag any overstated or understated row.
+2. Test correctness: could any Phase 4 test pass while the behaviour it names is broken (a vacuous assertion, a
+   fixture that never reaches the code, an exception swallowed, a timing assumption)? The mutation evidence
+   (docs/evidence/PHASE4_MUTATION_20261021.json, scripts/phase4_mutation_check.py) covers some predicates; say where
+   coverage is missing.
+3. The three findings recorded as strict-xfail tests (P4-F1 health, P4-F2 shed screening, P4-F3 repeated funder
+   lookups): are they real defects in the named jinx/ code, correctly described, and would each test turn green when
+   the described fix is made?
+4. Correctness of the verified areas, looking for bugs the tests miss: deterministic replay and its excluded fields
+   (VOLATILE_KEYS), CHAD entry predicates and B-02, hard safety vetoes and fail-closed handling of missing data, adapter
+   isolation at runtime, reconnects and outages, hard-kill recovery of positions and pending orders, duplicate and
+   delayed orders, paper balance reconciliation, anti-lookahead, the one-slot rule under concurrency, bounded queues.
+5. Architecture fidelity: is there any invented trading rule, threshold, score, sizing default or exit rule in jinx/
+   that is not traceable to CHAD or a recorded owner decision? Is there more than one order gateway or execution
+   controller, or any path that can place a real-money order or sign a live transaction?
+6. Evidence honesty: does any Phase 4 document call local processing time execution latency, call paper results
+   profit, or claim something the code or evidence does not show? Are money figures for the owner in US dollars?
+7. Secrets: does any committed file or evidence contain a credential, key or private data?
+
+Output: first line "VERDICT: PASS | FAIL | BLOCKED" (PASS only if there is no CRITICAL, HIGH or MEDIUM finding;
+BLOCKED if the phase cannot be judged because required work is outside the repository). Then findings ordered by
+severity (CRITICAL / HIGH / MEDIUM / LOW), each with file:line, the concrete failure, and how to reproduce it. Then a
+short table of the checks above with what you verified and how. Say which tests you ran and their results.
