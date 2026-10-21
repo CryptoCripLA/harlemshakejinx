@@ -39,6 +39,10 @@ from jinx.execution import ExecutionGateway
 from jinx.health import build_health
 from jinx.intel.bundles import BundleTracker
 from jinx.intel.early_momentum import EarlyMomentum, Funding
+from jinx.intel.graduation import GraduationTracker
+from jinx.intel.migration import MigrationTracker
+from jinx.intel.readings import Clock
+from jinx.intel.replay import percentiles
 from jinx.intel.safety import SafetyService
 from jinx.intel.whales import DISCOVERY_INTERVAL_S, WhaleBook, discovery_pass
 from jinx.ledger import PositionLedger
@@ -69,6 +73,8 @@ class JinxApp:
         self.status_errors = 0
         self.task_restarts: dict[str, int] = {}
         self.replicator = self.redis_state = self.backups = self.ai_gateway = self.research = None
+        self.safety = None                                  # set in start() when GMGN is running
+        self.last_trenches: dict | None = None
         self._research_at = 0.0
         self.daily = DailyRun()
         self.monitor = StorageMonitor({"ram": settings.ram_budget_mb * MB, "disk": settings.disk_budget_mb * MB,
@@ -97,6 +103,15 @@ class JinxApp:
         # CHAD Bot 10 (C10) on the fast lane: synchronous, no I/O; detections are screened in the background
         self.early = EarlyMomentum(notify=self._on_early_momentum, request_funders=self._request_funders)
         self.bus.subscribe(Lane.FAST, self.early.on_event, name="early_momentum")
+        # CHAD Bot 5 (C05) and migration intelligence (M1-M3) on the fast lane too: synchronous, no I/O, and the
+        # lifecycle must not lose a migration (the background lane drops when full). GMGN lookups they ask for run
+        # as background tasks, never on the event path.
+        self.graduation = GraduationTracker()
+        self.bus.subscribe(Lane.FAST, self.graduation.on_event, name="graduation")
+        self.migration = MigrationTracker(notify=self._on_migration, request_pool=self._request_pool,
+                                          request_holders=self._request_holders)
+        self.bus.subscribe(Lane.FAST, self.migration.on_event, name="migration")
+        self.migrations: OrderedDict[str, dict] = OrderedDict()   # newest 500 migrations and their status (RAM)
         self.candidates: OrderedDict[str, dict] = OrderedDict()   # newest 500 detections and their safety (RAM)
         self._background: set[asyncio.Task] = set()
         self.screen_stats = {"screened": 0, "skipped": 0, "funder_lookups_skipped": 0}
@@ -139,6 +154,8 @@ class JinxApp:
             self._tasks["rugcheck"] = asyncio.create_task(self.rugcheck.run(), name="rugcheck")
         if self.safety is not None:
             self._tasks["whale-discovery"] = asyncio.create_task(self._whale_discovery_loop(), name="whale-discovery")
+        if self.gmgn.running:
+            self._tasks["gmgn-trenches"] = asyncio.create_task(self._trenches_loop(), name="gmgn-trenches")
         if self.ai_gateway is not None:
             self._tasks["ai-gateway-probe"] = asyncio.create_task(self._probe_gateway(), name="ai-gateway-probe")
         self._server = await asyncio.start_server(self._http, "0.0.0.0", s.http_port)
@@ -237,15 +254,111 @@ class JinxApp:
 
     def entry_check(self, mint: str) -> dict:
         """Everything known about entering `mint` right now (owner decision B-02 §5: re-checked at the decision).
-        Phase 2 records it; nothing here places an order."""
+        Phase 2 records it; nothing here places an order. Graduation and lifecycle are shown with it, so the
+        decision sees every module's view of the token in one place."""
         entry = self.candidates.get(mint) or {}
         reserve = self.early.reserve_check(mint, self._trade_feed_live())
         evidence = self.early.evidence(mint)
         safety = entry.get("safety") or {}
         blocking = list(evidence.blocking) if evidence else ["no detection"]
+        grad = self.graduation.evidence(mint)
+        life = self.migration.lifecycle(mint)
         return {"reserve_eligible": reserve["eligible"], "reserve_reason": reserve["reason"],
                 "safety_eligible": bool(safety.get("eligible")), "early_momentum_blocking": blocking,
-                "all_checks_pass": reserve["eligible"] and bool(safety.get("eligible")) and not blocking}
+                "all_checks_pass": reserve["eligible"] and bool(safety.get("eligible")) and not blocking,
+                "lifecycle_state": life.state.name if life else None,
+                "graduation": None if grad is None else {
+                    "progress": grad.latest.progress, "standard_curve": grad.latest.standard_curve,
+                    "near_threshold": grad.near_threshold, "provider_status": grad.provider_status},
+                "migration": self.migrations.get(mint)}
+
+    def _on_migration(self, evidence) -> None:
+        """Migration evidence (observed, enriched with the pool, verified) into shared state. Never an order."""
+        m = evidence.migration
+        entry = self.migrations.setdefault(evidence.mint, {"first_observed_ns": m.observed_ns})
+        entry.update(state=evidence.state, verified=evidence.verified, pool=m.pool_id, sources=list(m.sources),
+                     event_ns=m.event_ns, clock=str(m.clock),
+                     first_verified_liquidity=evidence.first_verified_liquidity)
+        self.migrations.move_to_end(evidence.mint)
+        while len(self.migrations) > 500:
+            self.migrations.popitem(last=False)
+
+    def _gmgn_live(self) -> bool:
+        return getattr(self, "gmgn", None) is not None and self.gmgn.running
+
+    def _request_pool(self, mint: str) -> None:
+        """A migration record without a pool (PumpPortal and Trenches name only the venue): GMGN token info carries
+        `migrated_pool`, which can lag the completion, so it is asked again a bounded number of times."""
+        if self._gmgn_live():
+            self._spawn(self._fetch_migrated_pool(mint))
+
+    async def _fetch_migrated_pool(self, mint: str) -> None:
+        for _ in range(self.SCREEN_ATTEMPTS):
+            ev = self.migration.evidence(mint)
+            if ev is None or ev.migration.pool_id is not None:
+                return
+            try:
+                info = await self.gmgn.call("getTokenInfo", "sol", mint)
+            except Exception as e:
+                log.warning("migrated_pool lookup failed (%s); the migration stays unverified", type(e).__name__)
+                return
+            pool = info.get("migrated_pool") if isinstance(info, dict) else None
+            ts = info.get("migrated_timestamp") if isinstance(info, dict) else None
+            if isinstance(pool, str) and pool and isinstance(ts, (int, float)) and ts > 0:
+                self.migration.record_report(mint, "gmgn.getTokenInfo", int(ts) * 1_000_000_000, Clock.PROVIDER,
+                                             time.time_ns(), pool=pool)
+                return
+            await asyncio.sleep(self.SCREEN_RETRY_S)
+
+    def _request_holders(self, mint: str) -> None:
+        """Owner order 2026-10-21 item 8: concentration from verified balances where available (GMGN top holders)."""
+        if self._gmgn_live():
+            self._spawn(self._fetch_holders(mint))
+
+    async def _fetch_holders(self, mint: str) -> None:
+        try:
+            res = await self.gmgn.call("getTokenTopHolders", "sol", mint, {"limit": 20})
+        except Exception as e:
+            log.warning("holder lookup failed (%s); holder concentration stays UNAVAILABLE", type(e).__name__)
+            return
+        rows = res.get("list") if isinstance(res, dict) else res
+        if isinstance(rows, list):
+            self.migration.record_holders(mint, rows, "gmgn.getTokenTopHolders", time.time_ns())
+
+    # Engineering cadence, not a trading rule: one Trenches read (weight 2 of the Plus plan's 20/s) every 10 s.
+    TRENCHES_POLL_S = 10.0
+
+    async def poll_trenches_once(self) -> dict:
+        """GMGN Trenches for Pump.fun: the provider's `near_completion` status (graduation evidence and the
+        lifecycle's APPROACHING GRADUATION) and `completed` curves (a migration report) for tokens JINX tracks."""
+        res = await self.gmgn.call("getTrenches", "sol", ["near_completion", "completed"], ["Pump.fun"], 80)
+        now, seen = time.time_ns(), {"near_completion": 0, "completed": 0, "tracked": 0}
+        for category in ("near_completion", "completed"):
+            for item in (res.get(category) or []) if isinstance(res, dict) else []:
+                mint = item.get("address") if isinstance(item, dict) else None
+                if not isinstance(mint, str) or not mint:
+                    continue
+                seen[category] += 1
+                if not self.migration.tracks(mint):
+                    continue
+                seen["tracked"] += 1
+                progress = item.get("progress")
+                self.graduation.record_provider_status(mint, category, "gmgn.trenches", now, progress)
+                self.migration.record_provider_status(mint, category, "gmgn.trenches", now, progress)
+                done = item.get("complete_timestamp")
+                if category == "completed" and isinstance(done, (int, float)) and done > 0:
+                    self.migration.record_report(mint, "gmgn.trenches", int(done) * 1_000_000_000, Clock.PROVIDER,
+                                                 now, venue_name=item.get("exchange") or None)
+        self.last_trenches = {"read_ns": now, **seen}
+        return self.last_trenches
+
+    async def _trenches_loop(self) -> None:
+        while True:
+            try:
+                await self.poll_trenches_once()
+            except Exception as e:
+                log.warning("GMGN Trenches read failed (%s); provider status waits for the next read", type(e).__name__)
+            await asyncio.sleep(self.TRENCHES_POLL_S)
 
     async def _screen(self, mint: str, creator: str | None) -> None:
         for attempt in range(1, self.SCREEN_ATTEMPTS + 1):
@@ -268,7 +381,7 @@ class JinxApp:
         if self._never_eligible(mint):
             self.screen_stats["funder_lookups_skipped"] += 1
             return
-        if getattr(self, "gmgn", None) is not None and self.gmgn.running:
+        if self._gmgn_live():
             self._spawn(self._fetch_funders(tuple(wallets)))
 
     async def _fetch_funders(self, wallets: tuple[str, ...]) -> None:
@@ -335,21 +448,33 @@ class JinxApp:
             "object_storage": self.backups.health() if self.backups else {"configured": False},
             "ai_gateway": self.ai_gateway.health() if self.ai_gateway else {"configured": False},
         }
-        h["intel"] = {"safety": dict(self.safety.stats) if getattr(self, "safety", None) else {"configured": False},
-                      "bundles_tracked": len(self.bundles._tokens),
-                      "early_momentum": {**self.early.stats, "candidates": len(self.candidates),
-                                         "latest": [{"mint": m, "safety": c.get("safety"),
-                                                     "trade_permitted": c.get("trade_permitted"),
-                                                     "entry_check": c.get("entry_check")}
-                                                    for m, c in list(self.candidates.items())[-5:]],
-                                         "entry_summary": self._entry_summary(), "screening": dict(self.screen_stats)},
-                      "whales": {"tracked": len(self.whales.tracked), "candidates": len(self.whales._candidates),
-                                 "alerts": len(self.whales.alerts), "last_discovery": self.last_discovery}}
+        h["intel"] = self.intel_health()
         h["storage"] = self.monitor.report()
         h["end_of_day"] = {"last_day": self.daily.last_day, "report": self.daily.last_report}
         if h["storage"]["status"] == "critical" and h["status"] == "ok":
             h["status"] = "degraded"
         return h
+
+    def intel_health(self) -> dict:
+        """What the intelligence modules hold in shared state right now, and the fast lane's measured delay."""
+        lat = percentiles([x / 1e6 for x in self.bus.latency_ns(Lane.FAST)])
+        return {"safety": dict(self.safety.stats) if self.safety else {"configured": False},
+                "bundles_tracked": len(self.bundles._tokens),
+                "early_momentum": {**self.early.stats, "candidates": len(self.candidates),
+                                   "latest": [{"mint": m, "safety": c.get("safety"),
+                                               "trade_permitted": c.get("trade_permitted"),
+                                               "entry_check": c.get("entry_check")}
+                                              for m, c in list(self.candidates.items())[-5:]],
+                                   "entry_summary": self._entry_summary(), "screening": dict(self.screen_stats)},
+                "graduation": {**self.graduation.stats, "tracked": self.graduation.tracked_mints()},
+                "migration": {**self.migration.stats, "tracked": self.migration.tracked_mints(),
+                              "verified": sum(1 for v in self.migrations.values() if v.get("verified")),
+                              "latest": [{"mint": m, **{k: v[k] for k in ("state", "verified", "pool", "sources")}}
+                                         for m, v in list(self.migrations.items())[-5:]]},
+                "gmgn_trenches": self.last_trenches,
+                "whales": {"tracked": len(self.whales.tracked), "candidates": len(self.whales._candidates),
+                           "alerts": len(self.whales.alerts), "last_discovery": self.last_discovery},
+                "fast_lane_admission_to_handled_ms": lat}
 
     async def _http(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:

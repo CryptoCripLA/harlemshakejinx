@@ -46,3 +46,13 @@ def test_missing_or_invalid_values_are_unavailable_not_defaults():
     assert readings.event_time(bad) == (5, readings.Clock.RECEIPT)
     assert readings.real_reserves(bad) == (None, None)
     assert readings.traders_involved(ev) == ("A",)
+
+
+def test_a_real_millisecond_timestamp_converts_exactly():
+    """PumpAPI sends integer milliseconds; a float conversion put real timestamps 64 ns off (found 2026-10-21 with
+    1792555727135 from the live migration capture). Provider times are preserved exactly."""
+    msg = buy("A", 1)
+    msg["timestamp"] = 1_792_555_727_135
+    assert readings.event_time(one(msg))[0] == 1_792_555_727_135_000_000
+    msg["timestamp"] = 1_792_555_727_135.5            # a fractional millisecond, should a feed ever send one
+    assert readings.event_time(one(msg))[0] == 1_792_555_727_135_500_000

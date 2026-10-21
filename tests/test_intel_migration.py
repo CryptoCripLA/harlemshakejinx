@@ -12,6 +12,10 @@ import pytest
 from jinx.core.events import EventKind, MarketEvent
 from jinx.core.lifecycle import State
 from jinx.intel.migration import MigrationTracker
+from tests.test_intel_live_migrations import Path
+
+GMGN = json.loads((Path(__file__).parent / "fixtures" / "gmgn_trenches_holders_sample_20261021.json").read_text())
+HOLDERS = GMGN["top_holders_completed"]
 from tests.pumpapi_msgs import T0_MS, amm_trade, buy, create, events, migrate, one, sell
 
 MIG_T = T0_MS + 60_000        # migration one minute after creation, slot 499
@@ -109,7 +113,7 @@ def test_pumpportals_migration_names_only_the_venue_so_it_cannot_verify_a_pool()
     assert feed(m, [pool("buy", "S1", 0.5, slot=500)]) == []
     ev = m.evidence("MintApump")
     assert ev.verified is False and ev.unverified_pool_trades == 1
-    assert "pool address" in ev.verification_status
+    assert "no report has named it" in ev.verification_status
 
 
 def test_pre_migration_liquidity_is_the_last_curve_reading_before_the_migration():
@@ -129,7 +133,9 @@ def test_sells_around_graduation_are_listed_by_size_without_inventing_a_large_se
     sells = ev.sells_around_graduation
     assert [(s["fee_payer"], s["phase"]) for s in sells[:3]] == [("W1", "after"), ("W2", "before"), ("DEV", "before")]
     assert sells[0]["sol_lamports"] == 9_000_000_000 and sells[0]["quote_reserve_after_lamports"] == 84_000_000_000
-    assert "B-03" in ev.large_sell_rule
+    assert sells[2]["seller_is_creator"] is True and sells[0]["seller_is_creator"] is False
+    # owner order 2026-10-21 item 7: sizes and sellers are recorded; nothing is labelled large or dangerous
+    assert "no approved rule" in ev.large_sell_rule and all("large" not in row for row in sells)
 
 
 def test_developer_selling_before_and_after_the_migration():
@@ -148,20 +154,49 @@ def test_developer_selling_is_unavailable_when_the_creation_was_not_seen():
     assert m.evidence("MintApump").developer_selling["status"] == "UNAVAILABLE"
 
 
-def test_concentrated_holder_selling_and_distribution_from_observed_trade_flow():
+def test_trade_flow_is_kept_but_labelled_as_not_proof_of_ownership():
+    """Owner order 2026-10-21 item 8: trade observations alone are not proof of current token ownership."""
     m = MigrationTracker()
     feed(m, launched() + [migrate(t_ms=MIG_T, slot=499), pool("buy", "S1", 0.4, slot=500, tokens=10_000_000.0),
                           pool("sell", "W1", 1.0, slot=502, sol=9.0, tokens=150_000_000.0)])
     ev = m.evidence("MintApump")
-    holders = ev.holder_selling
-    assert holders["basis"].startswith("observed trades by fee payer")
-    assert holders["complete"] is True
-    top = holders["top_at_migration"][0]
+    assert ev.holder_selling["verified"]["status"] == "UNAVAILABLE"
+    assert ev.holder_distribution["verified"]["status"] == "UNAVAILABLE"
+    flow = ev.holder_selling["observed_trade_flow"]
+    assert "not proof of current ownership" in flow["basis"] and flow["complete"] is True
+    top = flow["top_at_migration"][0]
     assert top["fee_payer"] == "W1" and top["after"]["sells"] == 1 and top["after"]["tokens"] == 150_000_000_000_000
-    dist = ev.holder_distribution
+    dist = ev.holder_distribution["observed_trade_flow"]
     assert dist["at_migration"]["top10_share"] == pytest.approx(1.0)
     assert dist["latest"]["holders"] == dist["at_migration"]["holders"] + 1
 
+
+def test_verified_balances_are_used_where_available_and_pool_accounts_are_kept_apart():
+    """GMGN top holders (real response shape, tests/fixtures/gmgn_trenches_holders_sample_20261021.json): the
+    migration pool's own account is listed as a pool account, not as a concentrated wallet."""
+    asked = []
+    m = MigrationTracker(request_holders=asked.append)
+    feed(m, launched() + [migrate(pool_id=GMGN["token_info_completed"]["migrated_pool"], t_ms=MIG_T, slot=499),
+                          amm_trade("sell", payer=HOLDERS[1]["address"], t_ms=MIG_T + 2_000, slot=503,
+                                    pool_id=GMGN["token_info_completed"]["migrated_pool"], sol=3.0)])
+    assert asked == ["MintApump"]                                      # requested once, at the migration
+    m.record_holders("MintApump", HOLDERS, "gmgn.getTokenTopHolders", (MIG_T + 1_000) * 1_000_000)
+    ev = m.evidence("MintApump")
+    verified = ev.holder_distribution["verified"]
+    assert verified["source"] == "gmgn.getTokenTopHolders" and verified["relative_to_migration"] == "after"
+    assert [p["address"] for p in verified["pool_accounts"]] == [HOLDERS[0]["address"]]
+    wallets = [h for h in HOLDERS[1:] if not h["exchange"]][:10]
+    assert [w["address"] for w in verified["top_wallets"]] == [w["address"] for w in wallets]
+    assert verified["top10_wallet_share"] == pytest.approx(sum(w["amount_percentage"] for w in wallets))
+    seller = ev.holder_selling["verified"]["holders"][0]
+    assert seller["address"] == HOLDERS[1]["address"] and seller["after"]["sells"] == 1
+    assert seller["after"]["sol_lamports"] == 3_000_000_000
+
+
+def test_holders_for_an_untracked_token_create_no_state():
+    m = MigrationTracker()
+    m.record_holders("NeverSeen", HOLDERS, "gmgn.getTokenTopHolders", 1)
+    assert not m.tracks("NeverSeen")
 
 def test_competing_early_transactions_are_the_first_pool_trades_with_their_offsets():
     m = MigrationTracker()

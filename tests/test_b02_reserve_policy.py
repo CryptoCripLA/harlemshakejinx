@@ -55,6 +55,18 @@ def test_current_reserve_boundaries(real, status):
         assert gate(ev, PEAK).status is Status.PASS
 
 
+@pytest.mark.parametrize("peak_real,status", [(10.0, Status.PASS), (10.000000001, Status.FAIL)])
+def test_the_peak_ceiling_is_exactly_10_real_sol_to_the_lamport(peak_real, status):
+    """Owner B-02: the peak "must never have exceeded 10 REAL SOL": exactly 10 passes, one lamport more fails, even
+    after the reserve falls back into range."""
+    em = EarlyMomentum()
+    feed(em, [create(initial_buy=0.0, v_quote=30.0), buy("A", 1, v_quote=30.0 + peak_real),
+              sell("A", 2, v_quote=34.0), buy("B", 3, v_quote=34.5)])
+    [ev] = feed(em, [buy("C", 4, v_quote=35.0)])
+    assert gate(ev, CURRENT).status is Status.PASS
+    assert gate(ev, PEAK).status is status
+
+
 def test_a_token_that_peaked_at_16_and_fell_to_7_is_rejected():
     em = EarlyMomentum()
     feed(em, [create(initial_buy=0.0, v_quote=30.0), buy("A", 1, v_quote=46.0), sell("A", 2, v_quote=40.0),

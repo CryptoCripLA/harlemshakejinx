@@ -81,7 +81,9 @@ class MarketEvent:
     def idempotency_key(self) -> str:
         """Identity of the on-chain fact, independent of when or how often it was received. A source that reports
         several trades of one side by one trader in one transaction as separate events marks each with a `leg` in
-        its stored record, so the key survives a store round trip; events without a leg keep the plain key."""
+        its stored record, so the key survives a store round trip; events without a leg keep the plain key. A report
+        that carries more of a fact than another source's report of it (PumpAPI's migrate names the new pool,
+        PumpPortal's does not) also has a leg, so both are kept and merged by their consumer."""
         key = f"{self.signature}:{self.kind}:{self.mint}:{self.side or '-'}:{self.trader or '-'}"
         leg = self.raw.get("leg")
         return f"{key}:leg={leg}" if leg is not None else key

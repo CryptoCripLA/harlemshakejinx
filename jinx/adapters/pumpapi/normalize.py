@@ -11,7 +11,8 @@ Field meanings from https://pumpapi.io/stream (read 2026-10-20):
 - One transaction can carry several trades of one side by one fee payer as separate events (seen live
   2026-10-21: 4 sells in one transaction). Each stream buy/sell is marked with a `leg` (its exact token amount)
   in the stored record, so they stay separate facts while a resent copy still deduplicates. Creations and the
-  creator's buy carry no leg, so their identity matches PumpPortal's for the same fact.
+  creator's buy carry no leg, so their identity matches PumpPortal's for the same fact. A migrate carries the new pool
+  as its leg: PumpPortal's report of the same migration has no pool, and both must reach the migration module.
 
 PumpAPI sends every Solana DEX event, so only pump/pump-amm create/buy/sell/migrate events become MarketEvents;
 everything else returns []. Each MarketEvent keeps a compact record of the message (COMPACT_FIELDS), not its
@@ -88,9 +89,12 @@ def normalize(msg: Any, recv_ns: int, next_seq: Callable[[], int]) -> list[Marke
     signature, mint, slot = _str(msg, "signature"), _str(msg, "mint"), _slot(msg)
     raw = compact(msg)
     if action == "migrate":
-        _str(msg, "poolId")   # the new pool must be named
+        pool = _str(msg, "poolId")   # the new pool must be named
+        # PumpPortal reports the same migration without the pool. The pool makes this a richer fact, so it gets its
+        # own identity (`leg`) and both reports reach the migration module, which merges them into one record
+        # (owner order 2026-10-21: deduplicate effects, not information). A resend of this report still deduplicates.
         return [MarketEvent(kind=EventKind.MIGRATION, source=SOURCE, mint=mint, signature=signature, slot=slot,
-                            recv_ns=recv_ns, seq=next_seq(), raw=raw)]
+                            recv_ns=recv_ns, seq=next_seq(), raw=dict(raw, leg=f"pool:{pool}"))]
     if msg.get("quoteMint", WSOL) != WSOL:
         raise NotQuotedInSol(f"{signature} is quoted in {msg.get('quoteMint')}")
     payer = _str(msg, "txSigner")

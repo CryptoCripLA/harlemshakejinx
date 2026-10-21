@@ -201,3 +201,30 @@ Notes the owner pasted with it:
 > This preserves CHAD as the blueprint while making the new ideas measurable without letting Claude quietly redesign your live strategy.
 >
 > This is general information only and not financial advice. For personal guidance, please talk to a licensed professional.
+
+## Phase 2 integration order (owner, 2026-10-21, to the momentum/migration session; verbatim)
+
+> JINX — PHASE 2 INTEGRATION ORDER
+> Claude, the agent has merged Early Momentum, Graduation and Migration into main at `2da8525`. 522 tests pass.
+> STOP ASKING ME TO REDECIDE B-02. WE ALREADY RESOLVED IT.
+> The approved Early Momentum policy is:
+> * Current bonding curve: 0.5–10 REAL SOL.
+> * Historical peak: must never have exceeded 10 REAL SOL.
+> * Retire the conflicting 35 SOL entry rule.
+> * Apply to compatible SOL-denominated curves only.
+> * Unknown or incomplete historical peak: block entry.
+> * Migration trading remains a separate capability.
+> Implement these rules with boundary tests. Do not substitute virtual reserves for real reserves.
+> FINISH THE INTEGRATION
+> 1. Wire `GraduationTracker.on_event` and `MigrationTracker.on_event` into `jinx/app.py`.
+> 2. Fix the migration deduplication defect. PumpAPI and PumpPortal may report the same migration with different fields. They must enrich ONE authoritative migration record. A partial PumpPortal report must never prevent a later PumpAPI report containing the pool address from confirming migration. Deduplicate effects, not useful information.
+> 3. Preserve original provider timestamps and provenance. Do not overwrite authoritative on-chain event times with receipt times.
+> 4. Creator purchases: CHAD specifies three distinct fee-paying wallets. A verified creator purchase counts as one distinct buyer under that stated rule; flag creator participation for safety analysis. Do not invent a new creator-exclusion rule.
+> 5. Common funders: identify three buyers sharing a verified funder and preserve CHAD's emergency protection. Missing funder data must never be represented as a clean result.
+> 6. Near graduation: use verified provider statuses and existing source-derived progress evidence. Do not invent a numerical graduation threshold or 0–20 scoring formula.
+> 7. Large sells: record actual sell sizes and wallet identities. Do not invent a threshold or falsely label a sell as dangerous without an approved rule.
+> 8. Holder concentration: use verified wallet balances where available. Trade observations alone are not proof of current token ownership.
+> 9. Run the complete test suite, real-event replay and paper-mode integration tests.
+> 10. Redeploy only the verified paper-mode build to Contabo. Keep live trading OFF.
+> YOUR DELIVERY — Show me: the three modules connected to the actual running engine; B-02 implemented and tested; migration deduplication fixed; real detected events flowing through shared JINX state; safety and blocked-trade behavior; full test results; measured processing delays; remaining genuine blockers; independent review verdict.
+> Do not call Phase 2 complete merely because the modules exist. Do not start Phase 3 without approval. No additional infrastructure. No new phases. No competing engines. No strategy invention.

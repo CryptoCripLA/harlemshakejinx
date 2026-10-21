@@ -49,9 +49,12 @@ def event_time(ev: MarketEvent) -> tuple[int, Clock]:
     if ev.block_time is not None:
         return ev.block_time * 1_000_000_000, Clock.CHAIN
     if ev.source == PUMPAPI:
-        ts = _number(ev.raw.get("timestamp"))
-        if ts:
-            return int(round(ts * 1_000_000)), Clock.PROVIDER
+        ts = ev.raw.get("timestamp")
+        if isinstance(ts, int) and not isinstance(ts, bool) and ts > 0:
+            return ts * 1_000_000, Clock.PROVIDER          # integer milliseconds: exact, no float on the way
+        if _number(ts):
+            whole = int(ts)                                 # a fractional millisecond: keep the whole part exact
+            return whole * 1_000_000 + int(round((ts - whole) * 1_000_000)), Clock.PROVIDER
     return ev.recv_ns, Clock.RECEIPT
 
 

@@ -88,7 +88,7 @@ def test_no_score_is_invented():
     g = GraduationTracker()
     [ev] = feed(g, [buy("A", 1, v_quote=60.0)])
     assert ev.score_points is None and "B-03" in ev.score_status
-    assert ev.near_threshold is None and "B-03" in ev.near_threshold_status
+    assert ev.near_threshold is None and "no provider status yet" in ev.near_threshold_status
     assert "graduation_score" in ev.blocking
 
 
@@ -149,3 +149,21 @@ def test_evidence_carries_the_confluence_fields_and_serializes():
     assert {"mint", "signal_type", "sources", "observed_ns", "event_ns", "clock", "freshness", "payload",
             "blocking", "score_points", "score_status"} <= set(d)
     assert d["signal_type"] == "graduation" and d["payload"]["latest"]["progress"] == pytest.approx(ev.latest.progress)
+
+
+def test_near_graduation_is_the_providers_verified_status_not_a_jinx_number():
+    """Owner order 2026-10-21 item 6: verified provider statuses (GMGN Trenches category) and source-derived progress;
+    no invented threshold, no 0-20 formula."""
+    g = GraduationTracker()
+    feed(g, [buy("A", 1, v_quote=100.0)])
+    assert g.evidence("MintApump").near_threshold is None
+    g.record_provider_status("MintApump", "near_completion", "gmgn.trenches", 123, progress=0.98)
+    ev = g.evidence("MintApump")
+    assert ev.near_threshold is True and "gmgn.trenches" in ev.near_threshold_status
+    assert ev.provider_status == {"category": "near_completion", "progress": 0.98, "source": "gmgn.trenches",
+                                  "observed_ns": 123}
+    assert ev.score_points is None and "graduation_score" in ev.blocking         # 0-20 still not invented
+    g.record_provider_status("MintApump", "completed", "gmgn.trenches", 456, progress=1.0)
+    assert g.evidence("MintApump").near_threshold is False
+    g.record_provider_status("NeverSeen", "near_completion", "gmgn.trenches", 1, progress=0.9)
+    assert g.evidence("NeverSeen") is None and g.tracked_mints() == 1

@@ -20,9 +20,12 @@ Readings per curve event (both kept, each with its provenance):
   reads the live global account (B-12).
 - `progress_sol_mako`: Mako's reading, real SOL in the curve / 85 SOL, capped at 1 (mako src/onchain.py:546-550).
 
-Score: CHAD fixes the range (0–20 points) but not the mapping from progress to points, what "near the threshold"
-is, or the "elevated signal weight" (all B-03). No points are produced; the evidence blocks on `graduation_score`
-until the owner supplies a mapping, whose output is accepted only inside 0–20. Ordering: the latest reading is the
+Score: CHAD fixes the range (0–20 points) but not the mapping from progress to points or the "elevated signal
+weight" (B-03). No points are produced; the evidence blocks on `graduation_score` until the owner supplies a
+mapping, whose output is accepted only inside 0–20. "Near the threshold" is the provider's verified status (owner
+order 2026-10-21, item 6): GMGN Trenches' own `near_completion` category, recorded with its source, read time and
+progress through `record_provider_status`. JINX sets no number of its own, and a token missing from a listing
+changes nothing. Ordering: the latest reading is the
 newest by event time; a late reading counts toward the peaks but never replaces it. State is RAM only and bounded.
 """
 from __future__ import annotations
@@ -44,7 +47,7 @@ CHAD_TEXT = ("Monitors every pump.fun bonding curve in real time via Helius gRPC
              "toward graduation (0–20 pts) and feeds it into the Confluence board. Tokens near the threshold get "
              "elevated signal weight.")
 SCORE_UNRESOLVED = "not computed: CHAD gives the 0–20 range but not the progress-to-points mapping (B-03)"
-NEAR_UNRESOLVED = "not computed: CHAD does not quantify \"near the threshold\" or the elevated weight (B-03)"
+NEAR_UNRESOLVED = "no provider status yet: near graduation comes only from the provider's category (GMGN Trenches)"
 MAX_MINTS = 20_000
 IDLE_TTL_S = 2 * 3600
 
@@ -105,6 +108,7 @@ class GraduationEvidence:
     score_status: str
     near_threshold: bool | None = None
     near_threshold_status: str = NEAR_UNRESOLVED
+    provider_status: dict | None = None
     signal_type: str = SIGNAL_TYPE
 
     @property
@@ -130,11 +134,12 @@ class GraduationEvidence:
                             "complete_observed": self.complete_observed},
                 "score_points": self.score_points, "score_status": self.score_status,
                 "near_threshold": self.near_threshold, "near_threshold_status": self.near_threshold_status,
+                "provider_status": self.provider_status,
                 "blocking": list(self.blocking)}
 
 
 class _Curve:
-    __slots__ = ("latest", "peak_v", "peak_progress", "readings", "late", "since_creation", "complete")
+    __slots__ = ("latest", "peak_v", "peak_progress", "readings", "late", "since_creation", "complete", "provider")
 
     def __init__(self) -> None:
         self.latest: CurveReading | None = None
@@ -142,6 +147,7 @@ class _Curve:
         self.peak_progress: float | None = None
         self.readings = self.late = 0
         self.since_creation = self.complete = False
+        self.provider: dict | None = None
 
 
 class GraduationTracker:
@@ -171,6 +177,17 @@ class GraduationTracker:
             self.stats["late_readings"] += 1
         return [self._build(ev.mint, c)]
 
+    def record_provider_status(self, mint: str, category: str, source: str, observed_ns: int,
+                               progress: float | None = None) -> None:
+        """The provider's verified category for a token JINX already reads (GMGN Trenches: `new_creation`,
+        `near_completion`, `completed`). Never creates state for an untracked token."""
+        c = self._curves.get(mint)
+        if c is None:
+            return
+        ok = isinstance(progress, (int, float)) and not isinstance(progress, bool) and math.isfinite(progress)
+        c.provider = {"category": category, "progress": float(progress) if ok else None, "source": source,
+                      "observed_ns": observed_ns}
+
     def evidence(self, mint: str) -> GraduationEvidence | None:
         c = self._curves.get(mint)
         return self._build(mint, c) if c is not None and c.latest is not None else None
@@ -192,5 +209,10 @@ class GraduationTracker:
 
     def _build(self, mint: str, c: _Curve) -> GraduationEvidence:
         points, status = self._score(c.latest.progress)
+        near, near_status = None, NEAR_UNRESOLVED
+        if c.provider is not None:
+            near = c.provider["category"] == "near_completion"
+            near_status = (f"provider status: {c.provider['source']} category {c.provider['category']}, "
+                           f"progress {c.provider['progress']}, read at {c.provider['observed_ns']} ns")
         return GraduationEvidence(mint, c.latest, c.peak_v, c.peak_progress, c.readings, c.late, c.since_creation,
-                                  c.complete, points, status)
+                                  c.complete, points, status, near, near_status, c.provider)

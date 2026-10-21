@@ -5,7 +5,9 @@ Phase 1 defines the interface and its rules; Phase 2 translates provider data in
 token info, the Pump.fun stream; mapping in docs/GMGN_ADAPTER_CONTRACT.md §5). The rules are about evidence
 handling, not trading:
 - Every transition keeps its source, observation time, event time and evidence payload. The mandated lifecycle
-  record (§3.1) is kept in `fields`, each value with the source and times of the evidence that set it.
+  record (§3.1) is kept in `fields`, each value with the source and times of the evidence that set it. A migration
+  first seen on JINX's receipt clock takes the provider's time when a provider report of it arrives, never the
+  reverse (as for creation times).
 - Ordering is per fact, because reports carry different clocks: curve reads carry the read (or trade) time,
   migration reports carry the provider's migration time. A report is late when it is older than the latest
   accepted report of the same kind, when it is curve data no newer than the observed migration, or when it would
@@ -170,6 +172,8 @@ class TokenLifecycle:
         target = e.kind.value
         base = self.last_consistent_state
         migrated = base.value >= State.MIGRATION_OBSERVED.value
+        if e.kind is Kind.MIGRATION_SIGNAL and self._provider_migration_time(e):
+            return self._move(base, e) if self.state in EXCEPTIONAL else None
         if self._is_late(e, base, migrated):
             self.late_reports += 1
             return None
@@ -227,6 +231,19 @@ class TokenLifecycle:
         if e.kind is Kind.POST_MIGRATION_MARKET and not (
                 self.last_consistent_state.value >= State.MIGRATION_CONFIRMED.value and self.post_pool):
             raise MissingEvidence("post-migration market data is accepted only after a confirmed migration")
+
+    def _provider_migration_time(self, e: Evidence) -> bool:
+        """The migration first seen on JINX's receipt clock, now reported on the provider's clock: the provider's
+        time replaces the receipt-time approximation (the creation-time rule, applied to the migration fact). Never
+        the reverse; no second transition."""
+        first = self.fields.get("first_migration_signal")
+        if e.clock != "provider" or first is None or first.clock != "receipt":
+            return False
+        self._put("first_migration_signal", e.event_ns, e)
+        self._migration_event_ns = min(self._migration_event_ns or e.event_ns, e.event_ns)
+        self.last_accepted_ns = max(self.last_accepted_ns or 0, e.observed_ns)
+        self._record_readings(e)
+        return True
 
     def _is_late(self, e: Evidence, base: State, migrated: bool) -> bool:
         latest = self._latest_by_kind.get(e.kind)

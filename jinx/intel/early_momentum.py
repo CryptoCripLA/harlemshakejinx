@@ -25,7 +25,10 @@ as a superseded specification (`SUPERSEDED`). `reserve_check` repeats both gates
 decision, so a stale snapshot never qualifies. These rules belong to this pre-graduation path only.
 
 What it does not do: place or permit orders. Every predicate that is not PASS blocks: `trade_permitted` stays False.
-Funders come only from `record_funding` (no feed supplies them yet); unknown funders are UNAVAILABLE, never assumed.
+Funders come through `record_funding` (the app answers `request_funders` with GMGN wallet stats); a buyer without a
+known funder makes the sybil check UNAVAILABLE, never clean (owner order 2026-10-21, item 5). The creator's own buy
+counts as one distinct fee payer under CHAD's stated rule and is flagged (`creator_in_window`) for safety analysis
+(item 4).
 State is RAM only and bounded (mint cap, idle time, buys per mint, funding cap).
 """
 from __future__ import annotations
