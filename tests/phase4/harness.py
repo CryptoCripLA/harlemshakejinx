@@ -88,7 +88,8 @@ class RunStats:
     handler_errors: dict = field(default_factory=dict)
 
 
-async def run_async(app: JinxApp, delivered, settle: bool = True, settle_s: float = 5.0) -> RunStats:
+async def run_async(app: JinxApp, delivered, settle: bool = True, settle_s: float = 5.0,
+                    cancel_background: bool = True) -> RunStats:
     st = RunStats()
     runner = asyncio.create_task(app.bus.run())
     try:
@@ -110,8 +111,9 @@ async def run_async(app: JinxApp, delivered, settle: bool = True, settle_s: floa
         st.background_left = len(app._background)
     finally:
         runner.cancel()
-        for t in list(app._background):
-            t.cancel()
+        if cancel_background:              # otherwise they continue on the app's loop at the next run()
+            for t in list(app._background):
+                t.cancel()
     st.handler_errors = dict(app.bus.stats["handler_errors"])
     return st
 
@@ -125,8 +127,8 @@ def loop_of(app: JinxApp) -> asyncio.AbstractEventLoop:
     return loop
 
 
-def run(app: JinxApp, delivered, settle: bool = True, settle_s: float = 5.0) -> RunStats:
-    return loop_of(app).run_until_complete(run_async(app, delivered, settle, settle_s))
+def run(app: JinxApp, delivered, settle: bool = True, settle_s: float = 5.0, cancel_background: bool = True) -> RunStats:
+    return loop_of(app).run_until_complete(run_async(app, delivered, settle, settle_s, cancel_background))
 
 
 def _canon(x):
