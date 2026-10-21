@@ -22,7 +22,7 @@ Each entry: what is blocked, the evidence, what is needed, and one reversible op
 
 ## B-03 CHAD values that are not specified (Phases 2-3)
 These are left unset, and entries that depend on them stay disabled:
-safety 0–100 formula and pass threshold; momentum "stall" and "sustained volume" quantities; X Scout verdict cut-offs and the @SolBotChad bonus; graduation progress → 0–20 points mapping; cluster "short window"; freshness decay function; dev-reputation formula and cut-off; confluence weights and the global score threshold; Kelly cap, payout-ratio prior and bucket edges; stop-loss and trailing values and the "high-conviction" cut-off; priority-fee escalation amounts; the shared-funder look-back.
+safety 0–100 formula and pass threshold; momentum "stall" and "sustained volume" quantities; X Scout verdict cut-offs and the @SolBotChad bonus; graduation progress → 0–20 points mapping; cluster "short window"; freshness decay function; dev-reputation formula and cut-off; confluence weights and the global score threshold; Kelly cap, payout-ratio prior and bucket edges; stop-loss and trailing values and the "high-conviction" cut-off; priority-fee escalation amounts; the shared-funder look-back; the whale volume-points mapping (CHAD: "More confirmed observed buys = more reliable signal"); the second-degree co-buy window; the win-rate look-back used for whale promotion (GMGN `period`, 7d used for now).
 
 ## B-04 Position count: CHAD tiers vs the owner's standing slot rule
 - CHAD product tiers allow 3, 10 or unlimited positions. The owner's permanent directive (2026-10-17) is one global slot, two only by owner order, never three.
