@@ -35,6 +35,8 @@ from jinx.core.bus import EventBus, Lane
 from jinx.core_state import CoreState
 from jinx.execution import ExecutionGateway
 from jinx.health import build_health
+from jinx.intel.bundles import BundleTracker
+from jinx.intel.safety import SafetyService
 from jinx.ledger import PositionLedger
 from jinx.market_memory import MarketMemory
 from jinx.modes import get_mode
@@ -86,6 +88,8 @@ class JinxApp:
         self.gateway = ExecutionGateway(self.store, self.ledger, self.paper)
         self.bus = EventBus(persist=self.market.record_event)
         self.bus.subscribe(Lane.FAST, self.core.apply, name="core_state")
+        self.bundles = BundleTracker()                     # R1 evidence, off the fast lane
+        self.bus.subscribe(Lane.BACKGROUND, self.bundles.on_event, name="bundles")
         self.recovery = recover(self.market, self.core, self.ledger, self.wallet, bus=self.bus)
 
     async def start(self) -> None:
@@ -108,6 +112,8 @@ class JinxApp:
         if (s.gmgn_build_dir / "dist" / "client" / "OpenApiClient.js").exists():
             await self.gmgn.start()
         self._build_services()
+        # CHAD C01/C08: candidates get their safety and developer check in parallel, from GMGN, off the trading path
+        self.safety = SafetyService(self.gmgn) if self.gmgn.running else None
         self._tasks = {"bus": asyncio.create_task(self.bus.run(), name="bus"),
                        "mako-feed": asyncio.create_task(self.feed.run(), name="mako-feed"),
                        "status": asyncio.create_task(self._status_loop(), name="status")}
@@ -169,6 +175,8 @@ class JinxApp:
             "object_storage": self.backups.health() if self.backups else {"configured": False},
             "ai_gateway": self.ai_gateway.health() if self.ai_gateway else {"configured": False},
         }
+        h["intel"] = {"safety": dict(self.safety.stats) if getattr(self, "safety", None) else {"configured": False},
+                      "bundles_tracked": len(self.bundles._tokens)}
         h["storage"] = self.monitor.report()
         h["end_of_day"] = {"last_day": self.daily.last_day, "report": self.daily.last_report}
         if h["storage"]["status"] == "critical" and h["status"] == "ok":
