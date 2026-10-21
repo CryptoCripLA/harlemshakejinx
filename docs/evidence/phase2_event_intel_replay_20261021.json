@@ -1,63 +1,62 @@
 {
  "capture": "pumpapi-live-20261021.jsonl.gz",
  "records": 1200,
- "commit": "254434f",
+ "commit": "ae93665",
  "host": "jinx-nyc",
  "python": "3.12.3",
- "generated_utc": "2026-10-21T04:31:34Z",
+ "generated_utc": "2026-10-21T05:50:03Z",
  "events": 1211,
  "refused": 0,
  "per_event_processing_us": {
   "early_momentum": {
-   "p50": 9.431,
-   "p95": 26.121,
-   "p99": 55.329,
-   "max": 74.631,
+   "p50": 7.66,
+   "p95": 21.39,
+   "p99": 44.111,
+   "max": 150.391,
    "n": 1211
   },
   "graduation": {
-   "p50": 9.07,
-   "p95": 12.47,
-   "p99": 22.36,
-   "max": 80.009,
+   "p50": 8.589,
+   "p95": 15.32,
+   "p99": 26.27,
+   "max": 82.47,
    "n": 1211
   },
   "migration": {
-   "p50": 16.62,
-   "p95": 27.43,
-   "p99": 63.51,
-   "max": 1261.844,
+   "p50": 16.7,
+   "p95": 31.28,
+   "p99": 56.16,
+   "max": 857.603,
    "n": 1211
   }
  },
  "early_momentum": {
   "detections": 38,
   "feed_delay_ms": {
-   "p50": 671.623016,
-   "p95": 1458.596888,
-   "p99": 1537.564913,
-   "max": 1537.564913,
+   "p50": 671.623144,
+   "p95": 1458.597016,
+   "p99": 1537.565041,
+   "max": 1537.565041,
    "n": 38
   },
   "processing_us": {
-   "p50": 16.129,
-   "p95": 26.71,
-   "p99": 27.06,
-   "max": 27.06,
+   "p50": 11.32,
+   "p95": 19.16,
+   "p99": 20.7,
+   "max": 20.7,
    "n": 38
   },
   "detection_delay_ms": {
-   "p50": 671.637596,
-   "p95": 1458.623628,
-   "p99": 1537.591973,
-   "max": 1537.591973,
+   "p50": 671.631794,
+   "p95": 1458.613066,
+   "p99": 1537.583651,
+   "max": 1537.583651,
    "n": 38
   },
   "trade_permitted": 0,
   "blocking": [
-   "curve_gate_0_5_to_10_sol",
-   "curve_gate_below_35_sol",
-   "peak_sol_gate",
+   "current_reserve_0_5_to_10_real_sol",
+   "peak_reserve_max_10_real_sol",
    "sybil_funder"
   ]
  },
@@ -78,6 +77,7 @@
  "migration": {
   "migrations": 0,
   "verified": 0,
+  "evicted": 0,
   "signal_delay_ms": {
    "p50": null,
    "p95": null,

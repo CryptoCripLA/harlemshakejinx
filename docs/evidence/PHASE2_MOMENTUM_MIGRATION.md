@@ -33,9 +33,13 @@ idle 2 h on the receipt clock, per-token caps) and rebuilt from the feeds after 
 the trackers (never a stale copy), the GMGN Trenches read, background-task counts and the fast lane's measured
 admission-to-handled delay, and each module's own processing time (`handler_processing_us`). The PumpAPI feed
 reports each (re)connection; the engine then marks as incomplete the history of every token tracked so far and of
-every token with an event received before that moment but processed later (trades sent while disconnected are
-lost), so B-02's peak gate blocks those tokens. `trade_permitted` on Early Momentum evidence covers that module's own
-predicates only; safety and the entry re-check are combined in `JinxApp.entry_check`.
+every token with an event that was received, or that happened (provider time), before that moment but is processed
+later (trades sent while disconnected are lost), so B-02's peak gate blocks those tokens. The comparison mixes JINX's
+receipt clock with PumpAPI's clock, which differ by the ~50 ms delivery lag; the error can only block a token that
+started just after a reconnect, never pass one that started before it. `trade_permitted` on Early Momentum evidence covers that module's own
+predicates only; safety and the entry re-check are combined in `JinxApp.entry_check`, which also refuses any token the
+lifecycle has seen migrate (the Early Momentum path is pre-graduation only), whichever module heard the migration
+first; Early Momentum itself remembers a migration even when it arrives before the token's creation.
 
 ## C10 Early Momentum — TESTING; entries blocked until every check passes
 
@@ -57,7 +61,7 @@ predicates only; safety and the entry re-check are combined in `JinxApp.entry_ch
   delivered 40 s late; every arrival order of four buys; a late buy inside the window; duplicate delivery; a retrace
   after a higher peak; unknown, shared and distinct funders; funding learned after detection; failing listeners;
   non-standard curves; a trade-feed gap; bounded state.
-- **Measured:** replay of the committed capture: 38 detections, identical to an independent scan of the raw records;
+- **Measured (Early Momentum):** replay of the committed capture: 38 detections, identical to an independent scan of the raw records;
   shuffled and duplicated delivery converge. Live module run at 254434f (600 s, jinx-nyc): 176 detections, PumpAPI
   time to evidence p50 45.7 ms / p95 50.3 ms / p99 53.6 ms / max 56.6 ms, local processing p50 51 µs; none
   permitted.
@@ -84,7 +88,9 @@ predicates only; safety and the entry re-check are combined in `JinxApp.entry_ch
   which merges every report (PumpAPI, PumpPortal, GMGN Trenches `completed`, GMGN `migrated_pool`) into one record.
   Time comes from the best clock (chain, then provider with slot, then receipt) and a receipt time never replaces a
   provider time, in the record and in the lifecycle. Effects happen once: first report, pool learned, verification
-  change; a later report from the same source with better facts (a provider time, a slot) is kept. Reports naming
+  change; a later report from the same source with better facts (a provider time, a slot) is kept. At most 8 reports
+  are held per migration; at the cap the oldest report that adds nothing (neither the record's time nor the first to
+  name its pool) makes room, so a new pool, a contradiction or a better time is never refused. Reports naming
   different pools are a conflict: nothing is verified, and after a confirmation the lifecycle becomes CONFLICTING
   whatever the precision of the conflicting report's time. The PumpAPI adapter refuses a migrate without its
   timestamp.
@@ -105,7 +111,8 @@ predicates only; safety and the entry re-check are combined in `JinxApp.entry_ch
   is counted once; one older than that window is not counted and the token's flow is marked incomplete, so a total
   is never inflated. The seller's creator flag and phase are read when the evidence is built, so they follow facts
   that arrive later.
-- **M3:** off by default; `confirmation_delay_ms` names a paper reference trade (`live_policy: False`).
+- **M3:** off by default; `confirmation_delay_ms` names a paper reference trade (`live_policy: False`), tracked as
+  trades arrive so the trade retention cap cannot lose it.
 - **Measured:** live module run at 254434f (600 s): 8 migrations, 8 verified; migrate to evidence p50 45.4 ms; first
   pool trade p50 1 slot / 245 ms after the migrate (max 5 slots / 1,056 ms).
 
@@ -134,7 +141,14 @@ event received before a feed gap but processed after it marks its token; R2-2 a 
 kept and the adapter refuses a timestamp-less migrate; R2-3 per-pool retention by event time with reserve-carrying
 trades kept apart; R2-4 a conflicting pool is a lifecycle conflict whatever its time precision; R2-5 duplicates beyond
 the identity window are not counted (flow marked incomplete) and sell annotations are read at build time; R2-6 the
-replay report counts the final verification; R2-7 this document's claims qualified. Later rounds are listed in
+replay report counts the final verification; R2-7 this document's claims qualified.
+
+Codex round 3 on ae93665 (`docs/audits/phase2-intel-codex-20261021-round3.md`): FAIL with 2 HIGH, 4 MEDIUM; F7, R2-1,
+R2-3, R2-4, R2-5 confirmed FIXED. Fixed (`tests/test_review_phase2_intel_round3.py`): R3-1 a migration heard before
+the creation keeps the token out of Early Momentum, and `entry_check` refuses any token the lifecycle has seen
+migrate; R3-2 an event that happened before a feed gap marks its token whenever it is received; R3-3 the report cap
+never refuses new facts; R3-4 the M3 reference survives the retention cap; R3-5 the replay report survives tracker
+eviction (counted as `evicted`); R3-6 replay delays are measured on the final record. Later rounds are listed in
 `docs/audits/`.
 
 ## Deployment

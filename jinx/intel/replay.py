@@ -78,12 +78,13 @@ class ReplayRun:
         first = {}
         for e in self.migrations:
             first.setdefault(e.mint, e)
-        finals = [self.migration.evidence(m) for m in first]
-        # the final evidence decides: a verification later revoked is not counted (Codex round 2, R2-6)
+        # the final evidence decides (Codex rounds 2 and 3): a revoked verification is not counted, the delay is
+        # measured from the record's authoritative time, and a token evicted by the tracker's bounds is counted apart
+        finals = [e for e in (self.migration.evidence(m) for m in first) if e is not None]
         verified = {e.mint: e for e in finals if e.verified}
-        return {"migrations": len(first), "verified": len(verified),
+        return {"migrations": len(first), "verified": len(verified), "evicted": len(first) - len(finals),
                 "signal_delay_ms": percentiles([(e.observed_ns - e.event_ns + e.processing_ns) / 1e6
-                                                for e in first.values()]),
+                                                for e in finals if e.clock != "receipt"]),
                 "migration_to_first_verified_trade_ms": percentiles(
                     [e.first_verified_liquidity["ms_after_migration"] for e in verified.values()]),
                 "slots_to_first_verified_trade": percentiles(

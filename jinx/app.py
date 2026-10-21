@@ -34,6 +34,7 @@ from jinx.adapters.neonai.gateway import NeonAiGateway
 from jinx.adapters.pumpapi.feed import PumpApiFeed
 from jinx.adapters.rugcheck.client import RugCheckClient
 from jinx.core.bus import EventBus, Lane
+from jinx.core.lifecycle import State as LifeState
 from jinx.core_state import CoreState
 from jinx.execution import ExecutionGateway
 from jinx.health import build_health
@@ -299,9 +300,15 @@ class JinxApp:
         blocking = list(evidence.blocking) if evidence else ["no detection"]
         grad = self.graduation.evidence(mint)
         life = self.migration.lifecycle(mint)
+        # pre-graduation path only (owner B-02): a token the lifecycle has seen migrate is never an entry here,
+        # whichever module heard the migration first (Codex round 3, R3-1)
+        migrated = life is not None and (life.last_consistent_state.value >= LifeState.MIGRATION_OBSERVED.value
+                                         or life.state is LifeState.CONFLICTING)
         return {"reserve_eligible": reserve["eligible"], "reserve_reason": reserve["reason"],
                 "safety_eligible": bool(safety.get("eligible")), "early_momentum_blocking": blocking,
-                "all_checks_pass": reserve["eligible"] and bool(safety.get("eligible")) and not blocking,
+                "all_checks_pass": (reserve["eligible"] and bool(safety.get("eligible")) and not blocking
+                                    and not migrated),
+                "migrated": migrated,
                 "lifecycle_state": life.state.name if life else None,
                 "graduation": None if grad is None else {
                     "progress": grad.latest.progress, "standard_curve": grad.latest.standard_curve,

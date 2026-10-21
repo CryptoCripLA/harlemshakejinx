@@ -269,16 +269,15 @@ class EarlyMomentum:
     def on_event(self, ev: MarketEvent) -> list[EarlyMomentumEvidence]:
         started = time.perf_counter_ns()
         self.stats["events"] += 1
-        if ev.kind is EventKind.MIGRATION:
-            st = self._mints.get(ev.mint)
-            if st is not None:
-                st.migrated = True
-            return []
-        if ev.kind not in (EventKind.TOKEN_CREATED, EventKind.TRADE):
+        if ev.kind not in (EventKind.TOKEN_CREATED, EventKind.TRADE, EventKind.MIGRATION):
             return []
         st = self._mints.touch(ev.mint, ev.recv_ns)
-        if self._gap is not None and ev.recv_ns < self._gap[0] and st.gap is None:
-            st.gap = self._gap[1]          # received before the gap (queued while it happened): history spans it
+        if self._gap is not None and st.gap is None and min(ev.recv_ns, event_time(ev)[0]) < self._gap[0]:
+            # received, or happened, before the gap (queued or delivered late): the history spans it (round 3, R3-2)
+            st.gap = self._gap[1]
+        if ev.kind is EventKind.MIGRATION:
+            st.migrated = True             # remembered even when the migration arrives before the creation (R3-1)
+            return []
         if ev.kind is EventKind.TOKEN_CREATED:
             st.creator, st.since_creation, st.create_sig = ev.trader, True, ev.signature
         if ev.kind is EventKind.TRADE and not is_curve(ev) and ev.raw.get("pool") not in (None, "pump"):
