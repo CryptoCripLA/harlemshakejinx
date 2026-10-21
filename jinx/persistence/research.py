@@ -7,6 +7,8 @@ loop in batches.
 - `wallet_stats`: per-wallet totals (buys, sells, SOL in and out, first and last seen) accumulated across the
   whole stream. RAM keeps a wallet only while it is active (jinx/market_memory.py); each pass sends the *increase*
   since the previous pass, so totals keep adding up after a wallet is evicted from RAM and comes back.
+- `tracked_wallets`: whales promoted by CHAD's discovery (jinx/intel/whales.py), reloaded on start; a whale with
+  no trade for the retention window is removed.
 - `perf_samples`: one compact row per pass: receive-to-state and admission-to-state latency percentiles, event
   throughput, RAM/registry sizes and the storage monitor's figures.
 
@@ -42,6 +44,18 @@ CREATE INDEX IF NOT EXISTS wallet_stats_last_seen ON wallet_stats (last_time_ns)
 CREATE TABLE IF NOT EXISTS perf_samples (
     ts TIMESTAMPTZ PRIMARY KEY,
     sample JSONB NOT NULL
+);
+CREATE TABLE IF NOT EXISTS tracked_wallets (
+    address TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    period TEXT,
+    win_rate DOUBLE PRECISION,
+    realized_profit_usd DOUBLE PRECISION,
+    funded_by TEXT,
+    last_trade_ts BIGINT,
+    evidence JSONB NOT NULL,
+    promoted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE TABLE IF NOT EXISTS jinx_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL,
                                       updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
@@ -125,17 +139,43 @@ class ResearchStore:
         self.stats["last_ok_ns"], self.stats["last_error"] = time.time_ns(), None
         return len(rows)
 
+    async def upsert_tracked_wallets(self, evidence: list, now_ts: float) -> int:
+        rows = [(e.address, "promoted", e.period, e.facts.get("win_rate"), e.facts.get("realized_profit_usd"),
+                 e.facts.get("funded_by"), e.facts.get("last_trade_ts"), json.dumps(e.facts, default=str))
+                for e in evidence]
+        if not self._ready:
+            await self.init_schema()
+        async with await self._connect() as conn:
+            async with conn.transaction():
+                async with conn.cursor() as cur:
+                    await cur.executemany(
+                        "INSERT INTO tracked_wallets (address, source, period, win_rate, realized_profit_usd, funded_by,"
+                        " last_trade_ts, evidence) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (address) DO"
+                        " UPDATE SET period = EXCLUDED.period, win_rate = EXCLUDED.win_rate, realized_profit_usd ="
+                        " EXCLUDED.realized_profit_usd, funded_by = EXCLUDED.funded_by, last_trade_ts ="
+                        " EXCLUDED.last_trade_ts, evidence = EXCLUDED.evidence, updated_at = now()", rows)
+        return len(rows)
+
+    async def load_tracked_wallets(self) -> list[tuple[str, str, dict]]:
+        if not self._ready:
+            await self.init_schema()
+        async with await self._connect() as conn:
+            rows = await (await conn.execute("SELECT address, source, evidence FROM tracked_wallets")).fetchall()
+        return [(a, s, e) for a, s, e in rows]
+
     async def prune(self, now_ns: int | None = None) -> dict:
         now_ns = now_ns or time.time_ns()
         cutoff = now_ns - self.wallet_retention_days * 86_400 * NS
         async with await self._connect() as conn:
             async with conn.transaction():
                 w = (await conn.execute("DELETE FROM wallet_stats WHERE last_time_ns < %s", (cutoff,))).rowcount
+                tw = (await conn.execute("DELETE FROM tracked_wallets WHERE last_trade_ts < %s",
+                                         (cutoff // NS,))).rowcount
                 p = (await conn.execute("DELETE FROM perf_samples WHERE ts < now() - make_interval(days => %s)",
                                         (self.perf_retention_days,))).rowcount
             cur = await conn.execute("SELECT pg_database_size(current_database())")
             self.stats["db_bytes"] = (await cur.fetchone())[0]
-        self.stats["pruned"] = {"wallets": w, "perf_samples": p}
+        self.stats["pruned"] = {"wallets": w, "perf_samples": p, "tracked_wallets": tw}
         return self.stats["pruned"]
 
     def health(self) -> dict:

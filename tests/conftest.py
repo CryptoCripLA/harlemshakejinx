@@ -30,3 +30,22 @@ def make_create(mint="MINT", sig=None, creator="DEV", recv_ns=None, seq=None, v_
     return MarketEvent(kind=EventKind.TOKEN_CREATED, source="test", mint=mint, signature=sig or f"CSIG{n}",
                        trader=creator, v_sol_lamports=v_sol, v_tokens=v_tokens,
                        recv_ns=recv_ns if recv_ns is not None else n, seq=seq if seq is not None else n)
+
+
+# Owner storage rule 6: every test run gets its own private temporary directory and removes it when it ends, so
+# nothing accumulates and concurrent runs (two engineers building in parallel) never delete each other's files.
+_RUN_TMP = None
+
+
+def pytest_configure(config):
+    global _RUN_TMP
+    import tempfile
+    if not config.option.basetemp and not hasattr(config, "workerinput"):
+        _RUN_TMP = tempfile.mkdtemp(prefix="jinx-pytest-")
+        config.option.basetemp = _RUN_TMP
+
+
+def pytest_unconfigure(config):
+    import shutil
+    if _RUN_TMP:
+        shutil.rmtree(_RUN_TMP, ignore_errors=True)

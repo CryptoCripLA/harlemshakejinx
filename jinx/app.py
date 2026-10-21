@@ -37,6 +37,7 @@ from jinx.execution import ExecutionGateway
 from jinx.health import build_health
 from jinx.intel.bundles import BundleTracker
 from jinx.intel.safety import SafetyService
+from jinx.intel.whales import DISCOVERY_INTERVAL_S, WhaleBook, discovery_pass
 from jinx.ledger import PositionLedger
 from jinx.market_memory import MarketMemory
 from jinx.modes import get_mode
@@ -90,6 +91,9 @@ class JinxApp:
         self.bus.subscribe(Lane.FAST, self.core.apply, name="core_state")
         self.bundles = BundleTracker()                     # R1 evidence, off the fast lane
         self.bus.subscribe(Lane.BACKGROUND, self.bundles.on_event, name="bundles")
+        self.whales = WhaleBook()                          # CHAD C04: Layer-1 alerts and discovery candidates
+        self.bus.subscribe(Lane.BACKGROUND, self.whales.on_event, name="whales")
+        self.last_discovery: dict | None = None
         self.recovery = recover(self.market, self.core, self.ledger, self.wallet, bus=self.bus)
 
     async def start(self) -> None:
@@ -121,6 +125,8 @@ class JinxApp:
             self._tasks["pumpapi-feed"] = asyncio.create_task(self.pumpapi.run(), name="pumpapi-feed")
         if self.replicator is not None:
             self._tasks["postgres"] = asyncio.create_task(self.replicator.run(), name="postgres")
+        if self.safety is not None:
+            self._tasks["whale-discovery"] = asyncio.create_task(self._whale_discovery_loop(), name="whale-discovery")
         if self.ai_gateway is not None:
             self._tasks["ai-gateway-probe"] = asyncio.create_task(self._probe_gateway(), name="ai-gateway-probe")
         self._server = await asyncio.start_server(self._http, "0.0.0.0", s.http_port)
@@ -145,6 +151,22 @@ class JinxApp:
         log.info("services: postgres=%s research=%s redis=%s object_storage=%s ai_gateway=%s",
                  self.replicator is not None, self.research is not None, self.redis_state is not None,
                  self.backups is not None, self.ai_gateway is not None)
+
+    async def _whale_discovery_loop(self) -> None:
+        """CHAD: discovery "runs every 4 hours". Promoted whales persist in the research store and come back on start."""
+        if self.research is not None:
+            try:
+                for address, source, evidence in await self.research.load_tracked_wallets():
+                    self.whales.track(address, source, evidence)
+            except Exception:
+                log.warning("could not reload tracked wallets; discovery rebuilds them")
+        while True:
+            await asyncio.sleep(DISCOVERY_INTERVAL_S)
+            try:
+                self.last_discovery = await discovery_pass(self.gmgn, self.whales, research=self.research)
+                log.info("whale discovery: %s", {k: v for k, v in self.last_discovery.items() if k != "promoted"})
+            except Exception:
+                log.exception("whale discovery pass failed; next pass in 4 hours")
 
     async def _probe_gateway(self) -> None:
         try:
@@ -176,7 +198,9 @@ class JinxApp:
             "ai_gateway": self.ai_gateway.health() if self.ai_gateway else {"configured": False},
         }
         h["intel"] = {"safety": dict(self.safety.stats) if getattr(self, "safety", None) else {"configured": False},
-                      "bundles_tracked": len(self.bundles._tokens)}
+                      "bundles_tracked": len(self.bundles._tokens),
+                      "whales": {"tracked": len(self.whales.tracked), "candidates": len(self.whales._candidates),
+                                 "alerts": len(self.whales.alerts), "last_discovery": self.last_discovery}}
         h["storage"] = self.monitor.report()
         h["end_of_day"] = {"last_day": self.daily.last_day, "report": self.daily.last_report}
         if h["storage"]["status"] == "critical" and h["status"] == "ok":

@@ -264,6 +264,8 @@ def test_pytest_removes_its_temporary_directories():
     opts = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["pytest"]["ini_options"]
     assert opts["tmp_path_retention_policy"] == "none" and opts["tmp_path_retention_count"] == 0
     assert "no:cacheprovider" in opts["addopts"]
+    conftest = (ROOT / "tests" / "conftest.py").read_text()
+    assert "mkdtemp(prefix=\"jinx-pytest-\")" in conftest and "shutil.rmtree(_RUN_TMP" in conftest
 
 
 def test_a_replay_without_db_leaves_no_temporary_database(tmp_path, monkeypatch):

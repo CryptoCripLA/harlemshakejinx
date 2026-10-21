@@ -204,3 +204,18 @@ def test_replicator_resync_restores_a_cleared_outbox(fresh_pg, tmp_path):
             assert remote == local, t
     assert rep.backlog() == 0 and rep.stats["resynced"] > 0
     store.close()
+
+
+def test_promoted_whales_persist_reload_and_expire_after_inactivity(fresh_pg):
+    from jinx.intel.whales import wallet_evidence
+    from jinx.persistence.research import ResearchStore
+    import json as _json
+    stats = _json.loads((Path(__file__).parent / "fixtures" / "gmgn_wallet_stats_sample_20261021.json").read_text())["stats"]
+    rs = ResearchStore(fresh_pg, wallet_retention_days=30)
+    active = wallet_evidence(dict(stats, wallet_address="ACTIVE", last_timestamp=1_000_000), "7d")
+    stale = wallet_evidence(dict(stats, wallet_address="STALE", last_timestamp=1_000_000 - 40 * 86_400), "7d")
+    assert asyncio.run(rs.upsert_tracked_wallets([active, stale], 1_000_000)) == 2
+    assert {a for a, _, _ in asyncio.run(rs.load_tracked_wallets())} >= {"ACTIVE", "STALE"}
+    pruned = asyncio.run(rs.prune(1_000_000 * 1_000_000_000))
+    assert pruned["tracked_wallets"] >= 1
+    assert "STALE" not in {a for a, _, _ in asyncio.run(rs.load_tracked_wallets())}
