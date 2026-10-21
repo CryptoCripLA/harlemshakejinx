@@ -202,6 +202,20 @@ class JinxApp:
         h = self.pumpapi.health()
         return bool(h.get("connected")) and not h.get("ingest_stalled")
 
+    def _entry_summary(self) -> dict:
+        checks = [c["entry_check"] for c in self.candidates.values() if c.get("entry_check")]
+        reasons: dict[str, int] = {}
+        for c in checks:
+            if not c["reserve_eligible"]:
+                key = c["reserve_reason"].split(":")[0] if c["reserve_reason"].startswith(("stale", "migrated")) \
+                    else c["reserve_reason"]
+                reasons[key] = reasons.get(key, 0) + 1
+        return {"checked": len(checks), "reserve_ok": sum(c["reserve_eligible"] for c in checks),
+                "safety_ok": sum(c["safety_eligible"] for c in checks),
+                "reserve_and_safety_ok": sum(c["reserve_eligible"] and c["safety_eligible"] for c in checks),
+                "all_checks_ok": sum(c["all_checks_pass"] for c in checks),
+                "reserve_blocked": dict(sorted(reasons.items(), key=lambda kv: -kv[1])[:6])}
+
     def entry_check(self, mint: str) -> dict:
         """Everything known about entering `mint` right now (owner decision B-02 §5: re-checked at the decision).
         Phase 2 records it; nothing here places an order."""
@@ -302,7 +316,8 @@ class JinxApp:
                                          "latest": [{"mint": m, "safety": c.get("safety"),
                                                      "trade_permitted": c.get("trade_permitted"),
                                                      "entry_check": c.get("entry_check")}
-                                                    for m, c in list(self.candidates.items())[-5:]]},
+                                                    for m, c in list(self.candidates.items())[-5:]],
+                                         "entry_summary": self._entry_summary()},
                       "whales": {"tracked": len(self.whales.tracked), "candidates": len(self.whales._candidates),
                                  "alerts": len(self.whales.alerts), "last_discovery": self.last_discovery}}
         h["storage"] = self.monitor.report()
