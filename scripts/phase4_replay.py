@@ -12,6 +12,7 @@ size can be given; nothing is copied.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import platform
 import shutil
@@ -36,7 +37,13 @@ def one_run(records, source, **kw) -> dict:
         stats = h.run(app, h.deliveries(records, source, **kw))
         elapsed = time.perf_counter() - t0
         view = h.state_view(app)
-        out = {"digest": h.state_digest(app), "published": stats.published, "duplicates": stats.duplicates,
+        strict = h.order_independent_view(view)
+        out = {"digest": h.state_digest(app),
+               "digest_order_independent_parts": hashlib.sha256(
+                   json.dumps(strict, sort_keys=True).encode()).hexdigest(),
+               "parts": {k: hashlib.sha256(json.dumps(v, sort_keys=True).encode()).hexdigest()[:16]
+                         for k, v in view.items()},
+               "published": stats.published, "duplicates": stats.duplicates,
                "refused_records": stats.refused_records, "handler_errors": stats.handler_errors,
                "elapsed_s": round(elapsed, 3), "tokens": len(app.core.tokens),
                "detections": len(view["early_momentum"]), "graduation_curves": len(view["graduation"]),
@@ -57,6 +64,8 @@ def main() -> None:
     report = {"what": "Phase 4 V03 deterministic replay through JinxApp._build_core (bus, dedup, durable write, "
                       "core state, every intel module, ledger, paper wallet)",
               "excluded_fields": sorted(h.VOLATILE_KEYS),
+              "arrival_fields_excluded_per_section": {k: sorted(v) for k, v in h.ARRIVAL_FIELDS.items()},
+              "known_order_defects_excluded_from_the_verdict": h.KNOWN_ORDER_DEFECTS,
               "commit": subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip(),
               "host": platform.node(), "utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
               "captures": {}}
@@ -68,10 +77,13 @@ def main() -> None:
         runs = [{"seed": s, "duplicate_every": args.duplicate_every,
                  **one_run(records, source, shuffle_seed=s, duplicate_every=args.duplicate_every)}
                 for s in args.seeds]
-        same = all(r["digest"] == base["digest"] for r in runs)
+        same = all(r["digest_order_independent_parts"] == base["digest_order_independent_parts"] for r in runs)
+        differing = sorted({k for r in runs for k, v in r["parts"].items() if v != base["parts"][k]})
         ok &= same and not base["handler_errors"]
         report["captures"][Path(path).name] = {"records": len(records), "source": source, "in_order": base,
-                                               "shuffled_resent": runs, "identical_digest": same}
+                                               "shuffled_resent": runs,
+                                               "identical_order_independent_state": same,
+                                               "parts_differing_under_reordering": differing}
     report["result"] = "PASS" if ok else "FAIL"
     text = json.dumps(report, indent=1)
     if args.out:

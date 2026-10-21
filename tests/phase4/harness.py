@@ -49,12 +49,29 @@ FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 VOLATILE_KEYS = frozenset({
     "detected_ns",          # wall clock when Early Momentum first emitted
     "processing_ns", "processing_us",
-    "observed_ns",          # receipt time of the arrival that completed a detection / a report
-    "freshness", "detection_delay_ms", "feed_delay_ms",
-    "latency_ms", "read_ns", "fetched_ns", "first_detected_ns",
-    "late_readings",        # graduation diagnostic: how many readings arrived after a newer one (arrival order by
-                            # definition); the latest reading and the peaks it feeds are compared in full
+    "latency_ms", "read_ns", "fetched_ns", "first_detected_ns", "decided_ns", "ts_ns",
 })
+# Fields that record WHICH ARRIVAL completed or first reported something. Two deliveries of the same facts in another
+# order complete a detection on a different arrival, so these differ by design; they are removed only at the named
+# place, never elsewhere (every other receipt or event time in the view is compared in full).
+ARRIVAL_FIELDS = {
+    "early_momentum": {"observed_ns", "freshness"},   # receipt of the arrival that completed the detection
+    "graduation": {"late_readings"},                  # count of readings that arrived after a newer one
+}
+
+
+# Parts of state_view that the Phase 4 review found to depend on delivery order. Each is a defect in its owner's module,
+# pinned by a strict-xfail test in test_p4_replay_determinism.py; the owner deletes the entry here and the marker there
+# in the fixing commit. Every other part must be identical under any delivery order.
+KNOWN_ORDER_DEFECTS = {
+    "whales": "P4-F8",        # discovery candidates taken only from buys that arrived before the migration
+    "bundles": "P4-F11",      # a later-slot trade delivered before the creation never marks the bundle final
+    "candidates": "P4-F10",   # a detection skipped as never-eligible on an incomplete history is never screened
+}
+
+
+def order_independent_view(view: dict) -> dict:
+    return {k: v for k, v in view.items() if k not in KNOWN_ORDER_DEFECTS}
 
 
 def build_app(data_dir: Path, gmgn=None, rugcheck=None, safety=None, **settings) -> JinxApp:
@@ -148,30 +165,62 @@ def _canon(x):
     return str(x)
 
 
+class _LiveFeedView:
+    def health(self):
+        return {"connected": True, "ingest_stalled": False}
+
+
+def _top(d: dict, section: str) -> dict:
+    return {k: v for k, v in d.items() if k not in ARRIVAL_FIELDS.get(section, ())}
+
+
 def state_view(app: JinxApp) -> dict:
+    """Every module's decision-relevant state. The entry decision view is read as the decision reads it with the
+    trade feed live (offline there is no feed; the live-feed condition itself is tested in test_p4_outages.py)."""
     tokens = sorted(t.mint for t in app.core.tokens.all())
     view = {
         "tokens": app.core.tokens.digest(),
-        "early_momentum": {}, "reserve_gates": {}, "graduation": {}, "migration": {},
+        "early_momentum": {}, "reserve_gates": {}, "graduation": {}, "migration": {}, "bundles": {},
+        "whales": {"tracked": sorted((w, v["source"]) for w, v in app.whales.tracked.items()),
+                   "discovery_candidates": sorted(app.whales.discovery_candidates()),
+                   "alerts": sorted((a["mint"], a["wallet"], a["signature"], a["ts"]) for a in app.whales.alerts)},
+        "candidates": {},
+        "entries": dict(getattr(getattr(app, "entries", None), "stats", {}) or {}),
         "ledger": [_canon(p) for p in app.ledger.all()],
         "paper_wallet": dataclasses.asdict(app.wallet.reconcile()),
     }
     for m in tokens:
         ev = app.early.evidence(m)
         if ev is not None:
-            view["early_momentum"][m] = _canon(ev.to_dict())
+            view["early_momentum"][m] = _canon(_top(ev.to_dict(), "early_momentum"))
         gates = app.early.reserve_check(m, feed_live=True)
         if gates.get("current") is not None:
             view["reserve_gates"][m] = _canon(gates)
         g = app.graduation.evidence(m)
         if g is not None:
-            view["graduation"][m] = _canon(g)
+            view["graduation"][m] = _canon(_top(_canon(g), "graduation"))
         mig = app.migration_view(m)
         if mig is not None:
             view["migration"][m] = _canon({**mig, "summary": app.migration.summary(m)})
+        b = app.bundles.evidence(m)
+        if b is not None:
+            view["bundles"][m] = _canon({k: getattr(b, k) for k in ("creator", "create_slot", "create_signature",
+                                                                    "same_slot_buys", "same_slot_buy_lamports",
+                                                                    "buyers", "creator_bought_same_slot", "final")})
+        cluster = app.whales.cluster_facts(m)
+        if cluster["tracked_buyers"]:
+            view["whales"].setdefault("clusters", {})[m] = _canon(cluster)
     for m in sorted(app.migrations):
         if m not in view["migration"]:
             view["migration"][m] = _canon(app.migration.summary(m))
+    saved, app.pumpapi = getattr(app, "pumpapi", None), _LiveFeedView()
+    try:
+        for m in sorted(app.candidates):
+            c = app.candidates[m]
+            view["candidates"][m] = _canon({"safety": c.get("safety"), "trade_permitted": c.get("trade_permitted"),
+                                            "entry_check": app.entry_check(m)})
+    finally:
+        app.pumpapi = saved
     return view
 
 
