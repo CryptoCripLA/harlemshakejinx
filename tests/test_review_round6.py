@@ -9,7 +9,7 @@ import pytest
 from jinx.execution import ExitIntent
 from jinx.store import Store
 from tests.test_replay_live_capture import install_network_guard
-from tests.test_review_round4 import rig, v1_with_prefixed_exit
+from tests.test_review_round4 import rig, v1_with_prefixed_exit, without_outbox
 
 
 def escaped_with_binding(path: Path, binding) -> None:
@@ -23,6 +23,7 @@ def escaped_with_binding(path: Path, binding) -> None:
         intent, amount, legacy = binding
         c.execute("INSERT INTO exit_intents (intent_id, position_id, token_amount, created_ns, legacy_fill_id)"
                   " VALUES (?, 1, ?, 5, ?)", (intent, amount, legacy))
+    without_outbox(c)
     c.execute("ALTER TABLE fills DROP COLUMN exit_intent_id")
     c.execute("DROP TABLE IF EXISTS historical_exits")
     c.execute("PRAGMA user_version = 4")

@@ -8,7 +8,7 @@ from jinx.execution import ExitIntent
 from jinx.ledger import Status
 from jinx.modes import Mode
 from jinx.store import Store
-from tests.test_review_round4 import rig, v1_with_prefixed_exit
+from tests.test_review_round4 import rig, v1_with_prefixed_exit, without_outbox
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -23,6 +23,7 @@ def escaped_v4_state(path: Path) -> None:
     c.execute("DELETE FROM exit_intents")
     c.execute("INSERT INTO exit_intents (intent_id, position_id, token_amount, created_ns, legacy_fill_id)"
               " VALUES ('X', 1, 100000000, 5, NULL)")
+    without_outbox(c)
     c.execute("ALTER TABLE fills DROP COLUMN exit_intent_id")
     c.execute("PRAGMA user_version = 4")
     c.commit()

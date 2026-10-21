@@ -96,11 +96,7 @@ safety 0–100 formula and pass threshold; momentum "stall" and "sustained volum
 - Needed: an owner decision only if pump.fun's site endpoints are still wanted despite §21(h).
 - Reversible option: written permission from pump.fun, after which a read-only adapter is about a day's work.
 
-## B-18 Storage for the PumpAPI feed
-- Measured 2026-10-21: under the follow policy (all bonding-curve events, all migrations, PumpSwap trades only for followed or held mints), JINX would store about 43 events/s. That is ≈ 164 MB/hour, ≈ 3.9 GB/day with compact records.
-- jinx-nyc had 3.8 GB free (92 % used) when measured.
-- The Phase 1 store keeps every event forever, so the feed cannot run unattended as is.
-- Needed (owner): free disk on jinx-nyc, and/or approve a retention window for applied raw events.
-  - Recovery needs only unapplied events plus derived state.
-  - PumpAPI keeps hourly replay archives of everything, so history stays recoverable for backtests.
-- Reversible option: a retention job that deletes applied events older than N hours (N set by the owner), off by default.
+## B-18 Storage for the PumpAPI feed — RESOLVED 2026-10-21
+- Owner decisions 2026-10-21: raw PumpAPI events are processed in RAM and discarded after extraction; no raw archive anywhere; new dedicated services (Contabo execution, Neon ledger, Railway research, Redis transient); permanent storage hygiene rules.
+- Implemented: the market store is in-memory only (event TTL 300 s + cap 60,000; raw payload released at apply; tokens and wallets idle 2 h + caps). Disk on the execution server holds only the ledger (172 KB measured). The earlier projection of 3.9 GB/day no longer applies: nothing from the feed is written to disk.
+- Evidence: `tests/test_market_memory.py`, `tests/test_storage_hygiene.py`, `docs/INFRASTRUCTURE.md` §4.

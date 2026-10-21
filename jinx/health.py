@@ -28,9 +28,13 @@ def percentiles_ms(samples_ns: list[int]) -> dict | None:
 
 def build_health(store: Store, ledger: PositionLedger, wallet: PaperWallet, adapters: list[dict],
                  bus_stats: dict, now_ns: int, latency_ns: list[int] | None = None,
-                 feed_stale_after_ns: int | None = None, receive_latency_ns: list[int] | None = None) -> dict:
+                 feed_stale_after_ns: int | None = None, receive_latency_ns: list[int] | None = None,
+                 market_store: Store | None = None) -> dict:
+    """`store` is the durable ledger store; `market_store`, when given, is the in-memory market store whose event
+    counts are reported (owner order 2026-10-21: raw events live in RAM only)."""
     rec = wallet.reconcile()
     store_ok = store.journal_mode() == "wal" and store.quick_check()
+    events_store = market_store if market_store is not None else store
     feeds = [a for a in adapters if a.get("adapter") == "mako"]
     feed_ok = bool(feeds) and all(f.get("connected") for f in feeds)
     if feed_ok and feed_stale_after_ns is not None:
@@ -38,7 +42,7 @@ def build_health(store: Store, ledger: PositionLedger, wallet: PaperWallet, adap
     if any(f.get("ingest_stalled") or f.get("pending_unsubscribes") or f.get("unconfirmed_subscriptions")
            for f in feeds):
         feed_ok = False
-    unapplied = len(store.unapplied_events())
+    unapplied = len(events_store.unapplied_events())
     max_slots = ledger.max_slots()
     if not (store_ok and rec.ok):
         status = "failed"
@@ -53,7 +57,8 @@ def build_health(store: Store, ledger: PositionLedger, wallet: PaperWallet, adap
         "slots": {"max": max_slots, "active": ledger.active_slots()},
         "paper_wallet": {"reconciled": rec.ok, "starting_lamports": rec.starting_lamports,
                          "balance_lamports": rec.balance_lamports},
-        "store": {"ok": store_ok, "events": store.event_count(), "unapplied": unapplied},
+        "store": {"ok": store_ok, "events": events_store.event_count(), "unapplied": unapplied,
+                  "market_store": "memory" if market_store is not None else "same as ledger"},
         "adapters": adapters,
         "bus": bus_stats,
         # local processing inside JINX, not order-execution latency

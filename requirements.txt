@@ -5,3 +5,8 @@ httpx==0.28.1
 python-dotenv==1.2.4
 solders==0.29.0
 websockets==17.3
+# Clean-slate storage (owner order 2026-10-21): PostgreSQL for durable records, Redis for transient state.
+psycopg[binary]==3.2.13
+redis==5.2.1
+boto3==1.35.36            # Neon Object Storage (S3 API): ledger backups
+botocore==1.35.99

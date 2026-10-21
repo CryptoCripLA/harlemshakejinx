@@ -1,9 +1,17 @@
 """JINX runtime: the composition root that wires adapters to core.
 
-Phase 1 runtime: live Pump.fun events (Mako's stream) -> bus -> durable store
-and registries; paper wallet, ledger and order gateway ready but idle (there
-is no strategy until Phases 2 and 3); GMGN bridge health; a /health endpoint
-for the host.
+Runtime: live Pump.fun events (Mako's PumpPortal stream and the PumpAPI.io
+stream) -> bus -> in-memory market store and registries (raw events are
+discarded after their useful content is applied: owner order 2026-10-21);
+durable ledger store for trading records; paper wallet, ledger and order
+gateway; GMGN bridge health; a /health endpoint for the host.
+
+Services, all off the trading path and all optional (owner orders 2026-10-21):
+PostgreSQL (Neon) receives the trading records from the ledger outbox; Redis
+holds expiring snapshots; Neon Object Storage holds the daily ledger backup with
+JINX-enforced retention; the Neon AI Gateway is available for asynchronous
+context. A storage monitor watches RAM, disk, PostgreSQL, Redis and object
+storage against budgets, and an end-of-day pass releases space.
 """
 from __future__ import annotations
 
@@ -21,15 +29,23 @@ from jinx.adapters.d3ad.adapter import D3adExecutionAdapter
 from jinx.adapters.datanomad.adapter import DataNomadResearchAdapter
 from jinx.adapters.gmgn.adapter import GmgnAdapter
 from jinx.adapters.mako.feed import MakoPumpPortalFeed
+from jinx.adapters.neonai.gateway import NeonAiGateway
+from jinx.adapters.pumpapi.feed import PumpApiFeed
 from jinx.core.bus import EventBus, Lane
 from jinx.core_state import CoreState
 from jinx.execution import ExecutionGateway
 from jinx.health import build_health
 from jinx.ledger import PositionLedger
+from jinx.market_memory import MarketMemory
 from jinx.modes import get_mode
 from jinx.paper import PaperExecutor, PaperWallet
+from jinx.persistence.object_store import LedgerBackups
+from jinx.persistence.postgres import PostgresReplicator
+from jinx.persistence.redis_state import RedisState
+from jinx.persistence.research import ResearchStore
 from jinx.recovery import recover
 from jinx.registry import TokenRegistry, WalletRegistry
+from jinx.storage import MB, DailyRun, StorageMonitor, filesystem, process_rss_bytes, tree_bytes
 from jinx.store import Store
 
 log = logging.getLogger("jinx")
@@ -41,23 +57,40 @@ class JinxApp:
         self.capture_path = capture_path
         self.ws_url = ws_url
         self._capture = None
+        self._capture_bytes = 0
         self._tasks: dict[str, asyncio.Task] = {}
         self._server = None
         self.status_errors = 0
         self.task_restarts: dict[str, int] = {}
+        self.replicator = self.redis_state = self.backups = self.ai_gateway = self.research = None
+        self._research_at = 0.0
+        self.daily = DailyRun()
+        self.monitor = StorageMonitor({"ram": settings.ram_budget_mb * MB, "disk": settings.disk_budget_mb * MB,
+                                       "postgres": settings.pg_budget_mb * MB, "redis": settings.redis_budget_mb * MB,
+                                       "research_postgres": settings.research_pg_budget_mb * MB,
+                                       "object_storage": settings.s3_budget_mb * MB})
 
-    async def start(self) -> None:
+    def _build_core(self) -> None:
+        """Two stores: market events and registries in RAM (`market_db`, ":memory:" by default), trading records in
+        the durable ledger store. A restart starts the market view empty; positions, fills and wallet survive."""
         s = self.s
+        self.market = Store(s.market_db)
         self.store = Store(s.db_path)
-        self.core = CoreState(self.store, TokenRegistry(self.store), WalletRegistry(self.store))
+        self.core = CoreState(self.market, TokenRegistry(self.market), WalletRegistry(self.market))
+        self.memory = MarketMemory(self.market, self.core, s.market_event_ttl_s, s.market_idle_ttl_s,
+                                   s.market_max_events, s.market_max_tokens, s.market_max_wallets)
         self.ledger = PositionLedger(self.store)
         self.wallet = PaperWallet(self.store, config.PAPER_START_LAMPORTS)
         self.paper = PaperExecutor(self.store, self.ledger, self.wallet, self.core.tokens, config.PUMP_CURVE_FEES,
                                    config.NETWORK_FEE_LAMPORTS)
         self.gateway = ExecutionGateway(self.store, self.ledger, self.paper)
-        self.bus = EventBus(persist=self.store.record_event)
+        self.bus = EventBus(persist=self.market.record_event)
         self.bus.subscribe(Lane.FAST, self.core.apply, name="core_state")
-        self.recovery = recover(self.store, self.core, self.ledger, self.wallet, bus=self.bus)
+        self.recovery = recover(self.market, self.core, self.ledger, self.wallet, bus=self.bus)
+
+    async def start(self) -> None:
+        s = self.s
+        self._build_core()
         log.info("recovery: %s", self.recovery)
         if self.capture_path:
             self.capture_path.parent.mkdir(parents=True, exist_ok=True)
@@ -67,26 +100,80 @@ class JinxApp:
                                        api_key=os.environ.get("PUMPPORTAL_API_KEY") or None,
                                        mode_provider=lambda: get_mode(self.store),
                                        held_mints_provider=lambda: {p.mint for p in self.ledger.active()})
+        held = lambda: {p.mint for p in self.ledger.active()}
+        self.pumpapi = PumpApiFeed(self.bus, held_mints_provider=held) if s.pumpapi_enabled else None
         self.gmgn = GmgnAdapter(s.gmgn_build_dir, allow_signing_key=config.GMGN_ALLOW_SIGNING_KEY)
         self.d3ad = D3adExecutionAdapter(s.upstream_dir / "d3ad")
         self.datanomad = DataNomadResearchAdapter(s.upstream_dir / "datanomad")
         if (s.gmgn_build_dir / "dist" / "client" / "OpenApiClient.js").exists():
             await self.gmgn.start()
+        self._build_services()
         self._tasks = {"bus": asyncio.create_task(self.bus.run(), name="bus"),
                        "mako-feed": asyncio.create_task(self.feed.run(), name="mako-feed"),
                        "status": asyncio.create_task(self._status_loop(), name="status")}
+        if self.pumpapi is not None:
+            self._tasks["pumpapi-feed"] = asyncio.create_task(self.pumpapi.run(), name="pumpapi-feed")
+        if self.replicator is not None:
+            self._tasks["postgres"] = asyncio.create_task(self.replicator.run(), name="postgres")
+        if self.ai_gateway is not None:
+            self._tasks["ai-gateway-probe"] = asyncio.create_task(self._probe_gateway(), name="ai-gateway-probe")
         self._server = await asyncio.start_server(self._http, "0.0.0.0", s.http_port)
         log.info("JINX up: db=%s port=%s mode=%s", s.db_path, s.http_port, (await self.health())["mode"])
 
+    def _build_services(self) -> None:
+        """Wire whichever services are configured (environment, see docs/INFRASTRUCTURE.md). None is required to
+        trade and none sits between a trigger and an order."""
+        s, env = self.s, os.environ
+        if s.database_url:
+            self.replicator = PostgresReplicator(self.store, s.database_url)
+        if s.research_database_url:
+            self.research = ResearchStore(s.research_database_url, s.research_retention_days, s.research_retention_days)
+        if s.redis_url:
+            import redis.asyncio as aioredis
+            self.redis_state = RedisState(aioredis.from_url(s.redis_url, socket_timeout=5, socket_connect_timeout=5),
+                                          max_tokens=s.redis_max_tokens)
+        if s.s3_endpoint and env.get("AWS_ACCESS_KEY_ID") and env.get("AWS_SECRET_ACCESS_KEY"):
+            self.backups = LedgerBackups.from_env(s.s3_endpoint, s.s3_region, s.s3_bucket, s.backup_keep)
+        if s.ai_gateway_url and env.get("NEON_AI_GATEWAY_TOKEN"):
+            self.ai_gateway = NeonAiGateway(s.ai_gateway_url, env["NEON_AI_GATEWAY_TOKEN"])
+        log.info("services: postgres=%s research=%s redis=%s object_storage=%s ai_gateway=%s",
+                 self.replicator is not None, self.research is not None, self.redis_state is not None,
+                 self.backups is not None, self.ai_gateway is not None)
+
+    async def _probe_gateway(self) -> None:
+        try:
+            await self.ai_gateway.models()
+        except Exception:
+            log.warning("Neon AI Gateway probe failed: %s", self.ai_gateway.stats["last_error"])
+
     def _tap(self, recv_ns: int, raw) -> None:
-        self._capture.write(json.dumps({"recv_ns": recv_ns, "raw": raw}) + "\n")
+        if self._capture_bytes >= self.s.capture_max_bytes:     # captures are capped (owner storage rule 6)
+            return
+        line = json.dumps({"recv_ns": recv_ns, "raw": raw}) + "\n"
+        self._capture_bytes += len(line)
+        self._capture.write(line)
 
     async def health(self) -> dict:
         adapters = [self.feed.health(), await self.gmgn.health(), self.d3ad.health(), self.datanomad.health()]
-        return build_health(self.store, self.ledger, self.wallet, adapters, self.bus.stats, time.time_ns(),
-                            latency_ns=self.bus.latency_ns(Lane.FAST),
-                            feed_stale_after_ns=self.s.feed_stale_after_s * 1_000_000_000,
-                            receive_latency_ns=self.core.receive_latency_ns())
+        if getattr(self, "pumpapi", None) is not None:
+            adapters.append(self.pumpapi.health())
+        h = build_health(self.store, self.ledger, self.wallet, adapters, self.bus.stats, time.time_ns(),
+                         latency_ns=self.bus.latency_ns(Lane.FAST),
+                         feed_stale_after_ns=self.s.feed_stale_after_s * 1_000_000_000,
+                         receive_latency_ns=self.core.receive_latency_ns(), market_store=self.market)
+        h["market_memory"] = {"tokens": len(self.core.tokens), "wallets": len(self.core.wallets), **self.memory.totals}
+        h["services"] = {
+            "postgres": self.replicator.health() if self.replicator else {"configured": False},
+            "research_postgres": self.research.health() if self.research else {"configured": False},
+            "redis": dict(self.redis_state.stats) if self.redis_state else {"configured": False},
+            "object_storage": self.backups.health() if self.backups else {"configured": False},
+            "ai_gateway": self.ai_gateway.health() if self.ai_gateway else {"configured": False},
+        }
+        h["storage"] = self.monitor.report()
+        h["end_of_day"] = {"last_day": self.daily.last_day, "report": self.daily.last_report}
+        if h["storage"]["status"] == "critical" and h["status"] == "ok":
+            h["status"] = "degraded"
+        return h
 
     async def _http(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
@@ -119,6 +206,15 @@ class JinxApp:
         self._supervise()
         await self.feed.sync_subscriptions()  # OFF drops paid trade subscriptions except held positions
         healed = self.core.apply_pending()  # retries events whose apply failed; exactly-once guarded
+        self.memory.prune(time.time_ns(), held={p.mint for p in self.ledger.active()})
+        if self.daily.due(time.time_ns()):
+            await self.end_of_day(time.time_ns())
+        await self.sample_storage()
+        if self.redis_state is not None:
+            await self.redis_state.snapshot(await self.health(), self.core.tokens.all())
+        if self.research is not None and time.monotonic() - self._research_at >= self.s.research_every_s:
+            self._research_at = time.monotonic()
+            await self.research.flush(self.core.wallets.all(), await self.performance_sample())
         if healed:
             log.warning("re-applied %s stored events that had failed to apply", healed)
         h = await self.health()
@@ -127,9 +223,72 @@ class JinxApp:
                  {k: h["adapters"][0].get(k) for k in ("connected", "received", "malformed", "ingest_stalled")},
                  h["receive_to_state_ms"])
 
+    async def end_of_day(self, now_ns: int) -> dict:
+        """Owner storage rule 9: release space, drop what is disposable, back up what is essential. Open positions
+        and trade history are never touched."""
+        report: dict = {"ledger": self.store.maintain(), "market": self.market.maintain()}
+        if self.replicator is None:
+            report["outbox_cleared"] = self.store.clear_outbox()   # nothing to replicate to; resync covers a later one
+        else:
+            try:
+                report["postgres_bytes"] = await self.replicator.database_bytes()
+            except Exception as e:
+                report["postgres_bytes"] = f"unavailable ({type(e).__name__})"
+        if self.research is not None:
+            try:
+                report["research_pruned"] = await self.research.prune(now_ns)
+            except Exception as e:
+                report["research_pruned"] = f"unavailable ({type(e).__name__})"
+        if self.backups is not None:
+            report["backup"] = await self.backups.backup(self.store, now_ns)
+        self.daily.done(now_ns, report)
+        log.info("end-of-day clean-up: %s", report)
+        return report
+
+    async def performance_sample(self) -> dict:
+        """One compact performance row for the research store: latency percentiles, throughput, sizes, storage."""
+        h = await self.health()
+        return {"status": h["status"], "receive_to_state_ms": h["receive_to_state_ms"],
+                "admission_to_state_ms": h["admission_to_state_ms"], "events": h["store"]["events"],
+                "bus": {k: v for k, v in h["bus"].items() if isinstance(v, (int, float))},
+                "market_memory": h["market_memory"],
+                "storage": {k: {f: c.get(f) for f in ("used_bytes", "growth_bytes_per_h", "status")}
+                            for k, c in h["storage"]["components"].items()}}
+
+    async def sample_storage(self) -> None:
+        now_s, s = time.time(), self.s
+        self.monitor.record("ram", process_rss_bytes(), now_s,
+                            {"market_store_bytes": self.market.size_bytes(), "events": self.market.event_count(),
+                             "tokens": len(self.core.tokens), "wallets": len(self.core.wallets)})
+        self.monitor.record("disk", tree_bytes(s.data_dir), now_s,
+                            {"path": str(s.data_dir), "ledger_bytes": self.store.size_bytes(),
+                             "outbox_rows": self.store.outbox_backlog()})
+        fs = filesystem(s.data_dir)
+        self.monitor.record("filesystem", fs["used_bytes"], now_s, {"free_bytes": fs["free_bytes"]},
+                            budget_bytes=fs["total_bytes"])
+        if self.replicator is not None:
+            self.monitor.record("postgres", self.replicator.stats["db_bytes"], now_s,
+                                {"outbox_backlog": self.replicator.backlog()})
+        if self.redis_state is not None:
+            try:
+                mem = await self.redis_state.memory()
+                self.monitor.record("redis", mem["used_bytes"], now_s, {"keys": mem["keys"]})
+            except Exception as e:
+                self.monitor.record("redis", None, now_s, {"error": type(e).__name__})
+        if self.research is not None:
+            self.monitor.record("research_postgres", self.research.stats["db_bytes"], now_s,
+                                {"tracked_wallets": len(self.research._sent)})
+        if self.backups is not None:
+            self.monitor.record("object_storage", self.backups.stats["stored_bytes"], now_s,
+                                {"objects": self.backups.stats["objects"], "keep": self.backups.keep})
+
     def _supervise(self) -> None:
         """Restart the bus or feed task if it ended unexpectedly (an exception, not a cancel)."""
         starters = {"bus": lambda: self.bus.run(), "mako-feed": lambda: self.feed.run()}
+        if getattr(self, "pumpapi", None) is not None:
+            starters["pumpapi-feed"] = lambda: self.pumpapi.run()
+        if self.replicator is not None:
+            starters["postgres"] = lambda: self.replicator.run()
         for name, start in starters.items():
             task = self._tasks.get(name)
             if task is None or not task.done() or task.cancelled():
@@ -151,9 +310,18 @@ class JinxApp:
         if self._server:
             self._server.close()
         await self.gmgn.stop()
+        if self.replicator is not None:            # hand the last trading records over before closing
+            try:
+                await asyncio.wait_for(self.replicator.flush(), 5)
+            except Exception:
+                log.warning("final PostgreSQL flush failed; the outbox keeps the rows for the next start")
+            await self.replicator._reset()
+        if self.redis_state is not None:
+            await self.redis_state.client.aclose()
         if self._capture:
             self._capture.close()
         self.store.close()
+        self.market.close()
 
 
 async def run(settings: config.Settings, seconds: float | None = None, capture_path: Path | None = None) -> dict:

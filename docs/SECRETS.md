@@ -11,6 +11,7 @@ The repository is public. No credential, key, token, wallet secret, runtime data
 | `GMGN_API_KEY` | Authenticates every GMGN API request. With the signing key, it can also trade the GMGN-hosted wallet bound to it | jinx-nyc `~/.config/gmgn/.env` (mode 600, directory 700), written by `gmgn-cli config --apply` | GMGN bridge only (`bridge.mjs`), via env or that file |
 | `GMGN_PRIVATE_KEY` | Ed25519 **request-signing** key for GMGN's signed routes (trading, followed wallets, holdings, order status). Not a Solana wallet key | jinx-nyc `~/.config/gmgn/.env` and `~/.config/gmgn/keypair.pem` (both 600). It was generated on jinx-nyc and has never left it; GMGN holds only its public key | GMGN bridge, when the adapter allows it (§3) |
 | GitHub token | push to `CryptoCripLA/harlemshakejinx` | `gh` credential store on jinx-nyc | `git` / `gh` only |
+| Service credentials: `JINX_DATABASE_URL` (Neon), `JINX_RESEARCH_DATABASE_URL` (Railway), `JINX_REDIS_URL`, `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (Neon Object Storage), `NEON_AI_GATEWAY_TOKEN` | Ledger mirror, research store, transient state, ledger backups, AI Gateway | `/etc/jinx/jinx.env` on Contabo, `~/.config/jinx/jinx.env` on jinx-nyc (mode 600, outside the repository; template `deploy/contabo/jinx.env.example`). The object-storage keys and gateway token were shared in chat on 2026-10-21: rotate them | Loaded by `python -m jinx run`; connection strings are `repr=False` on Settings and never appear in health or logs |
 | PumpPortal API key (future, B-01) | paid trade stream | `PUMPPORTAL_API_KEY` environment variable, when the owner provides one | Mako feed adapter only |
 | X / Telegram credentials (future, B-05, B-06) | social scouts | not provided | — |
 
@@ -18,7 +19,7 @@ The GMGN wallet's own Solana keys are held by GMGN ("private keys are not stored
 
 ## 2. Rules
 
-1. **Never committed.** `.gitignore` covers `.env`, `.env.*`, `*.pem`, `*.db*`, `data/` and `build/`. The secrets test fails on any committable file containing a GMGN key, a PEM private-key body, a GitHub token, or the configured GMGN values.
+1. **Never committed.** `.gitignore` covers `.env`, `.env.*`, `*.pem`, `*.db*`, `data/` and `build/`. The secrets test fails on any committable file containing a GMGN key, a PEM private-key body, a GitHub token, a database URL with a password, a Neon key, or any value configured in the GMGN or JINX service env files.
 2. **Never printed.**
    - The bridge deletes `GMGN_DEBUG` (it makes the upstream client print full requests, API key included).
    - Health output reports only `configured` and `signing` as booleans.

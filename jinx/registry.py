@@ -57,6 +57,9 @@ class TokenRegistry:
     def get(self, mint: str) -> TokenState | None:
         return self._tokens.get(mint)
 
+    def all(self) -> list[TokenState]:
+        return list(self._tokens.values())
+
     def __len__(self) -> int:
         return len(self._tokens)
 
@@ -122,6 +125,9 @@ class WalletRegistry:
 
     def get(self, address: str) -> WalletState | None:
         return self._wallets.get(address)
+
+    def all(self) -> list[WalletState]:
+        return list(self._wallets.values())
 
     def __len__(self) -> int:
         return len(self._wallets)

@@ -6,7 +6,10 @@ requires-python = ">=3.12"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q -p no:cacheprovider"
+# owner storage rule 6: tests clean up after themselves (no .pytest_cache, no retained temp directories)
+tmp_path_retention_count = 0
+tmp_path_retention_policy = "none"
 markers = [
     "live: needs live network access (PumpPortal); deselect with -m 'not live'",
     "node: needs Node.js and the built GMGN bridge",

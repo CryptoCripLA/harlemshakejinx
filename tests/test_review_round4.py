@@ -34,6 +34,13 @@ def v1_with_prefixed_exit(path: Path, intent: str = "p1:X") -> None:
     c.close()
 
 
+def without_outbox(c: sqlite3.Connection) -> None:
+    """Remove the v9 outbox, as in any database written before v9 (its triggers would also block a raw DROP COLUMN)."""
+    for (name,) in c.execute("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'outbox_%'").fetchall():
+        c.execute(f"DROP TRIGGER {name}")
+    c.execute("DROP TABLE IF EXISTS outbox")
+
+
 def rig(s: Store):
     reg = TokenRegistry(s)
     reg.apply(make_create(mint="A"))

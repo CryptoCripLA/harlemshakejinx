@@ -13,6 +13,9 @@ PATTERNS = {
     "GMGN API key": re.compile(rb"gmgn_[0-9a-fA-F]{24,}"),
     "PEM private key body": re.compile(rb"-----BEGIN [A-Z ]*PRIVATE KEY-----(?:\\n|\s)*[A-Za-z0-9+/=]{40,}"),
     "GitHub token": re.compile(rb"(?:github_pat_[A-Za-z0-9_]{30,}|gh[pousr]_[A-Za-z0-9]{30,})"),
+    "database URL with a password": re.compile(rb"(?:postgres(?:ql)?|rediss?)://[^:/\s@]*:[^@\s<>]{6,}@"),
+    "Neon live key": re.compile(rb"(?:nak|nsk|nt)_live_[A-Za-z0-9_]{16,}"),
+    "Neon API key": re.compile(rb"napi_[A-Za-z0-9]{40,}"),
 }
 
 
@@ -30,12 +33,34 @@ def test_the_scanner_recognizes_each_credential_shape():
     assert find(PATTERNS, b"key=gmgn_" + b"0123456789abcdef" * 2) == ["GMGN API key"]
     assert find(PATTERNS, b"-----BEGIN PRIVATE KEY-----\\n" + b"A" * 64) == ["PEM private key body"]
     assert find(PATTERNS, b"github_pat_" + b"x" * 40) == ["GitHub token"]
+    assert find(PATTERNS, b"AWS_SECRET_ACCESS_KEY=nsk_" + b"live_" + b"a1" * 20) == ["Neon live key"]
+    assert find(PATTERNS, b"NEON_AI_GATEWAY_TOKEN=nt_" + b"live_" + b"b2" * 15) == ["Neon live key"]
     assert find(PATTERNS, b"gmgn_<REDACTED> and -----BEGIN PRIVATE KEY-----\\nX\\n") == []
 
 
 def test_no_committable_file_contains_a_credential_shape():
     hits = [(str(p.relative_to(ROOT)), name) for p in committable_files() for name in find(PATTERNS, p.read_bytes())]
     assert hits == []
+
+
+def test_no_committable_file_contains_a_configured_service_secret():
+    """Values in the private service env file (docs/SECRETS.md) never reach a committable file; names only."""
+    import os
+    paths = [Path(p) for p in (os.environ.get("JINX_ENV_FILE"), "/etc/jinx/jinx.env",
+                                Path.home() / ".config" / "jinx" / "jinx.env") if p]
+    env = next((p for p in paths if p.is_file()), None)
+    if env is None:
+        pytest.skip("no JINX service env file on this host")
+    secrets = []
+    for line in env.read_text().splitlines():
+        key, _, value = line.partition("=")
+        value = value.strip().strip('"').strip("'")
+        if not line.lstrip().startswith("#") and len(value) > 16 and any(
+                t in key for t in ("SECRET", "TOKEN", "KEY", "PASSWORD", "DATABASE_URL", "REDIS_URL")):
+            secrets.append((key.strip(), value.encode()))
+    leaked = [(str(p.relative_to(ROOT)), name) for p in committable_files() for name, s in secrets
+              if s in p.read_bytes()]
+    assert leaked == []
 
 
 def test_no_committable_file_contains_the_configured_gmgn_secrets():

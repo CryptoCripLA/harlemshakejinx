@@ -134,6 +134,15 @@ CREATE TABLE IF NOT EXISTS unclassified_exits (
     PRIMARY KEY (position_id, fill_ref)
 );
 
+CREATE TABLE IF NOT EXISTS outbox (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    tbl TEXT NOT NULL,                  -- the trading-record table that changed
+    pk TEXT NOT NULL,                   -- that record's primary key; at most one pending row per record
+    op TEXT NOT NULL,                   -- 'upsert' (row after the change) or 'delete' (its key)
+    row_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS outbox_record ON outbox(tbl, pk);
+
 CREATE TABLE IF NOT EXISTS paper_wallet (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     starting_lamports INTEGER NOT NULL,
@@ -148,7 +157,7 @@ CREATE TABLE IF NOT EXISTS paper_wallet_entries (
 """
 
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 # v1 (up to commit 1ad0d65): no entry budget, no exit_intents, no amount CHECK constraints.
 # v2: positions.entry_budget_lamports (NULL = unknown for positions created by v1), exit_intents, CHECKs.
 # v3: exit_intents.legacy_fill_id; v1 sell fills ("<intent>:sell") become historical exit bindings, so a
@@ -163,6 +172,16 @@ SCHEMA_VERSION = 8
 # v8: a provenance-free sell whose fill id SQLite stores as BLOB or NULL is recorded in unclassified_exits
 #     (it is a distinct key from any text id, so it is never decoded into text evidence); its position refuses
 #     new exit claims until reconciled. Before v8 one such row made every open fail.
+# v9: outbox. Triggers write every change of a trading record (OUTBOX_TABLES) into `outbox` in the same
+#     transaction, for asynchronous replication to PostgreSQL (jinx/persistence/postgres.py; owner order
+#     2026-10-21). The triggers are rebuilt from the live columns on every open, so they follow schema changes.
+#     Bounded (owner storage rule 7): a change to a record replaces that record's pending row, so the outbox never
+#     holds more than one row per trading record, and the replicator deletes rows once PostgreSQL has them.
+
+# trading-record tables replicated to PostgreSQL, with their primary keys
+OUTBOX_TABLES = {"positions": ("position_id",), "fills": ("fill_id",), "exit_intents": ("intent_id",),
+                 "paper_wallet": ("id",), "paper_wallet_entries": ("entry_id",), "settings": ("key",),
+                 "settings_audit": ("id",)}
 
 V2_POSITIONS = SCHEMA[SCHEMA.index("CREATE TABLE IF NOT EXISTS positions ("):SCHEMA.index("CREATE INDEX IF NOT EXISTS positions_active")]
 V2_FILLS = SCHEMA[SCHEMA.index("CREATE TABLE IF NOT EXISTS fills ("):SCHEMA.index("CREATE TABLE IF NOT EXISTS exit_intents")]
@@ -185,10 +204,15 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(self.path, isolation_level=None, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
+        # must precede the first write of a new database (journal_mode below writes its header)
+        self.conn.execute("PRAGMA auto_vacuum=INCREMENTAL")
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=NORMAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.execute("PRAGMA busy_timeout=5000")
+        # Storage hygiene (owner storage rules 1-2): a new database releases freed pages on request
+        # (`maintain()`, auto_vacuum above), and the WAL file is truncated to at most 16 MB after each checkpoint.
+        self.conn.execute("PRAGMA journal_size_limit=16777216")
         self._lock = threading.RLock()
         self._depth = 0
         self._migrate()
@@ -206,8 +230,11 @@ class Store:
             raise SchemaTooNew(f"database schema v{version} is newer than this build (v{SCHEMA_VERSION})")
         if version < 2 and "positions" in self._tables() and "entry_budget_lamports" not in self._columns("positions"):
             self._migrate_v1_to_v2()
+        if "outbox" in self._tables() and "pk" not in self._columns("outbox"):
+            self.conn.execute("DROP TABLE outbox")   # pre-release layout; the replicator's full resync covers it
         self.conn.executescript(SCHEMA)
         self._bind_legacy_exits()
+        self._outbox_triggers()
         self.conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
     def _bind_legacy_exits(self) -> None:
@@ -227,6 +254,26 @@ class Store:
                 intent_id = fill_id[:-len(SELL_SUFFIX)] if fill_id.endswith(SELL_SUFFIX) else fill_id
                 c.execute("INSERT OR IGNORE INTO historical_exits (fill_id, intent_id, position_id) VALUES (?,?,?)",
                           (fill_id, intent_id, position_id))
+
+    def _outbox_triggers(self) -> None:
+        def value(row: str, col: str) -> str:   # a binary value cannot be JSON: tag it instead of failing the write
+            return f"CASE WHEN typeof({row}.{col}) = 'blob' THEN 'blob:' || hex({row}.{col}) ELSE {row}.{col} END"
+        with self.transaction() as c:
+            for tbl, key in OUTBOX_TABLES.items():
+                cols = [r[1] for r in c.execute(f"PRAGMA table_info({tbl})")]
+                new = ", ".join(f"'{col}', {value('NEW', col)}" for col in cols)
+                old = ", ".join(f"'{col}', {value('OLD', col)}" for col in key)
+                for event in ("insert", "update", "delete"):
+                    c.execute(f"DROP TRIGGER IF EXISTS outbox_{tbl}_{event}")
+                for event, row, op, body in (("INSERT", "NEW", "upsert", new), ("UPDATE", "NEW", "upsert", new),
+                                             ("DELETE", "OLD", "delete", old)):
+                    k = f"{row}.{key[0]}"   # every replicated table has a one-column key; a legacy NULL or BLOB
+                    pk = (f"CASE WHEN {k} IS NULL THEN 'null:' || {row}.rowid "   # key (round 8) must not fail
+                          f"WHEN typeof({k}) = 'blob' THEN 'blob:' || hex({k}) ELSE CAST({k} AS TEXT) END")
+                    c.execute(f"CREATE TRIGGER outbox_{tbl}_{event.lower()} AFTER {event} ON {tbl} BEGIN "
+                              f"DELETE FROM outbox WHERE tbl = '{tbl}' AND pk = {pk}; "
+                              f"INSERT INTO outbox (tbl, pk, op, row_json) VALUES ('{tbl}', {pk}, '{op}', "
+                              f"json_object({body})); END")
 
     def _tables(self) -> set[str]:
         return {r[0] for r in self.conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
@@ -314,7 +361,9 @@ class Store:
         return bool(row and row[0])
 
     def mark_applied(self, idempotency_key: str) -> None:
-        self.conn.execute("UPDATE events SET applied = 1 WHERE idempotency_key = ?", (idempotency_key,))
+        # the raw payload is only needed until the event is applied; release it (owner storage rule 2)
+        self.conn.execute("UPDATE events SET applied = 1, raw_json = '{}' WHERE idempotency_key = ?",
+                          (idempotency_key,))
 
     def unapplied_events(self) -> list[sqlite3.Row]:
         return self.conn.execute(
@@ -340,6 +389,33 @@ class Store:
 
     def journal_mode(self) -> str:
         return self.conn.execute("PRAGMA journal_mode").fetchone()[0]
+
+    # ---- storage hygiene ------------------------------------------------
+    def size_bytes(self) -> int:
+        """Bytes the database occupies: pages in use (RAM for ":memory:") plus the WAL file on disk."""
+        pages = self.conn.execute("PRAGMA page_count").fetchone()[0] * self.conn.execute("PRAGMA page_size").fetchone()[0]
+        wal = Path(f"{self.path}-wal")
+        return pages + (wal.stat().st_size if str(self.path) != ":memory:" and wal.exists() else 0)
+
+    def outbox_backlog(self) -> int:
+        return self.conn.execute("SELECT COUNT(*) FROM outbox").fetchone()[0]
+
+    def clear_outbox(self) -> int:
+        """Drop pending replication rows (used when no PostgreSQL is configured; the replicator's full resync on
+        start makes them redundant)."""
+        with self.transaction() as c:
+            return c.execute("DELETE FROM outbox").rowcount
+
+    def maintain(self) -> dict:
+        """Release space: checkpoint and truncate the WAL, return freed pages, refresh query statistics."""
+        before = self.size_bytes()
+        freelist = self.conn.execute("PRAGMA freelist_count").fetchone()[0]
+        with self._lock:
+            self.conn.execute("PRAGMA incremental_vacuum").fetchall()
+            self.conn.execute("PRAGMA optimize")
+            if str(self.path) != ":memory:":    # last: the steps above write to the WAL too
+                self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchall()
+        return {"bytes_before": before, "bytes_after": self.size_bytes(), "free_pages_released": freelist}
 
     # ---- settings -----------------------------------------------------
     def get_setting(self, key: str) -> str | None:

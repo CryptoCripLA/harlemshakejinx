@@ -18,6 +18,21 @@ from pathlib import Path
 from jinx import config
 
 
+ENV_FILES = (Path("/etc/jinx/jinx.env"), Path.home() / ".config" / "jinx" / "jinx.env")
+
+
+def load_env_file() -> Path | None:
+    """Service credentials live in a private env file outside the repository (docs/SECRETS.md): JINX_ENV_FILE, else
+    /etc/jinx/jinx.env (the execution server), else ~/.config/jinx/jinx.env. Variables already set win."""
+    from dotenv import load_dotenv
+    import os
+    for path in ([Path(os.environ["JINX_ENV_FILE"])] if os.environ.get("JINX_ENV_FILE") else list(ENV_FILES)):
+        if path.is_file():
+            load_dotenv(path, override=False)
+            return path
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="jinx")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -38,15 +53,17 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "run":
         from jinx.app import run
+        load_env_file()
         final = asyncio.run(run(config.load_settings(args.data, args.port), args.seconds, args.capture))
         print(json.dumps(final, default=str, indent=2))
         return 0 if final["status"] != "failed" else 1
 
     from jinx.sim import load_capture, replay
     records = load_capture(args.capture)
-    db = args.db or Path(tempfile.mkdtemp(prefix="jinx-replay-")) / "replay.db"
-    result = replay(records, db, shuffle_seed=args.shuffle_seed, duplicate_every=args.duplicate_every,
-                    restart_at=args.restart_at, accounting_exercise=args.accounting_exercise)
+    with tempfile.TemporaryDirectory(prefix="jinx-replay-") as scratch:   # removed afterwards unless --db is given
+        db = args.db or Path(scratch) / "replay.db"
+        result = replay(records, db, shuffle_seed=args.shuffle_seed, duplicate_every=args.duplicate_every,
+                        restart_at=args.restart_at, accounting_exercise=args.accounting_exercise)
     print(json.dumps(asdict(result), indent=2))
     return 0
 
