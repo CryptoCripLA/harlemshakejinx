@@ -1,0 +1,122 @@
+{
+ "schema_version": 1,
+ "repo_root": "../..",
+ "requirements": [
+  {
+   "id": "P2-C10",
+   "requirement": "Early Momentum: event-driven buy detection, three buys from three distinct fee-paying wallets within 30 s, live reserve observations and peak historical virtual SOL reserve, common-funder investigation or UNAVAILABLE, immediate fast-path evidence; B-02 carried as two UNRESOLVED predicates; no trade while a required predicate is unresolved",
+   "status": "complete",
+   "changed_paths": [
+    "jinx/intel/early_momentum.py",
+    "jinx/intel/readings.py",
+    "jinx/intel/bounded.py"
+   ],
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_early_momentum.py tests/test_intel_readings.py",
+   "exit_code": 0,
+   "evidence_path": "docs/evidence/phase2_event_intel_live_20261021.json",
+   "observed_result": "32 passed; live 600 s at 254434f: 176 detections, 0 trade_permitted, detection delay p50 45.7 / p95 50.3 / p99 53.6 ms"
+  },
+  {
+   "id": "P2-C05",
+   "requirement": "Graduation: bonding-curve reserve and graduation-progress observations; 0-20 score only to the extent CHAD defines it, unquantified parts as B-03",
+   "status": "complete",
+   "changed_paths": [
+    "jinx/intel/graduation.py"
+   ],
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_graduation.py",
+   "exit_code": 0,
+   "evidence_path": "docs/evidence/PHASE2_MOMENTUM_MIGRATION.md",
+   "observed_result": "13 passed; no points produced (B-03); 26/118 non-standard curves flagged on the live capture"
+  },
+  {
+   "id": "P2-M1",
+   "requirement": "Migration: the actual migration transaction and the first verified post-migration liquidity (PumpAPI migrate + first pump-amm trade on the announced pool, PumpPortal migrations), feeding jinx/core/lifecycle.py",
+   "status": "complete",
+   "changed_paths": [
+    "jinx/intel/migration.py",
+    "tests/fixtures/pumpapi-migrations-live-20261021.jsonl.gz"
+   ],
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_migration.py tests/test_intel_live_migrations.py",
+   "exit_code": 0,
+   "evidence_path": "docs/evidence/phase2_event_intel_live_20261021.json",
+   "observed_result": "21 passed; live 600 s at 254434f: 8 migrations, 8 verified on the announced pool"
+  },
+  {
+   "id": "P2-M2",
+   "requirement": "Pre- and post-migration liquidity, large sells around graduation, developer and concentrated-holder selling (plus holder distribution and competing early transactions), no invented threshold",
+   "status": "complete",
+   "changed_paths": [
+    "jinx/intel/migration.py"
+   ],
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_migration.py",
+   "exit_code": 0,
+   "evidence_path": "docs/evidence/PHASE2_MOMENTUM_MIGRATION.md",
+   "observed_result": "20 passed incl. sells, developer, holder and competing-transaction tests; large-sell size is B-03"
+  },
+  {
+   "id": "P2-M3",
+   "requirement": "M3 confirmation delay: research variant, off by default, paper only",
+   "status": "complete",
+   "changed_paths": [
+    "jinx/intel/migration.py"
+   ],
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_migration.py::test_the_m3_confirmation_delay_is_off_by_default_and_a_paper_reference_when_set",
+   "exit_code": 0,
+   "evidence_path": "docs/evidence/PHASE2_MOMENTUM_MIGRATION.md",
+   "observed_result": "1 passed; default None, live_policy False"
+  },
+  {
+   "id": "P2-ADVERSE",
+   "requirement": "Adverse simulations: artificial volume or repeated wallet buys; three transactions from one wallet; clusters outside the window; stale signals; reserve retraces after higher peaks; feed delays",
+   "status": "complete",
+   "changed_paths": [
+    "tests/test_intel_early_momentum.py",
+    "tests/test_intel_migration.py"
+   ],
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_early_momentum.py tests/test_intel_migration.py",
+   "exit_code": 0,
+   "evidence_path": "docs/evidence/PHASE2_MOMENTUM_MIGRATION.md",
+   "observed_result": "48 passed; mutants for boundary, wallet count, event time, peak, late merge and four migration rules each fail a test"
+  },
+  {
+   "id": "P2-REPLAY",
+   "requirement": "Deterministic replay of tests/fixtures/pumpapi-live-20261021.jsonl.gz and detection delay p50/p95/p99",
+   "status": "complete",
+   "changed_paths": [
+    "jinx/intel/replay.py",
+    "jinx/sim.py",
+    "scripts/intel_replay_report.py",
+    "tests/test_intel_replay.py"
+   ],
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_replay.py",
+   "exit_code": 0,
+   "evidence_path": "docs/evidence/phase2_event_intel_replay_20261021.json",
+   "observed_result": "5 passed; 38 detections identical to an independent scan; shuffled and duplicated delivery converge"
+  },
+  {
+   "id": "P2-RAM",
+   "requirement": "RAM-bounded state only (TTL and caps), no files, no raw archives, no secrets; core imports no adapter",
+   "status": "complete",
+   "changed_paths": [
+    "jinx/intel/bounded.py"
+   ],
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_storage_hygiene.py tests/test_adapters.py tests/test_secrets.py",
+   "exit_code": 0,
+   "evidence_path": "docs/evidence/PHASE2_MOMENTUM_MIGRATION.md",
+   "observed_result": "65 passed; bounded-state tests in each intel test file"
+  },
+  {
+   "id": "P2-DOCS",
+   "requirement": "Update only rows C05, C10, M1, M2, M3 in the matrix and add new B-03 items",
+   "status": "complete",
+   "changed_paths": [
+    "docs/SOURCE_FIDELITY_MATRIX.md",
+    "docs/BLOCKERS.md"
+   ],
+   "verification_command": "/home/atlasops/work/harlemshakejinx/.venv/bin/python -m pytest tests/test_intel_replay.py",
+   "exit_code": 0,
+   "evidence_path": "docs/evidence/PHASE2_MOMENTUM_MIGRATION.md",
+   "observed_result": "matrix rows C05/C10/M1/M2/M3 and B-02 notes, B-03 items added"
+  }
+ ]
+}

@@ -1,0 +1,126 @@
+{
+ "started_utc": "2026-10-21T04:19:53Z",
+ "seconds": 600.0,
+ "host": "jinx-nyc",
+ "code_at_start": {
+  "commit": "254434f",
+  "code_changes_since_commit": false
+ },
+ "feed": {
+  "received": 386018,
+  "published": 28183,
+  "duplicates": 0,
+  "amm_not_followed": 95450,
+  "malformed": 0,
+  "not_quoted_in_sol": 14486,
+  "connections": 1,
+  "disconnects": 0,
+  "stalls": 0
+ },
+ "feed_receipt_lag_ms": {
+  "p50": 45.1,
+  "p95": 49.2,
+  "n": 2000
+ },
+ "connections": [],
+ "per_event_processing_us": {
+  "early_momentum": {
+   "p50": 25.551,
+   "p95": 71.84,
+   "p99": 97.91,
+   "max": 4345.855,
+   "n": 28183
+  },
+  "graduation": {
+   "p50": 25.08,
+   "p95": 44.44,
+   "p99": 59.49,
+   "max": 724.332,
+   "n": 28183
+  },
+  "migration": {
+   "p50": 58.46,
+   "p95": 91.34,
+   "p99": 114.84,
+   "max": 8615.491,
+   "n": 28183
+  }
+ },
+ "early_momentum": {
+  "detections": 176,
+  "trade_permitted": 0,
+  "feed_delay_ms": {
+   "p50": 45.604282,
+   "p95": 50.270742,
+   "p99": 53.578336,
+   "max": 56.540788,
+   "n": 176
+  },
+  "processing_us": {
+   "p50": 51.32,
+   "p95": 80.48,
+   "p99": 85.44,
+   "max": 114.501,
+   "n": 176
+  },
+  "detection_delay_ms": {
+   "p50": 45.651191,
+   "p95": 50.316233,
+   "p99": 53.596886,
+   "max": 56.582908,
+   "n": 176
+  },
+  "creator_in_window": 120,
+  "not_standard_curve_at_trigger": 71,
+  "observed_since_creation": 122
+ },
+ "graduation": {
+  "readings": 21491,
+  "late_readings": 0,
+  "mints": 634
+ },
+ "migration": {
+  "migrations": 8,
+  "verified": 8,
+  "signal_delay_ms": {
+   "p50": 45.355986,
+   "p95": 46.983526,
+   "p99": 46.983526,
+   "max": 46.983526,
+   "n": 8
+  },
+  "migration_to_first_verified_trade_ms": {
+   "p50": 244.999936,
+   "p95": 1056.0,
+   "p99": 1056.0,
+   "max": 1056.0,
+   "n": 8
+  },
+  "slots_to_first_verified_trade": {
+   "p50": 1,
+   "p95": 5,
+   "p99": 5,
+   "max": 5,
+   "n": 8
+  },
+  "pre_migration_real_sol": {
+   "p50": 85.005359057,
+   "p95": 85.005361209,
+   "p99": 85.005361209,
+   "max": 85.005361209,
+   "n": 8
+  },
+  "first_pool_quote_sol": {
+   "p50": 67.276107198,
+   "p95": 238.393705619,
+   "p99": 238.393705619,
+   "max": 238.393705619,
+   "n": 8
+  },
+  "unverified_waiting": 0,
+  "foreign_pool_trades": 0,
+  "states": [
+   "POST_MIGRATION_MARKET"
+  ]
+ }
+}
