@@ -116,7 +116,12 @@ first; Early Momentum itself remembers a migration even when it arrives before t
   Duplicates: a trade delivered again within the token's identity window (the last 512 trade identities) is counted
   once; one older than that window is left out of the wallet tallies and the token's flow is marked incomplete, so a
   total is never inflated, while it still counts as ordering evidence (pool and sell lists hold each trade once), so
-  a genuinely new old trade still decides the first verified liquidity. The seller's creator flag and phase are read when the evidence is built, so they follow facts
+  a genuinely new old trade still decides the first verified liquidity; such a trade is also left out of the pool
+  trade counts (`pool_trades_uncounted` says how many), because it may be a resend. A wallet's sells are reported with
+  how far the tally can be trusted: `observed`, `may be incomplete` (the wallet has a trade behind the window), or
+  `UNAVAILABLE` with no numbers (the wallet was beyond the 1,000-wallet cap or its only trades were behind the
+  window), for verified holders, observed holders and the creator alike; an untallied wallet is never shown as zero
+  sells. The seller's creator flag and phase are read when the evidence is built, so they follow facts
   that arrive later.
 - **M3:** off by default; `confirmation_delay_ms` names a paper reference trade (`live_policy: False`) for the current
   record, taken from the kept trades (4,096 per pool with M3 on) and from a reference tracked as trades arrive. When
@@ -133,8 +138,9 @@ first; Early Momentum itself remembers a migration even when it arrives before t
 scan, in-order, shuffled and duplicated), `tests/test_migration_dedup.py` (the dedup defect end to end through the
 real bus and events table), `tests/test_app_event_intel.py` (real captures through the engine's own bus into shared
 state; a fake GMGN serving the recorded response shapes; nothing reaches the ledger),
-`tests/test_review_phase2_intel_round1.py` (one reproduction per Codex round-1 finding), `tests/test_intel_replay.py`,
-`tests/test_intel_readings.py`, `tests/test_lifecycle.py`.
+`tests/test_review_phase2_intel_round1.py` … `round10.py` (one reproduction per Codex finding, each failing before
+its fix), `tests/test_intel_memory.py` (RAM bounds), `tests/test_intel_replay.py`, `tests/test_intel_readings.py`,
+`tests/test_lifecycle.py`.
 
 ## Independent review
 
@@ -188,6 +194,21 @@ graduation, creator and funders, sells and holders, engine wiring (no order path
 file:line evidence. Codex's sandbox could not run the app tests (it was denied access to the installed `psycopg`) or
 four temporary-directory tests; those run in the full suite on jinx-nyc (615 passed, 1 skipped at cf4569c). The verdict
 covers the reviewed code; it is not the owner's Phase 2 acceptance.
+
+The RAM work below (449b917) changed the trackers after that PASS, so review continued on the new code.
+
+Codex round 9 on 449b917 (`docs/audits/phase2-intel-codex-20261021-round9.md`): FAIL with 1 MEDIUM, 1 LOW, both from
+the smaller identity window. R9-1: a trade older than the window was dropped entirely, so a genuinely new old trade
+could not decide the first verified liquidity. Fixed in 27b9ec9: it stays ordering evidence (pool and sell lists hold
+each trade once) and is only left out of the wallet tallies. R9-2: this document now states the 512-identity window
+(`tests/test_review_phase2_intel_round9.py`).
+
+Codex round 10 on 27b9ec9 (`docs/audits/phase2-intel-codex-20261021-round10.md`): FAIL with 1 MEDIUM, 1 LOW; R9-1 and
+R9-2 confirmed FIXED. Both findings were an unknown shown as a number. R10-1: a holder beyond the 1,000-wallet cap
+had its sells shown as 0 in the verified-holder view; now its tally is `UNAVAILABLE` (no numbers), a wallet with a
+trade behind the window is `may be incomplete`, and the creator's view follows the same rule. R10-2: a resend behind
+the window could add 1 to a pool-trade count; such trades are now counted separately as `pool_trades_uncounted`
+(`tests/test_review_phase2_intel_round10.py`).
 
 ## RAM (owner storage rule 2)
 

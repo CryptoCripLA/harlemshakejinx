@@ -71,6 +71,7 @@ IDLE_TTL_S = 2 * 3600
 MAX_CURVE_TRADES = 256
 MAX_POOL_TRADES = 256
 MAX_WALLETS = 1_000         # observed wallets per token; beyond it the observed flow is marked incomplete
+MAX_UNTALLIED = 256         # wallets remembered as having an untallied trade (beyond: every tally may be incomplete)
 MAX_REPORTS = 8
 MAX_POOLS = 8
 M3_RETENTION = 4_096        # pool trades kept when the M3 paper variant is on, so its reference is derived, not cached
@@ -200,6 +201,7 @@ class MigrationEvidence:
     research: dict | None
     observed_ns: int
     processing_ns: int
+    pool_trades_uncounted: int = 0     # PumpSwap trades behind the dedup horizon, possibly resends: not counted
     large_sell_rule: str = LARGE_SELL_RULE
     signal_type: str = SIGNAL_TYPE
 
@@ -226,7 +228,8 @@ class MigrationEvidence:
                             "holder_selling": self.holder_selling, "holder_distribution": self.holder_distribution,
                             "competing_early_transactions": self.competing_early_transactions,
                             "foreign_pool_trades": self.foreign_pool_trades,
-                            "unverified_pool_trades": self.unverified_pool_trades, "research": self.research}}
+                            "unverified_pool_trades": self.unverified_pool_trades,
+                            "pool_trades_uncounted": self.pool_trades_uncounted, "research": self.research}}
 
 
 def _sol(lamports: int | None) -> float | None:
@@ -288,21 +291,25 @@ def _held(kept: list[Trade], trade: Trade) -> bool:
 class _Pool:
     """PumpSwap trades on one pool, kept as the earliest by event time (not by arrival), so a late-delivered earlier
     trade still counts; trades with both reserves are kept apart so verification evidence is never crowded out."""
-    __slots__ = ("all", "full", "latest", "count", "cap")
+    __slots__ = ("all", "full", "latest", "count", "uncounted", "cap")
 
     def __init__(self, cap: int) -> None:
         self.all: list[Trade] = []
         self.full: list[Trade] = []
         self.latest: Trade | None = None
         self.count = 0
+        self.uncounted = 0      # trades behind the dedup horizon: they may be resends, so they are not counted
         self.cap = cap
 
-    def add(self, trade: Trade) -> None:
+    def add(self, trade: Trade, counted: bool = True) -> None:
         lists = (self.all, self.full) if (trade.quote_reserve_lamports is not None
                                           and trade.token_reserve is not None) else (self.all,)
         if _held(self.all, trade) or _held(self.full, trade):
             return                                           # the same trade again (a resend): kept once
-        self.count += 1
+        if counted:
+            self.count += 1
+        else:
+            self.uncounted += 1
         for kept in lists:
             bisect.insort(kept, trade, key=lambda t: t.key)
             if len(kept) > self.cap:
@@ -325,6 +332,10 @@ class _Token:
         self.migration: MigrationTx | None = None
         self.pools: dict[str, _Pool] = {}          # PumpSwap trades per pool (at most MAX_POOLS pools)
         self.other_pool_trades = 0                 # trades on pools beyond MAX_POOLS
+        self.other_pool_uncounted = 0
+        self.wallets_capped = False                # a wallet's trades went untallied at the wallet cap
+        self.untallied: set[str] = set()           # wallets with a trade left out at the dedup horizon (bounded)
+        self.untallied_overflow = False
         self.verified_by: Trade | None = None
         self.status = ""
         self.confirmed = False                     # the lifecycle accepted a confirmation for the current pool
@@ -549,12 +560,17 @@ class MigrationTracker:
             tok.sells.append(trade)
             tok.sells.sort(key=lambda t: (-t.sol_lamports, t.key))
             del tok.sells[2 * TOP_SELLS:]
-        if not counted:
-            return                                           # left out of the wallet tallies (dedup horizon)
+        if not counted:                                      # left out of the wallet tallies (dedup horizon)
+            if len(tok.untallied) < MAX_UNTALLIED:
+                tok.untallied.add(trade.fee_payer)
+            else:
+                tok.untallied_overflow = True
+            return
         f = tok.flow.get(trade.fee_payer)
         if f is None:
             if len(tok.flow) >= self.max_wallets:
                 tok.flow_complete = False
+                tok.wallets_capped = True
                 self.stats["wallets_untracked"] += 1
                 return
             f = tok.flow[trade.fee_payer] = _Flow()
@@ -666,9 +682,12 @@ class MigrationTracker:
         if pool is None and trade.pool_id is not None and len(tok.pools) < MAX_POOLS:
             pool = tok.pools[trade.pool_id] = _Pool(self.max_pool)
         if pool is None:
-            tok.other_pool_trades += 1
+            if counted:
+                tok.other_pool_trades += 1
+            else:
+                tok.other_pool_uncounted += 1
         else:
-            pool.add(trade)
+            pool.add(trade, counted)
         if tok.migration is None:
             return []
         if self.confirmation_delay_ms is not None and trade.pool_id == tok.migration.pool_id \
@@ -826,7 +845,8 @@ class MigrationTracker:
                                  + tok.other_pool_trades) if named else 0,
             unverified_pool_trades=(sum(p.count for p in tok.pools.values()) + tok.other_pool_trades)
             if not named else 0, research=research,
-            observed_ns=observed_ns, processing_ns=processing_ns)
+            observed_ns=observed_ns, processing_ns=processing_ns,
+            pool_trades_uncounted=sum(p.uncounted for p in tok.pools.values()) + tok.other_pool_uncounted)
 
     def _complete(self, tok: _Token) -> bool:
         if not (tok.since_creation and tok.flow_complete):
@@ -838,16 +858,25 @@ class MigrationTracker:
         if not tok.since_creation or tok.creator is None:
             return {"status": "UNAVAILABLE", "reason": "the creation was not observed", "creator": tok.creator}
         f = tok.flow.get(tok.creator)
-        pre, post = (f.pre, f.post) if f is not None else ([0, 0, 0], [0, 0, 0])
-        as_dict = (lambda b: {"sells": b[0], "sol_lamports": b[1], "tokens": b[2]})
+        tally = self._sells_of(tok, tok.creator)
+        if tally["tally"] == "UNAVAILABLE":
+            return {"status": "UNAVAILABLE", "creator": tok.creator, "complete": False, **tally,
+                    "reason": "the creator's trades were not tallied (wallet cap or duplicate-detection window)"}
         return {"status": "observed", "creator": tok.creator,
-                "bought_tokens": (f.bought_pre + f.bought_post) if f else 0, "complete": self._complete(tok),
-                "before": as_dict(pre), "after": as_dict(post)}
+                "bought_tokens": (f.bought_pre + f.bought_post) if f else 0, "complete": self._complete(tok), **tally}
 
-    def _sells_of(self, tok: _Token, wallet: str) -> dict:
+    @staticmethod
+    def _sells_of(tok: _Token, wallet: str) -> dict:
+        """A wallet's observed sells before and after the migration, with how far the tally can be trusted: a wallet
+        beyond the wallet cap, or one with a trade behind the dedup horizon, is never reported as a clean zero
+        (Codex round 10, R10-1)."""
         f = tok.flow.get(wallet)
-        pre, post = (f.pre, f.post) if f is not None else ([0, 0, 0], [0, 0, 0])
-        return {"before": {"sells": pre[0], "sol_lamports": pre[1], "tokens": pre[2]},
+        untallied = wallet in tok.untallied or tok.untallied_overflow
+        if f is None and (tok.wallets_capped or untallied):
+            return {"tally": "UNAVAILABLE", "before": None, "after": None}
+        pre, post = (f.pre, f.post) if f is not None else ((0, 0, 0), (0, 0, 0))
+        return {"tally": "may be incomplete" if untallied else "observed",
+                "before": {"sells": pre[0], "sol_lamports": pre[1], "tokens": pre[2]},
                 "after": {"sells": post[0], "sol_lamports": post[1], "tokens": post[2]}}
 
     def _holder_selling(self, tok: _Token) -> dict:
