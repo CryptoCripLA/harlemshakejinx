@@ -5,7 +5,7 @@
 # Credentials: ~/.config/jinx/jinx.env (+ GMGN_API_KEY from ~/.config/gmgn/.env; the GMGN signing key never leaves
 # the engineering host) are installed as /etc/jinx/jinx.env, mode 640 root:jinx. Nothing secret is printed.
 set -euo pipefail
-HOST=${JINX_HOST:-admin@13.140.224.208}
+HOST=${JINX_HOST:-ubuntu@13.140.224.208}     # Ubuntu cloud image's default sudo user; key-only login
 KEY=${JINX_SSH_KEY:-$HOME/.ssh/jinx_contabo}
 ENV_FILE=${JINX_ENV_FILE:-$HOME/.config/jinx/jinx.env}
 GMGN_ENV=${GMGN_ENV_FILE:-$HOME/.config/gmgn/.env}
