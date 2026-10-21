@@ -207,7 +207,12 @@ async def run(paths: list[Path], passes: int, sample_every_s: int, deep_every: i
         from jinx.intel.replay import percentiles
         handler = {k: percentiles([x / 1e3 for x in v]) for k, v in app._handler_ns.items()}
     rss = [s["rss_mb"] for s in samples]
-    return {"passes": passes, "captures": [str(p) for p in paths], "event_minutes": samples[-1]["event_time_min"],
+    extra = {}
+    if hasattr(app.bus, "dedup_stats"):
+        extra["dedup"] = app.bus.dedup_stats()
+    if hasattr(app, "memory_counts"):
+        extra["memory_counts"] = app.memory_counts()
+    return {**extra, "passes": passes, "captures": [str(p) for p in paths], "event_minutes": samples[-1]["event_time_min"],
             "messages": n, "events": events, "published": published, "malformed": malformed,
             "replay_wall_s": round(elapsed, 1), "rss_start_mb": round(rss0 / MB, 1), "rss_end_mb": rss[-1],
             "rss_max_mb": max(rss), "bus": {k: v for k, v in lat.items() if k != "handler_errors"},
