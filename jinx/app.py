@@ -250,12 +250,15 @@ class JinxApp:
             self._spawn(self._fetch_funders(tuple(wallets)))
 
     async def _fetch_funders(self, wallets: tuple[str, ...]) -> None:
-        try:
-            res = await self.gmgn.call("getWalletStats", "sol", list(wallets), "7d")
-        except Exception as e:
-            log.warning("funder lookup failed (%s); the Sybil predicate stays UNAVAILABLE", type(e).__name__)
-            return
-        for stats in (res if isinstance(res, list) else [res] if isinstance(res, dict) else []):
+        # One wallet per request: given several addresses GMGN's wallet_stats answers only the first (live 2026-10-21).
+        results = await asyncio.gather(*(self.gmgn.call("getWalletStats", "sol", [w], "7d") for w in wallets),
+                                       return_exceptions=True)
+        for w, res in zip(wallets, results):
+            if isinstance(res, Exception):
+                log.warning("funder lookup for one wallet failed (%s); the Sybil predicate stays UNAVAILABLE",
+                            type(res).__name__)
+        for stats in (r for res in results if not isinstance(res, Exception)
+                      for r in (res if isinstance(res, list) else [res] if isinstance(res, dict) else [])):
             common = stats.get("common") or {}
             funder, wallet = common.get("fund_from_address"), stats.get("wallet_address")
             if wallet and funder:

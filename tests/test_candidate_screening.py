@@ -29,9 +29,8 @@ class Gmgn:
             return SEC["security"]
         if method == "getCreatedTokens":
             return SEC["created_tokens_head"]
-        if method == "getWalletStats":
-            return [dict(WALLET, wallet_address=w, common=dict(WALLET["common"], fund_from_address="FUNDER1"))
-                    for w in arg]
+        if method == "getWalletStats":     # like the live API: several addresses -> only the first wallet's stats
+            return dict(WALLET, wallet_address=arg[0], common=dict(WALLET["common"], fund_from_address=f"F-{arg[0]}"))
 
 
 class RugCheck:
@@ -62,9 +61,12 @@ def test_a_detection_is_screened_rechecked_until_indexed_and_funders_are_recorde
     [(mint, entry)] = app.candidates.items()
     assert entry["safety"]["verdict"] == "PASS" and entry["safety"]["attempts"] == 2
     assert rc.calls == [0, 0]                                   # fast path: top priority, re-asked once indexed
-    assert entry["trade_permitted"] is False                    # funders/reserves decide; nothing trades in Phase 2
+    assert entry["trade_permitted"] is True                     # every Early Momentum predicate passes
+    assert entry["entry_check"]["all_checks_pass"] is False     # no live PumpAPI feed in this test: reserves not current
+    assert "stale" in entry["entry_check"]["reserve_reason"]
     ev = app.early.evidence(mint)
     sybil = [p for p in ev.predicates if "sybil" in p.name][0]
-    assert sybil.status.value != "UNAVAILABLE"                  # GMGN supplied the three buyers' funder
+    assert sybil.status.value == "PASS"                         # all three buyers' funders known, none shared
+    assert app.gmgn.calls.count("getWalletStats") == 3          # one request per wallet
     assert "getWalletStats" in app.gmgn.calls
     app.market.close(); app.store.close()

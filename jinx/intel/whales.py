@@ -21,6 +21,7 @@ All state is in RAM and bounded (owner storage rule 2); promoted wallets are als
 """
 from __future__ import annotations
 
+import asyncio
 import time
 from collections import OrderedDict, deque
 from dataclasses import dataclass
@@ -170,22 +171,23 @@ async def discovery_pass(gmgn, book: WhaleBook, now_ts: float | None = None, per
     candidates = list(book.discovery_candidates())
     report = {"candidates": len(candidates), "evaluated": 0, "promoted": [], "errors": [], "period": period}
     promoted_rows = []
+    # One wallet per request: given several addresses GMGN's wallet_stats answers only the first (live 2026-10-21).
+    # Requests go out STATS_BATCH at a time; the GMGN adapter's rate budget paces them.
     for i in range(0, len(candidates), STATS_BATCH):
         batch = candidates[i:i + STATS_BATCH]
-        try:
-            res = await gmgn.call("getWalletStats", "sol", batch, period)
-        except Exception as e:
-            report["errors"].append(type(e).__name__)
-            continue
-        rows = res if isinstance(res, list) else [res] if isinstance(res, dict) else []
-        for stats in rows:
-            ev = wallet_evidence(stats, period)
-            report["evaluated"] += 1
-            if ev.promotable and ev.address:
-                book.track(ev.address, "promoted", ev.facts)
-                report["promoted"].append(ev.address)
-                promoted_rows.append(ev)
-        for w in batch:
+        results = await asyncio.gather(*(gmgn.call("getWalletStats", "sol", [w], period) for w in batch),
+                                       return_exceptions=True)
+        for w, res in zip(batch, results):
+            if isinstance(res, Exception):
+                report["errors"].append(type(res).__name__)
+                continue                                  # stays queued for the next pass
+            for stats in (res if isinstance(res, list) else [res] if isinstance(res, dict) else []):
+                ev = wallet_evidence(stats, period)
+                report["evaluated"] += 1
+                if ev.promotable and ev.address:
+                    book.track(ev.address, "promoted", ev.facts)
+                    report["promoted"].append(ev.address)
+                    promoted_rows.append(ev)
             book._candidates.pop(w, None)
     if research is not None and promoted_rows:
         await research.upsert_tracked_wallets(promoted_rows, now_ts)

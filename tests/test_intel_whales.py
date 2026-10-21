@@ -93,8 +93,8 @@ def test_discovery_pass_promotes_from_gmgn_stats_and_survives_api_failure():
             self.calls.append((method, tuple(wallets), period))
             if self.fail:
                 raise TimeoutError
-            return [dict(STATS, wallet_address=w, pnl_stat=dict(STATS["pnl_stat"], winrate=0.5 if w == "GOOD" else 0.2))
-                    for w in wallets]
+            w = wallets[0]                      # like the live API: only the first address is answered
+            return dict(STATS, wallet_address=w, pnl_stat=dict(STATS["pnl_stat"], winrate=0.5 if w == "GOOD" else 0.2))
 
     book = WhaleBook()
     for w in ("GOOD", "BAD"):
