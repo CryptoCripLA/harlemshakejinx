@@ -162,6 +162,7 @@ class ExecutionGateway:
         r = self.ledger.reserve_entry(intent.intent_id, intent.mint, intent.budget_lamports, simulated=not live,
                                       fields=intent.position_fields())
         if not r.ok:
+            self._stage(intent.intent_id, r.position_id, "buy", "REFUSED", not live, r.reason)
             return ExecResult(False, r.position_id, r.reason)
         if r.reason == "SAME_INTENT":
             pos = self.ledger.get(r.position_id)
@@ -169,7 +170,11 @@ class ExecutionGateway:
                 return ExecResult(False, pos.position_id, pos.note or "FAILED")  # the original outcome
             if pos.status is not Status.PENDING_OPEN:
                 return ExecResult(True, pos.position_id, "ALREADY_EXECUTED")  # it has its buy fill
-        return self.paper.buy(r.position_id, intent.intent_id, intent.mint, intent.budget_lamports)
+        self._stage(intent.intent_id, r.position_id, "buy", "SUBMITTED", not live)
+        res = self.paper.buy(r.position_id, intent.intent_id, intent.mint, intent.budget_lamports)
+        self._stage(intent.intent_id, r.position_id, "buy", "FILLED" if res.ok else "FAILED", not live,
+                    None if res.ok else res.reason)
+        return res
 
     def submit_exit(self, intent: ExitIntent) -> ExecResult:
         pos = self.ledger.get(intent.position_id)
@@ -177,18 +182,37 @@ class ExecutionGateway:
             return ExecResult(False, intent.position_id, "UNKNOWN_POSITION")
         if not pos.simulated and self.live is None:
             raise LiveExecutionUnavailable("a live position exists but no live executor is wired")
-        # owner order 2026-10-21 §3: never sell another strategy's position, never on a balance the decision did
-        # not see. Refused before anything is bound, so a corrected intent can still run.
-        if intent.source_strategy is not None and pos.strategy is not None and intent.source_strategy != pos.strategy:
-            return ExecResult(False, intent.position_id, "FOREIGN_STRATEGY")
-        if intent.exit_policy is not None and intent.exit_policy != pos.exit_policy:
-            return ExecResult(False, intent.position_id, "FOREIGN_EXIT_POLICY")
-        if intent.remaining_confirmed_balance is not None and intent.remaining_confirmed_balance != pos.token_amount \
-                and not self.ledger.has_fill(sell_fill_id(intent.position_id, intent.intent_id)):
-            return ExecResult(False, intent.position_id, "STALE_BALANCE")
+        refused = self._exit_refusal(intent, pos)
+        if refused:
+            self._stage(intent.intent_id, pos.position_id, "sell", "REFUSED", pos.simulated, refused)
+            return ExecResult(False, intent.position_id, refused)
         r = self.ledger.claim_exit(intent.intent_id, intent.position_id, intent.token_amount,
                                    sell_fill_id(intent.position_id, intent.intent_id), meta=intent.record())
-        if not r.ok or r.reason == "ALREADY_APPLIED":
+        if r.reason == "ALREADY_APPLIED":
             return ExecResult(r.ok, intent.position_id, r.reason)
-        return self.paper.sell(intent.position_id, intent.intent_id, intent.token_amount,
-                               quote_lamports=intent.quote_lamports)
+        if not r.ok:
+            self._stage(intent.intent_id, pos.position_id, "sell", "REFUSED", pos.simulated, r.reason)
+            return ExecResult(r.ok, intent.position_id, r.reason)
+        self._stage(intent.intent_id, pos.position_id, "sell", "SUBMITTED", pos.simulated)
+        res = self.paper.sell(intent.position_id, intent.intent_id, intent.token_amount,
+                              quote_lamports=intent.quote_lamports)
+        self._stage(intent.intent_id, pos.position_id, "sell", "FILLED" if res.ok else "FAILED", pos.simulated,
+                    None if res.ok else res.reason)
+        return res
+
+    def _exit_refusal(self, intent: ExitIntent, pos) -> str | None:
+        """Owner order 2026-10-21 §3: never sell another strategy's position, never apply a paper policy to a
+        position it does not own, never sell on a balance the decision did not see. Checked before anything is
+        bound, so a corrected intent can still run."""
+        if intent.source_strategy is not None and pos.strategy is not None and intent.source_strategy != pos.strategy:
+            return "FOREIGN_STRATEGY"
+        if intent.exit_policy is not None and (intent.exit_policy != pos.exit_policy or not pos.simulated):
+            return "FOREIGN_EXIT_POLICY"
+        if intent.remaining_confirmed_balance is not None and intent.remaining_confirmed_balance != pos.token_amount \
+                and not self.ledger.has_fill(sell_fill_id(intent.position_id, intent.intent_id)):
+            return "STALE_BALANCE"
+        return None
+
+    def _stage(self, intent_id: str, position_id, side: str, stage: str, simulated: bool,
+               detail: str | None = None) -> None:
+        self.ledger.record_order_event(intent_id, position_id, side, stage, time.time_ns(), simulated, detail=detail)

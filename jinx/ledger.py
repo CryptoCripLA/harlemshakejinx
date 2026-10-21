@@ -375,6 +375,10 @@ class PositionLedger:
             raise ValueError(f"unknown order stage {stage}")
         _check_int("cost_lamports", cost_lamports, 0)
         with self.store.transaction() as c:
+            last = c.execute("SELECT stage, detail FROM order_events WHERE intent_id = ? ORDER BY id DESC LIMIT 1",
+                             (intent_id,)).fetchone()
+            if last is not None and (last["stage"], last["detail"]) == (stage, detail):
+                return    # a repeated identical stage (a refusal retried on every price update) is recorded once
             c.execute("INSERT INTO order_events (intent_id, position_id, side, stage, ts_ns, simulated, cost_lamports,"
                       " detail) VALUES (?,?,?,?,?,?,?,?)", (intent_id, position_id, side, stage, ts_ns,
                                                            int(simulated), cost_lamports, detail))

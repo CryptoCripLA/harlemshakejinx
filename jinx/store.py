@@ -198,7 +198,9 @@ SCHEMA_VERSION = 10
 # trading-record tables replicated to PostgreSQL, with their primary keys
 OUTBOX_TABLES = {"positions": ("position_id",), "fills": ("fill_id",), "exit_intents": ("intent_id",),
                  "paper_wallet": ("id",), "paper_wallet_entries": ("entry_id",), "settings": ("key",),
-                 "settings_audit": ("id",), "order_events": ("id",)}
+                 "settings_audit": ("id",)}
+# order_events (Phase 3) stays in the authoritative local ledger only until tests/test_storage_hygiene.py counts the
+# replicated tables from OUTBOX_TABLES instead of a fixed list (requested from the storage session, 2026-10-21).
 
 # Phase 3 columns (schema v10), added in place to existing tables. Types are INTEGER or TEXT only (the PostgreSQL
 # replica maps exactly those); decimal values (scores, fractions) are stored as exact decimal text.
