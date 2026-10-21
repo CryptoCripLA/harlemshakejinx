@@ -37,10 +37,10 @@ every token with an event that was received, or that happened (provider time), b
 later (trades sent while disconnected are lost), so B-02's peak gate blocks those tokens. The comparison mixes JINX's
 receipt clock with PumpAPI's clock, which differ by the ~50 ms delivery lag; the error can only block a token that
 started just after a reconnect, never pass one that started before it. A creation timed only by JINX's receipt
-(PumpPortal's copy) that arrives after a gap cannot be placed in time, so its history counts as complete only if the
-curve's own reserves prove every trade was seen: on a standard curve the real token reserve PumpAPI reports must equal
-793.1M minus the net tokens of all trades seen (exact on all 109 standard readings of the live captures); otherwise,
-or on a non-standard curve, entry is blocked. `trade_permitted` on Early Momentum evidence covers that module's own
+(PumpPortal's copy, when PumpAPI never reported the creation) that arrives after a gap cannot be placed in time, and
+no reserve reading can exclude an unseen buy-and-sell round trip (it restores the curve's reserves exactly), so such
+a token's history is unprovable and Early Momentum blocks it. Cost: tokens whose creation PumpAPI did not report
+(about 7% of creations in the PumpAPI evaluation) are not Early Momentum candidates after any reconnect. `trade_permitted` on Early Momentum evidence covers that module's own
 predicates only; safety and the entry re-check are combined in `JinxApp.entry_check`, which also refuses any token the
 lifecycle has seen migrate (the Early Momentum path is pre-graduation only), whichever module heard the migration
 first; Early Momentum itself remembers a migration even when it arrives before the token's creation.
@@ -117,9 +117,10 @@ first; Early Momentum itself remembers a migration even when it arrives before t
   is counted once; one older than that window is not counted and the token's flow is marked incomplete, so a total
   is never inflated. The seller's creator flag and phase are read when the evidence is built, so they follow facts
   that arrive later.
-- **M3:** off by default; `confirmation_delay_ms` names a paper reference trade (`live_policy: False`), derived from
-  the current record every time; with M3 on, 4,096 trades per pool are kept so the reference past the delay is not
-  lost.
+- **M3:** off by default; `confirmation_delay_ms` names a paper reference trade (`live_policy: False`) for the current
+  record, taken from the kept trades (4,096 per pool with M3 on) and from a reference tracked as trades arrive; when
+  neither can answer (the migration time changed after the reference left the kept trades), `reference_status` says
+  "not determinable" instead of returning nothing silently.
 - **Measured:** live module run at 254434f (600 s): 8 migrations, 8 verified; migrate to evidence p50 45.4 ms; first
   pool trade p50 1 slot / 245 ms after the migrate (max 5 slots / 1,056 ms).
 
@@ -161,7 +162,13 @@ Codex round 4 on b978908 (`docs/audits/phase2-intel-codex-20261021-round4.md`): 
 R2-6, R3-1, R3-5, R3-6 confirmed FIXED. Fixed (`tests/test_review_phase2_intel_round4.py`): R4-1 a receipt-only
 creation after a gap is provable only by reserve continuity (both trackers); R4-2 the M3 reference is derived from the
 current record with its own retention; R4-3 the report cap never folds a source's first report or the first
-observation, and every report is counted. Later rounds are listed in `docs/audits/`.
+observation, and every report is counted.
+
+Codex round 5 on be5eff9 (`docs/audits/phase2-intel-codex-20261021-round5.md`): FAIL with 1 HIGH, 1 MEDIUM; R3-3, R4-3
+confirmed FIXED. R5-1 was right that net reserve equality cannot prove a complete history (an unseen round trip
+restores it), so the continuity exception was removed: a receipt-only creation after a gap is unprovable and blocked
+in both trackers. R5-2: the M3 reference is also tracked as trades arrive, with an explicit status when it cannot be
+determined (`tests/test_review_phase2_intel_round5.py`). Later rounds are listed in `docs/audits/`.
 
 ## Deployment
 

@@ -43,8 +43,8 @@ from typing import Any, Callable, Mapping
 
 from jinx.core.events import LAMPORTS_PER_SOL, EventKind, MarketEvent, Side
 from jinx.intel.bounded import MintTable
-from jinx.intel.readings import (Clock, event_time, is_curve, real_reserves, reserves_continuous, standard_curve,
-                                 traders_involved, verified_real_sol)
+from jinx.intel.readings import (Clock, event_time, is_curve, standard_curve, traders_involved,
+                                 verified_real_sol)
 
 log = logging.getLogger(__name__)
 
@@ -230,7 +230,7 @@ def first_window(buys: list[Buy]) -> tuple[Buy, ...] | None:
 class _Mint:
     __slots__ = ("buys", "seen", "creator", "since_creation", "current", "peak_v", "peak_real", "newest_ns",
                  "window", "detection", "sybil", "create_sig", "creation_bound", "unverified", "migrated", "gap",
-                 "net_tokens", "trades_counted", "current_tokens", "receipt_creation_after_gap")
+                 "receipt_creation_after_gap")
 
     def __init__(self) -> None:
         self.buys: list[Buy] = []
@@ -249,8 +249,6 @@ class _Mint:
         self.unverified: list[str] = []          # signatures of curve readings without verified real SOL
         self.migrated = False
         self.gap: str | None = None              # a trade-feed gap the token's history spans
-        self.net_tokens = self.trades_counted = 0   # curve trades seen since creation (for reserve continuity)
-        self.current_tokens: int | None = None      # real token reserve of the newest reading
         self.receipt_creation_after_gap = False     # creation timed only by JINX's receipt, after a gap
 
 
@@ -290,14 +288,12 @@ class EarlyMomentum:
             st.seen[key] = None
             while len(st.seen) > 2 * self.max_buys_per_mint:
                 st.seen.popitem(last=False)
-            if is_curve(ev):
-                st.net_tokens += ev.token_amount if ev.side is Side.BUY else -ev.token_amount
-                st.trades_counted += 1
         if ev.kind is EventKind.TOKEN_CREATED:
             st.creator, st.since_creation, st.create_sig = ev.trader, True, ev.signature
             if event_time(ev)[1] is Clock.RECEIPT and self._gap is not None and ev.recv_ns >= self._gap[0]:
-                # PumpPortal's creation has only JINX's receipt time: it may have happened before the gap, so its
-                # history counts as complete only if the curve's reserves prove every trade was seen (R4-1)
+                # PumpPortal's creation has only JINX's receipt time: it may have happened before the gap, and no
+                # reserve reading can exclude an unseen buy-and-sell round trip (a hidden peak), so its history is
+                # unprovable (Codex rounds 4 and 5, R4-1/R5-1)
                 st.receipt_creation_after_gap = True
         if ev.kind is EventKind.TRADE and not is_curve(ev) and ev.raw.get("pool") not in (None, "pump"):
             st.migrated = True                                       # trading on the migrated pool
@@ -364,7 +360,6 @@ class EarlyMomentum:
             del st.unverified[:-8]
         if st.current is None or key > st.current[0]:
             st.current = (key, ev.v_sol_lamports, real)
-            st.current_tokens = real_reserves(ev)[1] if real is not None else None
 
     def _buy(self, mint: str, st: _Mint, ev: MarketEvent, started: int) -> list[EarlyMomentumEvidence]:
         self.stats["curve_buys"] += 1
@@ -504,12 +499,10 @@ class EarlyMomentum:
             status, reason = Status.UNAVAILABLE, "history incomplete: creation not observed"
         elif st.gap:
             status, reason = Status.UNAVAILABLE, f"history incomplete: trade feed gap ({st.gap})"
-        elif st.receipt_creation_after_gap and not reserves_continuous(
-                st.net_tokens, st.trades_counted, st.current[1] if st.current else None,
-                st.current[2] if st.current else None, st.current_tokens):
+        elif st.receipt_creation_after_gap:
             status, reason = Status.UNAVAILABLE, ("history unprovable: the creation has only JINX's receipt time and "
-                                                  "arrived after a feed gap, and the curve's reserve continuity "
-                                                  "does not prove every trade was seen")
+                                                  "arrived after a feed gap, so trades and a higher peak before the "
+                                                  "gap cannot be excluded")
         elif st.unverified:
             status, reason = Status.UNAVAILABLE, "history incomplete: unverified curve readings since creation"
         elif st.creation_bound is not None and st.creation_bound > CEILING_LAMPORTS:

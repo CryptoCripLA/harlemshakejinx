@@ -52,7 +52,7 @@ from jinx.core.events import LAMPORTS_PER_SOL, EventKind, MarketEvent, Side
 from jinx.core.lifecycle import Evidence as LifeEvidence, Kind, MissingEvidence, State, TokenLifecycle
 from jinx.intel.bounded import MintTable
 from jinx.intel.readings import (PUMPAPI, PUMPSWAP_VENUE, Clock, event_time, is_curve, pool_id, real_reserves,
-                                 reserves_continuous, standard_curve, venue)
+                                 standard_curve, venue)
 
 log = logging.getLogger(__name__)
 
@@ -307,8 +307,8 @@ class _Token:
         self.gaps: list[str] = []
         self.sells: list[Trade] = []               # largest sells, ranked at arrival, independent of trade caps
         self.verified_holders: dict | None = None  # GMGN balances
-        self.net_tokens = self.curve_trades = 0    # curve trades seen since creation (for reserve continuity)
         self.receipt_creation_after_gap = False    # creation timed only by JINX's receipt, after a gap
+        self.m3_ref: tuple[int, Trade] | None = None   # (due time, reference) tracked as trades arrive (M3 only)
         self.detection: tuple[int, int] | None = None   # (observed_ns, processing_ns) of the first report
 
 
@@ -344,7 +344,7 @@ class MigrationTracker:
             tok.creator, tok.since_creation = ev.trader, True
             tok.curve_pool = tok.curve_pool or pool_id(ev)
             if event_time(ev)[1] is Clock.RECEIPT and self._gap is not None and ev.recv_ns >= self._gap[0]:
-                tok.receipt_creation_after_gap = True    # complete only if the reserves prove it (R4-1)
+                tok.receipt_creation_after_gap = True    # its flow can never be proven complete (R4-1, R5-1)
             self._observe(tok, Kind.CREATED, ev, {"pre_pool": pool_id(ev)})
             return []
         if ev.kind is EventKind.MIGRATION:
@@ -498,8 +498,6 @@ class MigrationTracker:
             return False
 
     def _curve_trade(self, tok: _Token, trade: Trade, ev: MarketEvent) -> None:
-        tok.net_tokens += trade.token_amount if trade.side is Side.BUY else -trade.token_amount
-        tok.curve_trades += 1
         tok.curve.append(trade)
         tok.curve_pool = tok.curve_pool or trade.pool_id
         tok.peak_v = max(tok.peak_v, trade.v_sol_lamports)
@@ -596,12 +594,27 @@ class MigrationTracker:
         reports.remove(victim)
         return True
 
-    def _research_reference(self, tok: _Token, m: MigrationTx) -> Trade | None:
-        """M3: the earliest qualifying pool trade at or after migration + delay, derived from the current record and
-        the kept trades every time (round 4, R4-2); with M3 on, M3_RETENTION trades per pool are kept."""
+    def _research_reference(self, tok: _Token, m: MigrationTx) -> tuple[Trade | None, str]:
+        """M3: the earliest qualifying pool trade at or after migration + delay, for the current record (round 4,
+        R4-2). Taken from the kept trades and from a reference tracked as trades arrive, so a cap on kept trades
+        cannot hide it (round 5, R5-2); when neither can answer, the status says so instead of a silent None."""
         due = m.event_ns + self.confirmation_delay_ms * 1_000_000
         pool = tok.pools.get(m.pool_id) if m.pool_id else None
-        return next((t for t in pool.full if t.event_ns >= due and self._ordered(t, m)), None) if pool else None
+        kept = next((t for t in pool.full if t.event_ns >= due and self._ordered(t, m)), None) if pool else None
+        tracked = None
+        if tok.m3_ref is not None and tok.m3_ref[0] == due:
+            t = tok.m3_ref[1]
+            if t.pool_id == m.pool_id and self._qualifies(t, m):
+                tracked = t
+        found = [t for t in (kept, tracked) if t is not None]
+        if found:
+            ref = min(found, key=lambda t: t.key)
+            tok.m3_ref = (due, ref)
+            return ref, "found"
+        if pool is not None and len(pool.full) >= pool.cap and pool.full[-1].event_ns < due:
+            return None, (f"not determinable: the first {pool.cap} trades kept on the pool all came before "
+                          "migration + delay, and none was tracked for the current migration time")
+        return None, "no qualifying trade yet"
 
     def _pool_trade(self, tok: _Token, trade: Trade) -> list[MigrationEvidence]:
         self._flow(tok, trade)                                   # a PumpSwap trade is after the migration
@@ -614,6 +627,15 @@ class MigrationTracker:
             pool.add(trade)
         if tok.migration is None:
             return []
+        if self.confirmation_delay_ms is not None and trade.pool_id == tok.migration.pool_id \
+                and self._qualifies(trade, tok.migration):
+            due = tok.migration.event_ns + self.confirmation_delay_ms * 1_000_000
+            if trade.event_ns >= due and (tok.m3_ref is None or tok.m3_ref[0] != due
+                                          or trade.key < tok.m3_ref[1].key):
+                if tok.m3_ref is not None and tok.m3_ref[0] != due:
+                    self._research_reference(tok, tok.migration)   # re-derive for the new time first
+                if tok.m3_ref is None or tok.m3_ref[0] != due or trade.key < tok.m3_ref[1].key:
+                    tok.m3_ref = (due, trade)
         out = self._reverify(tok)                                # a new verification posts its trades itself
         if not out and tok.verified_by is not None and tok.confirmed and trade.pool_id == tok.migration.pool_id \
                 and self._qualifies(trade, tok.migration):
@@ -739,9 +761,9 @@ class MigrationTracker:
         research = None
         if self.confirmation_delay_ms is not None:
             due = m.event_ns + self.confirmation_delay_ms * 1_000_000
-            ref = self._research_reference(tok, m)
+            ref, ref_status = self._research_reference(tok, m)
             research = {"variant": "M3 confirmation delay", "live_policy": False,
-                        "delay_ms": self.confirmation_delay_ms, "due_event_ns": due,
+                        "delay_ms": self.confirmation_delay_ms, "due_event_ns": due, "reference_status": ref_status,
                         "reference_trade": None if ref is None else {**self._liquidity(ref, m),
                                                                      "fee_payer": ref.fee_payer}}
         latest = pool.latest if pool else None
@@ -764,11 +786,8 @@ class MigrationTracker:
     def _complete(self, tok: _Token) -> bool:
         if not (tok.since_creation and tok.flow_complete):
             return False
-        if tok.receipt_creation_after_gap:     # proven only by the curve's own reserve accounting (round 4, R4-1)
-            c = tok.latest_curve
-            return bool(c) and reserves_continuous(tok.net_tokens, tok.curve_trades, c.v_sol_lamports,
-                                                    c.quote_reserve_lamports, c.token_reserve) is True
-        return True
+        # a creation timed only by JINX's receipt after a gap may hide trades before it: never complete (R5-1)
+        return not tok.receipt_creation_after_gap
 
     def _developer(self, tok: _Token) -> dict:
         if not tok.since_creation or tok.creator is None:

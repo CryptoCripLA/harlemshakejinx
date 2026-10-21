@@ -47,15 +47,17 @@ def test_r4_1_a_late_receipt_only_creation_with_unseen_trades_is_blocked():
     # buys whose reserves show far more tokens left the curve than the observed buys took: trades were missed
     feed(em, [buy("A", 4, v_quote=31.0), buy("B", 5, v_quote=32.0), buy("C", 6, v_quote=35.0)])
     check = em.reserve_check("MintApump", True)
-    assert check["eligible"] is False and "continuity" in check["reason"]
+    assert check["eligible"] is False and "receipt time" in check["reason"]
 
 
-def test_r4_1_the_same_creation_with_every_trade_accounted_for_is_provable():
+def test_r4_1_superseded_by_r5_1_even_fully_accounted_reserves_do_not_prove_the_history():
+    """Round 5 (R5-1): equal net reserves cannot exclude an unseen buy-and-sell round trip (a hidden peak), so a
+    receipt-only creation after a gap stays unprovable however consistent its reserves look."""
     em = EarlyMomentum()
     em.mark_feed_gap(GAP_NS, "pumpapi reconnected")
     em.on_event(pumpportal_creation((T0_MS + 3_000) * 1_000_000))
     feed(em, consistent_buys([31.0, 32.0, 35.0]))
-    assert em.reserve_check("MintApump", True)["eligible"] is True
+    assert em.reserve_check("MintApump", True)["eligible"] is False
 
 
 def test_r4_1_the_migration_flow_of_such_a_token_is_not_complete():
