@@ -1,5 +1,5 @@
 # JINX engine on the Contabo execution server (docs/INFRASTRUCTURE.md). Paper mode until the owner arms live trading.
-# Install: /etc/systemd/system/jinx.service. Credentials: /etc/jinx/jinx.env (mode 600, from jinx.env.example).
+# Installed by deploy/contabo/deploy.sh. Credentials: /etc/jinx/jinx.env (mode 640 root:jinx, see jinx.env.example).
 [Unit]
 Description=JINX trading engine
 After=network-online.target
@@ -7,10 +7,10 @@ Wants=network-online.target
 
 [Service]
 User=jinx
-WorkingDirectory=/opt/jinx
+WorkingDirectory=/opt/jinx/current
 EnvironmentFile=/etc/jinx/jinx.env
-Environment=JINX_DATA_DIR=/var/lib/jinx PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
-ExecStart=/opt/jinx/.venv/bin/python -m jinx run --port 8080
+Environment=JINX_DATA_DIR=/var/lib/jinx HOME=/var/lib/jinx PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/jinx/venv/bin/python -m jinx run --port 8080
 Restart=on-failure
 RestartSec=5
 # Storage hygiene (owner storage rules 1, 2, 5): state only in /var/lib/jinx (the ledger), logs only to the journal
