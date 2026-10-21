@@ -34,8 +34,12 @@ def rel(p: Path) -> str:
     return str(p.relative_to(ROOT))
 
 
-# Who may do what. Every entry is the one approved site; Phase 3 adds its coordinator here when it lands.
-ORDER_SUBMITTERS = {"jinx/sim.py"}                     # gateway.submit_entry / submit_exit callers (sim = replay check)
+# Who may do what. Every entry is the one approved site, verified by reading the code (2026-10-21, Phase 3 a962856):
+#   jinx/confluence/entry.py  EntryCoordinator.consider_fast_path: the ONLY entry decider's submit_entry
+#   jinx/exits/monitor.py     PositionMonitor.submit: the ONLY exit call (CHAD protective exits, The Executioner and
+#                             BIGMAC_PAPER all go through it)
+#   jinx/sim.py               the replay accounting check
+ORDER_SUBMITTERS = {"jinx/sim.py", "jinx/confluence/entry.py", "jinx/exits/monitor.py"}
 EXECUTORS = {"jinx/execution.py"}                      # the one gateway: calls the executor's buy / sell
 FILL_WRITERS = {"jinx/paper.py"}                       # record_buy_fill / record_sell_fill callers
 LEDGER_SQL = {"jinx/ledger.py", "jinx/store.py"}       # SQL writing positions / fills (store.py: schema migrations)
@@ -76,7 +80,9 @@ def test_the_runtime_is_one_process_with_one_long_running_service():
     unit = (ROOT / "deploy" / "contabo" / "jinx.service").read_text()
     assert unit.count("ExecStart=") == 1 and "python -m jinx run" in unit
     mains = {rel(p) for p in py_files() if 'if __name__ == "__main__"' in p.read_text()}
-    assert mains <= {"jinx/__main__.py", "jinx/ops/entry_slots.py"}, mains   # the engine and the owner's slot command
+    # the engine, and the owner's two settings commands (slots; BIGMAC_PAPER/Kelly settings with --owner-order and a
+    # read-only report): commands that exit, not services
+    assert mains <= {"jinx/__main__.py", "jinx/ops/entry_slots.py", "jinx/exits/configure.py"}, mains
 
 
 def code_strings(path: Path) -> list[str]:
