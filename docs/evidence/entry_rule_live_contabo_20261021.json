@@ -1,0 +1,43 @@
+{
+ "generated_utc": "2026-10-21T05:31Z",
+ "host": "Contabo vmi3672752, release f8ff369, paper, mode OFF",
+ "window_s": 300,
+ "early_momentum_detections": 95,
+ "never_eligible_skipped": 50,
+ "screened": 45,
+ "entry_rule_ok": 26,
+ "safety_ok_of_screened": 45,
+ "all_checks_ok": 26,
+ "entry_rule_blocked": {
+  "over the range now and peak over the ceiling": 34,
+  "history unprovable": 13,
+  "under or over the range now": 12,
+  "range and history": 6,
+  "peak over the ceiling only": 4
+ },
+ "gmgn": {
+  "calls": 348,
+  "errors": 0,
+  "rate_limited": 0,
+  "note": "87 of 477 throttled before the never-eligible skip"
+ },
+ "rugcheck": {
+  "requests": 99,
+  "latency_ms": {
+   "p50": 95.5,
+   "p95": 904.4,
+   "p99": 2115.9
+  },
+  "rate_limited": 0
+ },
+ "receive_to_state_ms": {
+  "n": 14351,
+  "p50": 1.03,
+  "p95": 4.19,
+  "p99": 12.77,
+  "max": 622.51
+ },
+ "service_failures": 0,
+ "meaning": "candidates that passed every Phase 2 check; no order is placed in Phase 2 and no profitability is implied",
+ "fix_found": "GMGN wallet_stats answers only the first of several addresses; JINX now asks one wallet per request (ee9669f)"
+}
