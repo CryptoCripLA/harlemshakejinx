@@ -45,12 +45,12 @@ import logging
 import math
 import time
 from collections import OrderedDict, deque
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Any, Callable, Iterable
 
 from jinx.core.events import LAMPORTS_PER_SOL, EventKind, MarketEvent, Side
 from jinx.core.lifecycle import Evidence as LifeEvidence, Kind, MissingEvidence, State, TokenLifecycle
-from jinx.intel.bounded import MintTable
+from jinx.intel.bounded import MintTable, RecentIds
 from jinx.intel.readings import (PUMPAPI, PUMPSWAP_VENUE, Clock, event_time, is_curve, pool_id, real_reserves,
                                  standard_curve, venue)
 
@@ -70,14 +70,14 @@ MAX_MINTS = 20_000
 IDLE_TTL_S = 2 * 3600
 MAX_CURVE_TRADES = 256
 MAX_POOL_TRADES = 256
-MAX_WALLETS = 5_000
+MAX_WALLETS = 1_000         # observed wallets per token; beyond it the observed flow is marked incomplete
 MAX_REPORTS = 8
 MAX_POOLS = 8
 M3_RETENTION = 4_096        # pool trades kept when the M3 paper variant is on, so its reference is derived, not cached
 MAX_HOLDERS_KEPT = 100
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Trade:
     signature: str
     fee_payer: str
@@ -100,7 +100,7 @@ class Trade:
         return (self.event_ns, self.seq)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class MigrationReport:
     """One source's report of a token's migration, as it arrived."""
     source: str
@@ -117,7 +117,7 @@ class MigrationReport:
         return (CLOCK_RANK[self.clock], 0 if self.slot is not None else 1, self.event_ns)
 
     def to_dict(self) -> dict:
-        return {k: (str(v) if isinstance(v, Clock) else v) for k, v in self.__dict__.items()}
+        return {f.name: (str(v) if isinstance(v := getattr(self, f.name), Clock) else v) for f in fields(self)}
 
 
 @dataclass(frozen=True)
@@ -244,20 +244,30 @@ def _fraction(v) -> float | None:
 
 
 class _Flow:
-    __slots__ = ("bought_pre", "bought_post", "pre", "post")
+    """One fee payer's observed trades on one token: tokens bought and sells (count, SOL, tokens) before and after
+    the migration, as plain slots (RAM: no per-wallet lists)."""
+    __slots__ = ("bought_pre", "bought_post", "pre_n", "pre_sol", "pre_tok", "post_n", "post_sol", "post_tok")
 
     def __init__(self) -> None:
         self.bought_pre = self.bought_post = 0
-        self.pre = [0, 0, 0]    # sells, SOL, tokens before the migration
-        self.post = [0, 0, 0]   # after it
+        self.pre_n = self.pre_sol = self.pre_tok = 0
+        self.post_n = self.post_sol = self.post_tok = 0
+
+    @property
+    def pre(self) -> tuple[int, int, int]:
+        return (self.pre_n, self.pre_sol, self.pre_tok)
+
+    @property
+    def post(self) -> tuple[int, int, int]:
+        return (self.post_n, self.post_sol, self.post_tok)
 
     @property
     def net_pre(self) -> int:
-        return self.bought_pre - self.pre[2]
+        return self.bought_pre - self.pre_tok
 
     @property
     def net(self) -> int:
-        return self.bought_pre + self.bought_post - self.pre[2] - self.post[2]
+        return self.bought_pre + self.bought_post - self.pre_tok - self.post_tok
 
 
 class _Pool:
@@ -285,14 +295,13 @@ class _Pool:
 
 
 class _Token:
-    def __init__(self, mint: str, max_curve: int, max_seen: int) -> None:
+    def __init__(self, mint: str, max_seen: int) -> None:
         self.life = TokenLifecycle(mint)
         self.creator: str | None = None
         self.since_creation = False
-        self.seen: OrderedDict[str, int] = OrderedDict()     # trade identity -> event time (duplicates count once)
+        self.seen = RecentIds(max_seen, timed=True)  # hashed trade identities with event times (counted once)
         self.max_seen = max_seen
         self.seen_floor: int | None = None         # newest event time whose identity has left `seen`
-        self.curve: deque[Trade] = deque(maxlen=max_curve)
         self.curve_pool: str | None = None
         self.latest_curve: Trade | None = None
         self.peak_v = 0
@@ -324,8 +333,8 @@ class MigrationTracker:
         self.max_curve, self.max_pool, self.max_wallets = max_curve_trades, max_pool_trades, max_wallets
         if confirmation_delay_ms is not None:      # the paper reference needs trades past the delay (round 4, R4-2)
             self.max_pool = max(max_pool_trades, M3_RETENTION)
-        max_seen = 2 * (max_curve_trades + max_pool_trades)
-        self._tokens: MintTable[_Token] = MintTable(lambda mint: _Token(mint, self.max_curve, max_seen), max_mints,
+        max_seen = max_curve_trades + max_pool_trades   # older duplicates fall under the dedup-horizon rule
+        self._tokens: MintTable[_Token] = MintTable(lambda mint: _Token(mint, max_seen), max_mints,
                                                     int(idle_ttl_s * 1_000_000_000))
         self.stats = {"events": 0, "migrations": 0, "reports": 0, "enriched": 0, "confirmed": 0, "revoked": 0,
                       "pool_conflicts": 0, "duplicates": 0, "beyond_dedup_horizon": 0, "reports_dropped": 0,
@@ -354,7 +363,8 @@ class MigrationTracker:
         if ev.kind is not EventKind.TRADE:
             return []
         trade = self._trade(ev)
-        if ev.idempotency_key in tok.seen:
+        ident = hash(ev.idempotency_key)
+        if ident in tok.seen:
             self.stats["duplicates"] += 1
             return []
         if tok.seen_floor is not None and trade.event_ns <= tok.seen_floor:
@@ -363,9 +373,8 @@ class MigrationTracker:
             self.stats["beyond_dedup_horizon"] += 1
             self._incomplete(tok, "a trade older than the duplicate-detection window arrived and was not counted")
             return []
-        tok.seen[ev.idempotency_key] = trade.event_ns
-        while len(tok.seen) > tok.max_seen:
-            _, old_ns = tok.seen.popitem(last=False)
+        old_ns = tok.seen.add(ident, trade.event_ns)
+        if old_ns is not None:
             tok.seen_floor = max(tok.seen_floor or old_ns, old_ns)
         if is_curve(ev):
             self._curve_trade(tok, trade, ev)
@@ -471,9 +480,9 @@ class MigrationTracker:
     def verified_mints(self) -> int:
         return sum(1 for _, tok in self._tokens.items() if tok.verified_by is not None)
 
-    def curve_trades_held(self, mint: str) -> int:
+    def identities_held(self, mint: str) -> int:
         tok = self._tokens.get(mint)
-        return len(tok.curve) if tok else 0
+        return len(tok.seen) if tok else 0
 
     # ---- feeding -------------------------------------------------------------------------------------
     @staticmethod
@@ -498,7 +507,6 @@ class MigrationTracker:
             return False
 
     def _curve_trade(self, tok: _Token, trade: Trade, ev: MarketEvent) -> None:
-        tok.curve.append(trade)
         tok.curve_pool = tok.curve_pool or trade.pool_id
         tok.peak_v = max(tok.peak_v, trade.v_sol_lamports)
         if tok.latest_curve is None or trade.key > tok.latest_curve.key:
@@ -534,10 +542,14 @@ class MigrationTracker:
             else:
                 f.bought_pre += trade.token_amount
             return
-        bucket = f.post if after else f.pre
-        bucket[0] += 1
-        bucket[1] += trade.sol_lamports
-        bucket[2] += trade.token_amount
+        if after:
+            f.post_n += 1
+            f.post_sol += trade.sol_lamports
+            f.post_tok += trade.token_amount
+        else:
+            f.pre_n += 1
+            f.pre_sol += trade.sol_lamports
+            f.pre_tok += trade.token_amount
 
     def _report(self, tok: _Token, report: MigrationReport, started: int) -> list[MigrationEvidence]:
         old = tok.migration

@@ -5,6 +5,7 @@ evicts exactly as the live run did. The least recently active mint goes first.
 """
 from __future__ import annotations
 
+from array import array
 from collections import OrderedDict
 from typing import Callable, Generic, Iterator, TypeVar
 
@@ -49,3 +50,40 @@ class MintTable(Generic[T]):
 
     def __len__(self) -> int:
         return len(self._rows)
+
+
+class RecentIds:
+    """The newest `cap` identities (64-bit ints, e.g. hashed event keys), for duplicate detection in a bounded RAM
+    budget. The ring is a typed array (8 bytes per identity, no int objects); most tokens see a handful of trades, so
+    a short window is scanned linearly and a set is built only for windows longer than SMALL. With `timed`, each
+    identity carries a time, and `add` returns the time of the identity that left the window."""
+    SMALL = 64
+    __slots__ = ("cap", "_set", "_ring", "_times")
+
+    def __init__(self, cap: int, timed: bool = False) -> None:
+        self.cap = cap
+        self._set: set[int] | None = None
+        self._ring = array("q")
+        self._times = array("q") if timed else None
+
+    def __contains__(self, ident: int) -> bool:
+        return ident in self._set if self._set is not None else ident in self._ring
+
+    def __len__(self) -> int:
+        return len(self._ring)
+
+    def add(self, ident: int, t: int = 0) -> int | None:
+        self._ring.append(ident)
+        if self._times is not None:
+            self._times.append(t)
+        gone = gone_t = None
+        if len(self._ring) > self.cap:
+            gone = self._ring.pop(0)
+            gone_t = self._times.pop(0) if self._times is not None else None
+        if self._set is not None:
+            self._set.add(ident)
+            if gone is not None:
+                self._set.discard(gone)
+        elif len(self._ring) > self.SMALL:
+            self._set = set(self._ring)
+        return gone_t

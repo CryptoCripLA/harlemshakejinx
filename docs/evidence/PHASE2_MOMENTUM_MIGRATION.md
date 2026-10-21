@@ -188,6 +188,19 @@ file:line evidence. Codex's sandbox could not run the app tests (it was denied a
 four temporary-directory tests; those run in the full suite on jinx-nyc (615 passed, 1 skipped at cf4569c). The verdict
 covers the reviewed code; it is not the owner's Phase 2 acceptance.
 
+## RAM (owner storage rule 2)
+
+Contabo, running cd21cf2 on 2026-10-21 (~08:40 UTC): process 546 MB of the 1 GB RAM budget, growing ~400 MB/h with
+~80,000 events/h and ~2,960 tokens tracked by each intel module, so the storage monitor marked RAM critical (budget in
+1.3 h at that rate) and health "degraded". Measured with tracemalloc (`tests/test_intel_memory.py`), the three event
+trackers kept 2,075 bytes per event of live traffic and 2.4 MB for one extreme token (18,000 trades, 6,000 wallets).
+Fixes: trade identities kept as 64-bit hashes in a typed array (a set only for windows over 64), slotted records,
+compact per-wallet counters, the migration tracker's unused per-token curve list removed, identity windows sized to
+their job (Early Momentum 1,024; migration 512 with the dedup-horizon rule beyond; graduation 64), observed wallets
+per token capped at 1,000 (beyond that the observed flow is marked incomplete; verified GMGN balances remain the
+ownership source). Result: 836 bytes per event (−60%) and 660 KB for the extreme token (−73%); both are now test
+bounds (900 bytes per event, 1.2 MB per token).
+
 ## Deployment
 
 The Contabo paper deployment runs whatever `deploy/contabo/deploy.sh` last shipped; the revision and the live

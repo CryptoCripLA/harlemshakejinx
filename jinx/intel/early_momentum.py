@@ -42,7 +42,7 @@ from enum import StrEnum
 from typing import Any, Callable, Mapping
 
 from jinx.core.events import LAMPORTS_PER_SOL, EventKind, MarketEvent, Side
-from jinx.intel.bounded import MintTable
+from jinx.intel.bounded import MintTable, RecentIds
 from jinx.intel.readings import (Clock, event_time, is_curve, standard_curve, traders_involved,
                                  verified_real_sol)
 
@@ -105,7 +105,7 @@ class Predicate:
                 "detail": dict(self.detail)}
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Buy:
     signature: str
     fee_payer: str
@@ -234,7 +234,7 @@ class _Mint:
 
     def __init__(self) -> None:
         self.buys: list[Buy] = []
-        self.seen: OrderedDict[str, None] = OrderedDict()
+        self.seen = RecentIds(2 * MAX_BUYS_PER_MINT)  # hashed trade identities (duplicates count once)
         self.creator: str | None = None
         self.since_creation = False
         self.current: tuple[tuple[int, int], int, int | None] | None = None   # (key, v_sol, real_sol)
@@ -281,13 +281,11 @@ class EarlyMomentum:
             st.migrated = True             # remembered even when the migration arrives before the creation (R3-1)
             return []
         if ev.kind is EventKind.TRADE:
-            key = ev.idempotency_key
+            key = hash(ev.idempotency_key)
             if key in st.seen:             # a duplicate delivery counts once (also for reserve continuity)
                 self.stats["duplicates"] += 1
                 return []
-            st.seen[key] = None
-            while len(st.seen) > 2 * self.max_buys_per_mint:
-                st.seen.popitem(last=False)
+            st.seen.add(key)
         if ev.kind is EventKind.TOKEN_CREATED:
             st.creator, st.since_creation, st.create_sig = ev.trader, True, ev.signature
             if event_time(ev)[1] is Clock.RECEIPT and self._gap is not None and ev.recv_ns >= self._gap[0]:

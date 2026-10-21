@@ -32,11 +32,11 @@ from __future__ import annotations
 
 import math
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Callable
 
 from jinx.core.events import LAMPORTS_PER_SOL, EventKind, MarketEvent
-from jinx.intel.bounded import MintTable
+from jinx.intel.bounded import MintTable, RecentIds
 from jinx.intel.readings import (INITIAL_REAL_TOKENS, INITIAL_VIRTUAL_SOL, Clock, event_time, is_curve,
                                  real_reserves, standard_curve)
 
@@ -51,10 +51,10 @@ SCORE_UNRESOLVED = "not computed: CHAD gives the 0–20 range but not the progre
 NEAR_UNRESOLVED = "no provider status yet: near graduation comes only from the provider's category (GMGN Trenches)"
 MAX_MINTS = 20_000
 IDLE_TTL_S = 2 * 3600
-MAX_SEEN = 512                                      # per-token reading identities kept for duplicate detection
+MAX_SEEN = 64     # per-token reading identities for duplicate detection: they only protect the reading counter
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CurveReading:
     signature: str
     source: str
@@ -78,7 +78,7 @@ class CurveReading:
         return (self.event_ns, self.seq)
 
     def to_dict(self) -> dict:
-        return {k: (str(v) if isinstance(v, Clock) else v) for k, v in self.__dict__.items()}
+        return {f.name: (str(v) if isinstance(v := getattr(self, f.name), Clock) else v) for f in fields(self)}
 
 
 def reading(ev: MarketEvent) -> CurveReading:
@@ -151,7 +151,7 @@ class _Curve:
         self.readings = self.late = 0
         self.since_creation = self.complete = False
         self.provider: dict | None = None
-        self.seen: OrderedDict[str, None] = OrderedDict()   # reading identities: a duplicate delivery counts once
+        self.seen = RecentIds(MAX_SEEN)                     # hashed reading identities: a duplicate counts once
 
 
 class GraduationTracker:
@@ -165,13 +165,11 @@ class GraduationTracker:
         if ev.kind not in (EventKind.TOKEN_CREATED, EventKind.TRADE) or not is_curve(ev):
             return []
         c = self._curves.touch(ev.mint, ev.recv_ns)
-        key = ev.idempotency_key
+        key = hash(ev.idempotency_key)
         if key in c.seen:
             self.stats["duplicates"] += 1
             return []
-        c.seen[key] = None
-        while len(c.seen) > MAX_SEEN:
-            c.seen.popitem(last=False)
+        c.seen.add(key)
         if ev.kind is EventKind.TOKEN_CREATED:
             c.since_creation = True
         r = reading(ev)

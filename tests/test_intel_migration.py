@@ -266,7 +266,7 @@ def test_state_is_bounded():
         feed(m, [buy("A", i * 0.01, mint=f"M{i}")])
     assert m.tracked_mints() == 3
     feed(m, [buy(f"B{i}", 3600 + i * 0.01, mint="LATE") for i in range(10)])
-    assert m.tracked_mints() == 1 and m.curve_trades_held("LATE") == 4
+    assert m.tracked_mints() == 1 and m.identities_held("LATE") <= 2 * (4 + 5)
     assert m.stats["wallets_untracked"] >= 7
 
 
