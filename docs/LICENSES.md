@@ -23,6 +23,13 @@ Obligations:
 | solders | 0.29.0 | Apache-2.0 OR MIT | imported by Mako's `pumpportal.py` |
 | base58 | 2.1.1 | MIT | imported by Mako's `pumpportal.py` |
 | httpx | 0.28.1 | BSD-3-Clause | imported by Mako's `pumpportal.py` |
+| psycopg | 3.2.13 | LGPL-3.0-only (weak copyleft) | Neon and Railway PostgreSQL (`jinx/persistence/`). Installed unmodified from PyPI and loaded at run time; JINX does not copy, modify or vendor it |
+| psycopg-binary | 3.2.13 | LGPL-3.0-only (weak copyleft) | pulled in by `psycopg[binary]` (prebuilt libpq); same use as psycopg |
+| redis | 5.2.1 | MIT | Redis Cloud transient state (`jinx/persistence/redis_state.py`) |
+| boto3 | 1.35.36 | Apache-2.0 | Neon Object Storage ledger backups (`jinx/persistence/object_store.py`) |
+| botocore | 1.35.99 | Apache-2.0 | used by boto3 |
 | pytest (dev) | 9.1.1 | MIT | tests |
+
+Transitive closure (Phase 4 audit, 2026-10-21, `scripts/phase4_license_audit.py`, evidence `docs/evidence/PHASE4_LICENSE_AUDIT_20261021.json`): every installed dependency declares a permissive license (MIT, BSD, Apache-2.0, PSF-2.0, MPL-2.0 for certifi) except psycopg/psycopg-binary above. `jsonalias` (pulled in by solders) declares none in its package metadata; its repository's LICENSE is MIT.
 
 The GMGN bridge's Node dependencies come from the pinned `upstream/gmgn/package-lock.json`: commander (MIT), dotenv (BSD-2-Clause), socks (MIT), undici (MIT).

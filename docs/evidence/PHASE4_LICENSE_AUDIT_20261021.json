@@ -1,0 +1,188 @@
+{
+ "utc": "2026-10-21T15:02:11Z",
+ "commit": "569afae2b86ac4dfa3af42748b3ea589d10e8e73",
+ "python_interpreter": "/home/atlasops/work/harlemshakejinx/.venv/bin/python",
+ "python_direct": [
+  "base58",
+  "httpx",
+  "python-dotenv",
+  "solders",
+  "websockets",
+  "psycopg",
+  "psycopg-binary",
+  "redis",
+  "boto3",
+  "botocore"
+ ],
+ "python": {
+  "anyio": {
+   "version": "4.15.1",
+   "license": "MIT",
+   "direct": false
+  },
+  "base58": {
+   "version": "2.1.1",
+   "license": "MIT (MIT License)",
+   "direct": true
+  },
+  "boto3": {
+   "version": "1.35.36",
+   "license": "Apache License 2.0 (Apache Software License)",
+   "direct": true
+  },
+  "botocore": {
+   "version": "1.35.99",
+   "license": "Apache License 2.0 (Apache Software License)",
+   "direct": true
+  },
+  "certifi": {
+   "version": "2026.10.19",
+   "license": "MPL-2.0 (Mozilla Public License 2.0 (MPL 2.0))",
+   "direct": false
+  },
+  "h11": {
+   "version": "0.16.0",
+   "license": "MIT (MIT License)",
+   "direct": false
+  },
+  "httpcore": {
+   "version": "1.0.9",
+   "license": "BSD-3-Clause",
+   "direct": false
+  },
+  "httpx": {
+   "version": "0.28.1",
+   "license": "BSD-3-Clause (BSD License)",
+   "direct": true
+  },
+  "idna": {
+   "version": "3.20",
+   "license": "BSD-3-Clause",
+   "direct": false
+  },
+  "jmespath": {
+   "version": "1.1.0",
+   "license": "MIT (MIT License)",
+   "direct": false
+  },
+  "jsonalias": {
+   "version": "0.1.1",
+   "license": "MIT",
+   "direct": false,
+   "license_source": "https://github.com/kevinheavey/jsonalias/blob/master/LICENSE, read 2026-10-21 (package metadata declares none)"
+  },
+  "psycopg": {
+   "version": "3.2.13",
+   "license": "LGPL-3.0-only",
+   "direct": true
+  },
+  "psycopg-binary": {
+   "version": "3.2.13",
+   "license": "LGPL-3.0-only",
+   "direct": true
+  },
+  "python-dateutil": {
+   "version": "2.9.0.post0",
+   "license": "Dual License (BSD License; Apache Software License)",
+   "direct": false
+  },
+  "python-dotenv": {
+   "version": "1.2.4",
+   "license": "BSD-3-Clause",
+   "direct": true
+  },
+  "redis": {
+   "version": "5.2.1",
+   "license": "MIT (MIT License)",
+   "direct": true
+  },
+  "s3transfer": {
+   "version": "0.10.4",
+   "license": "Apache License 2.0 (Apache Software License)",
+   "direct": false
+  },
+  "six": {
+   "version": "1.17.0",
+   "license": "MIT (MIT License)",
+   "direct": false
+  },
+  "solders": {
+   "version": "0.29.0",
+   "license": "Apache License Version 2.0, (license file LICENSE)",
+   "direct": true
+  },
+  "typing-extensions": {
+   "version": "4.16.0",
+   "license": "PSF-2.0",
+   "direct": false
+  },
+  "urllib3": {
+   "version": "2.8.0",
+   "license": "MIT",
+   "direct": false
+  },
+  "websockets": {
+   "version": "17.3",
+   "license": "BSD-3-Clause",
+   "direct": true
+  }
+ },
+ "node_production": {
+  "commander": {
+   "version": "12.1.0",
+   "license": "MIT"
+  },
+  "dotenv": {
+   "version": "16.6.1",
+   "license": "BSD-2-Clause"
+  },
+  "ip-address": {
+   "version": "10.1.0",
+   "license": "MIT"
+  },
+  "smart-buffer": {
+   "version": "4.2.0",
+   "license": "MIT"
+  },
+  "socks": {
+   "version": "2.8.7",
+   "license": "MIT"
+  },
+  "undici": {
+   "version": "7.24.1",
+   "license": "MIT"
+  }
+ },
+ "upstreams": {
+  "gmgn": {
+   "license": "MIT",
+   "reuse": "code",
+   "license_sha256_matches_pin": true
+  },
+  "mako": {
+   "license": "MIT",
+   "reuse": "code",
+   "license_sha256_matches_pin": true
+  },
+  "d3ad": {
+   "license": "Apache-2.0",
+   "reuse": "code",
+   "license_sha256_matches_pin": true
+  },
+  "datanomad": {
+   "license": "NONE",
+   "reuse": "reference-only",
+   "verified": true
+  }
+ },
+ "third_party_licenses_shipped": {
+  "d3ad": "Apache License",
+  "gmgn": "MIT License"
+ },
+ "problems": [],
+ "notes": [
+  "python psycopg-binary 3.2.13: LGPL-3.0-only: weak copyleft; JINX installs it unmodified from PyPI and links it at run time (no copy, no modification, not vendored)",
+  "python psycopg 3.2.13: LGPL-3.0-only: weak copyleft; JINX installs it unmodified from PyPI and links it at run time (no copy, no modification, not vendored)"
+ ],
+ "result": "PASS"
+}
