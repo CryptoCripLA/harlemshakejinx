@@ -125,8 +125,8 @@ def loop_of(app: JinxApp) -> asyncio.AbstractEventLoop:
     return loop
 
 
-def run(app: JinxApp, delivered, settle: bool = True) -> RunStats:
-    return loop_of(app).run_until_complete(run_async(app, delivered, settle))
+def run(app: JinxApp, delivered, settle: bool = True, settle_s: float = 5.0) -> RunStats:
+    return loop_of(app).run_until_complete(run_async(app, delivered, settle, settle_s))
 
 
 def _canon(x):
