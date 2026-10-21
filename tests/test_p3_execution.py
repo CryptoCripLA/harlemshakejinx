@@ -66,14 +66,13 @@ def test_a_dropped_confirmation_is_never_booked_and_restart_recovers(tmp_path):
     balance = rig.wallet.balance()
     rig.store.close()                                                   # the process dies before any fill
     r2 = Rig(tmp_path / "jinx.db")
-    rep = recover(r2.market, type("C", (), {"apply_pending": lambda self: 0})(), r2.ledger, r2.wallet)
+    rep = recover(r2.ledger, r2.wallet)
     assert rep.released_unfilled == 1 and rep.wallet_reconciled
     pos = r2.ledger.get(r.position_id)
     assert pos.status is Status.FAILED and pos.token_amount == 0
     assert r2.wallet.balance() == balance                               # nothing was spent on an unconfirmed buy
     assert not r2.store.conn.execute("SELECT 1 FROM fills").fetchone()
     r2.close()
-    rig.market.close()
 
 
 def test_failed_quote_at_fill_time_fails_the_entry_without_spending(tmp_path):

@@ -1,11 +1,13 @@
 """Integration health: one JSON document describing whether JINX is fit to run.
 
-failed   - the store is unhealthy or the paper wallet does not reconcile. Do not trade.
-degraded - running, but the live feed is down, stale, stalled on writes, or has unsent unsubscribes or
-           unconfirmed wanted subscriptions,
-           stored events are waiting
-           to be applied, or the slot setting is unreadable.
+failed   - the ledger store is unhealthy or the paper wallet does not reconcile. Do not trade.
+degraded - running, but a live feed (PumpPortal through Mako, or the PumpAPI trade stream Early Momentum depends
+           on) is down, stale or stalled on writes, PumpPortal has unsent unsubscribes or unconfirmed wanted
+           subscriptions, or the slot setting is unreadable.
 ok       - everything checked is healthy.
+
+Latency figures are rolling-window summaries from constant-memory histograms (jinx/core/latency.py): local
+processing inside JINX, never order-execution latency.
 """
 from __future__ import annotations
 
@@ -26,27 +28,27 @@ def percentiles_ms(samples_ns: list[int]) -> dict | None:
             "mean": statistics.fmean(s) / 1e6}
 
 
+FEED_ADAPTERS = ("mako", "pumpapi.stream")   # the live market feeds whose health decides "ok"
+
+
 def build_health(store: Store, ledger: PositionLedger, wallet: PaperWallet, adapters: list[dict],
-                 bus_stats: dict, now_ns: int, latency_ns: list[int] | None = None,
-                 feed_stale_after_ns: int | None = None, receive_latency_ns: list[int] | None = None,
-                 market_store: Store | None = None) -> dict:
-    """`store` is the durable ledger store; `market_store`, when given, is the in-memory market store whose event
-    counts are reported (owner order 2026-10-21: raw events live in RAM only)."""
+                 bus_stats: dict, now_ns: int, latency: dict | None = None,
+                 feed_stale_after_ns: int | None = None, receive_latency: dict | None = None) -> dict:
+    """`store` is the durable ledger store. Market data is RAM only (owner order 2026-10-21 §1), so event counts
+    come from the bus. `latency` and `receive_latency` are histogram summaries (jinx/core/latency.py)."""
     rec = wallet.reconcile()
     store_ok = store.journal_mode() == "wal" and store.quick_check()
-    events_store = market_store if market_store is not None else store
-    feeds = [a for a in adapters if a.get("adapter") == "mako"]
+    feeds = [a for a in adapters if a.get("adapter") in FEED_ADAPTERS]
     feed_ok = bool(feeds) and all(f.get("connected") for f in feeds)
     if feed_ok and feed_stale_after_ns is not None:
         feed_ok = all(f.get("last_message_ns") and now_ns - f["last_message_ns"] <= feed_stale_after_ns for f in feeds)
     if any(f.get("ingest_stalled") or f.get("pending_unsubscribes") or f.get("unconfirmed_subscriptions")
            for f in feeds):
         feed_ok = False
-    unapplied = len(events_store.unapplied_events())
     max_slots = ledger.max_slots()
     if not (store_ok and rec.ok):
         status = "failed"
-    elif feed_ok and max_slots is not None and unapplied == 0:
+    elif feed_ok and max_slots is not None:
         status = "ok"
     else:
         status = "degraded"
@@ -57,11 +59,11 @@ def build_health(store: Store, ledger: PositionLedger, wallet: PaperWallet, adap
         "slots": {"max": max_slots, "active": ledger.active_slots()},
         "paper_wallet": {"reconciled": rec.ok, "starting_lamports": rec.starting_lamports,
                          "balance_lamports": rec.balance_lamports},
-        "store": {"ok": store_ok, "events": events_store.event_count(), "unapplied": unapplied,
-                  "market_store": "memory" if market_store is not None else "same as ledger"},
+        "store": {"ok": store_ok, "events": bus_stats.get("published", 0),
+                  "market_store": "none: market state is RAM only", "legacy_market_rows": store.legacy_market_rows()},
         "adapters": adapters,
         "bus": bus_stats,
         # local processing inside JINX, not order-execution latency
-        "admission_to_state_ms": percentiles_ms(latency_ns or []),
-        "receive_to_state_ms": percentiles_ms(receive_latency_ns or []),
+        "admission_to_state_ms": latency,
+        "receive_to_state_ms": receive_latency,
     }

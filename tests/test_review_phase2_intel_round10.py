@@ -51,10 +51,13 @@ def test_r10_2_a_resend_behind_the_horizon_does_not_inflate_the_pool_counts():
     assert ev.foreign_pool_trades == 1_026 and ev.pool_trades_uncounted == 1
 
 
-def test_r10_1_the_creators_tally_is_unavailable_when_its_trades_went_untallied():
+def test_r10_1_the_creators_tally_is_never_dropped_by_the_wallet_cap():
+    """Storage repair 2026-10-21: the creator is always tallied (developer selling), so the wallet cap that once
+    left it UNAVAILABLE no longer applies to it; R10-1's rule (never a clean zero for an untallied wallet) still
+    holds for every capped wallet (test above)."""
     m = MigrationTracker(max_wallets=1)
     feed(m, [create(dev="DEV", slot=100, initial_buy=0.0), buy("FIRST", 1, v_quote=31.0, slot=101),
-             sell("DEV", 2, v_quote=30.5, slot=102, sol=0.5),             # the creator is beyond the 1-wallet cap
+             sell("DEV", 2, v_quote=30.5, slot=102, sol=0.5),
              migrate(pool_id="AMM1", t_ms=MIG_T, slot=499)])
     dev = m.evidence("MintApump").developer_selling
-    assert (dev["status"], dev["tally"], dev["after"], dev["complete"]) == ("UNAVAILABLE", "UNAVAILABLE", None, False)
+    assert (dev["status"], dev["tally"]) == ("observed", "observed") and dev["before"]["sells"] == 1

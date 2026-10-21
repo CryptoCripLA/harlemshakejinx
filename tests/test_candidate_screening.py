@@ -69,7 +69,7 @@ def test_a_detection_is_screened_rechecked_until_indexed_and_funders_are_recorde
     assert sybil.status.value == "PASS"                         # all three buyers' funders known, none shared
     assert app.gmgn.calls.count("getWalletStats") == 3          # one request per wallet
     assert "getWalletStats" in app.gmgn.calls
-    app.market.close(); app.store.close()
+    app.store.close()
 
 
 
@@ -90,4 +90,4 @@ def test_a_coin_that_can_never_qualify_spends_no_gmgn_or_rugcheck_requests(tmp_p
     [(mint, entry)] = app.candidates.items()
     assert "skipped" in entry["safety"] and app.gmgn.calls == [] and rc.calls == []
     assert app.screen_stats == {"screened": 0, "skipped": 1, "funder_lookups_skipped": 1}
-    app.market.close(); app.store.close()
+    app.store.close()

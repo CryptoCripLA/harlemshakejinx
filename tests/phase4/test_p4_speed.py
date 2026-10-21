@@ -166,10 +166,6 @@ def test_S5_a_candidate_is_screened_once_while_its_safety_answer_is_fresh(tmp_pa
     h.close(app)
 
 
-@pytest.mark.xfail(strict=True, reason="FINDING P4-F3 (2026-10-21): JinxApp._request_funders asks GMGN getWalletStats "
-                   "for every window wallet of every detection, including wallets whose funder EarlyMomentum already "
-                   "holds (record_funding cache), spending Plus-plan weight on repeat calls (speed rule S5). Owner of "
-                   "jinx/app.py funder lookups: Phase 2 session local_f5744230. Remove this marker when fixed.")
 def test_S5_a_wallet_whose_funder_is_already_known_is_not_looked_up_again(tmp_path):
     gmgn = h.FakeGmgn(wallet_stats=DISTINCT)
     app = h.build_app(tmp_path, gmgn=gmgn, rugcheck=h.FakeRugCheck())

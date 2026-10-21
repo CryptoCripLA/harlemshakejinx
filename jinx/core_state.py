@@ -1,54 +1,32 @@
-"""The fast-lane handler that turns an admitted event into JINX state.
+"""The fast-lane handler that turns an admitted event into JINX's current token state.
 
-Registry updates and the event's applied flag commit in one transaction, so
-each stored event is applied exactly once even across crashes: a crash before
-the commit leaves the event unapplied for recovery to replay; a crash after
-it leaves nothing to redo.
+Market state is RAM only (owner order 2026-10-21 §1: "Normal raw market chatter is transient"): no raw event is
+stored, nothing is replayed after a restart, and the market view starts empty. The bus's expiring duplicate filter
+admits each event once inside its window. Trading records, which must survive restarts, live in the durable ledger
+store (jinx/store.py, jinx/ledger.py).
 """
 from __future__ import annotations
 
 import time
-from collections import deque
 
 from jinx.core.events import MarketEvent
-from jinx.registry import TokenRegistry, WalletRegistry
-from jinx.store import Store
+from jinx.core.latency import RollingLatency
+from jinx.registry import TokenRegistry
 
 
 class CoreState:
-    def __init__(self, store: Store, tokens: TokenRegistry, wallets: WalletRegistry, clock_ns=time.time_ns,
-                 latency_window: int = 100_000) -> None:
-        self.store, self.tokens, self.wallets = store, tokens, wallets
+    def __init__(self, tokens: TokenRegistry, clock_ns=time.time_ns) -> None:
+        self.tokens = tokens
         self.clock_ns = clock_ns
         self.applied = 0
-        self.skipped_already_applied = 0
-        self._receive_latency: deque[int] = deque(maxlen=latency_window)
+        self._receive_latency = RollingLatency()
 
     def apply(self, ev: MarketEvent) -> None:
-        try:
-            with self.store.transaction():
-                if self.store.is_applied(ev.idempotency_key):
-                    self.skipped_already_applied += 1
-                    return
-                self.tokens.apply(ev)
-                self.wallets.apply(ev)
-                self.store.mark_applied(ev.idempotency_key)
-        except Exception:
-            # the transaction rolled back; drop any in-memory change made before the failure
-            self.tokens.reload()
-            self.wallets.reload()
-            raise
+        self.tokens.apply(ev)
         self.applied += 1
-        self._receive_latency.append(self.clock_ns() - ev.recv_ns)
+        self._receive_latency.record(self.clock_ns() - ev.recv_ns)
 
-    def receive_latency_ns(self) -> list[int]:
-        """Feed receive -> state committed, wall clock, for successful applies only (including retries via
-        apply_pending, which therefore include the time the event waited). Local processing, not execution."""
-        return list(self._receive_latency)
-
-    def apply_pending(self) -> int:
-        """Apply stored events that are still unapplied (after a handler failure). Safe to repeat."""
-        rows = self.store.unapplied_events()
-        for row in rows:
-            self.apply(self.store.row_to_event(row))
-        return len(rows)
+    def receive_latency(self) -> RollingLatency:
+        """Feed receive -> token state applied, wall clock, for successful applies only. Local processing, not
+        execution. Rolling histogram, constant memory."""
+        return self._receive_latency

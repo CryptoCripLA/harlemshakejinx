@@ -83,7 +83,7 @@ def test_replaying_a_migrated_intent_with_unknown_budget_is_not_rejected_as_a_co
 @pytest.fixture
 def rig(store):
     set_mode(store, Mode.AUTO)
-    reg = TokenRegistry(store)
+    reg = TokenRegistry()
     reg.apply(make_create(mint="A"))
     reg.apply(make_trade(mint="A", v_sol=32_000_000_000, v_tokens=1_000_000_000_000_000))
     ledger = PositionLedger(store)
@@ -138,10 +138,10 @@ def test_a_failed_commit_rolls_back_and_the_next_write_succeeds(tmp_path):
     real = s.conn
     s.conn = CommitFailsOnce(real)
     with pytest.raises(sqlite3.OperationalError):
-        s.record_event(make_trade(sig="ONE"))
+        s.set_setting("probe", "1", by="test")           # a ledger write (no market events since 2026-10-21)
     assert real.in_transaction is False
-    assert s.record_event(make_trade(sig="ONE")) is True   # the retry is admitted and stored
-    assert s.event_count() == 1
+    s.set_setting("probe", "2", by="test")              # the retry is admitted and stored
+    assert s.get_setting("probe") == "2"
     s.conn = real
     s.close()
 
@@ -196,21 +196,20 @@ def test_off_mode_stops_paid_trade_subscriptions_but_keeps_held_positions_watche
 def test_reported_latency_includes_the_durable_write(store):
     from jinx.core.bus import EventBus, Lane
     from jinx.core_state import CoreState
-    from jinx.registry import WalletRegistry
 
-    core = CoreState(store, TokenRegistry(store), WalletRegistry(store))
+    core = CoreState(TokenRegistry())
 
     async def main():
-        def slow_persist(ev):
+        def slow_persist(ev):                          # the bus's optional durable hook (unused for market data)
             time.sleep(0.05)
-            return store.record_event(ev)
+            return True
         bus = EventBus(persist=slow_persist)
         bus.subscribe(Lane.FAST, core.apply, name="core_state")
         task = asyncio.create_task(bus.run())
         await bus.publish(make_trade(recv_ns=time.time_ns()))
         await bus.drain()
         task.cancel()
-        return bus.latency_ns(Lane.FAST)
+        return bus.latency(Lane.FAST).summary()
     admission = asyncio.run(main())
-    receive = core.receive_latency_ns()
-    assert admission[0] >= 50_000_000 and receive[0] >= 50_000_000
+    receive = core.receive_latency().summary()
+    assert admission["max"] >= 50 and receive["max"] >= 50          # milliseconds

@@ -4,8 +4,10 @@ and Redis consumption. Detect abnormal growth before capacity is exhausted").
 
 `StorageMonitor` keeps a bounded series of readings per component (RAM, disk, filesystem, PostgreSQL, Redis, object
 storage). Each component has a byte budget. Status: `critical` at 95% of budget or when its recent growth rate would
-reach the budget within 2 hours; `warn` at 80% or within 24 hours; otherwise `ok`. Growth is measured over at least
-10 minutes of readings so a single burst is not extrapolated.
+reach the budget within 2 hours; `warn` at 80% or within 24 hours; otherwise `ok`. A component can also have explicit
+levels (`limits`): RAM warns above the owner's 256 MB "investigate" line and is critical above the 384 MB guardrail
+(owner order 2026-10-21 §3), far below the 80%/95% of its 1 GB budget. Growth is the trend of the last hour of
+readings (at least 10 minutes), so start-up warm-up is not extrapolated for the rest of the day.
 
 `DailyRun` says when the end-of-day clean-up is due: once per UTC day, and at start-up.
 """
@@ -20,6 +22,7 @@ from pathlib import Path
 MB = 1024 * 1024
 WARN, CRITICAL = 0.80, 0.95
 MIN_GROWTH_WINDOW_S = 600
+GROWTH_WINDOW_S = 3_600
 RANK = {"ok": 0, "warn": 1, "critical": 2}
 
 
@@ -50,8 +53,10 @@ def filesystem(root: Path) -> dict:
 
 
 class StorageMonitor:
-    def __init__(self, budgets_bytes: dict[str, int], window: int = 1440) -> None:
+    def __init__(self, budgets_bytes: dict[str, int], window: int = 1440,
+                 limits: dict[str, tuple[int, int]] | None = None) -> None:
         self.budgets = dict(budgets_bytes)
+        self.limits = dict(limits or {})          # name -> (warn_bytes, critical_bytes)
         self._series: dict[str, deque[tuple[float, int]]] = {}
         self._detail: dict[str, dict] = {}
         self.window = window
@@ -72,21 +77,23 @@ class StorageMonitor:
             return {"used_bytes": None, "budget_bytes": budget, "status": "unknown", **self._detail.get(name, {})}
         t1, used = series[-1]
         growth = hours = None
-        t0, first = series[0]
+        t0, first = next((t, u) for t, u in series if t >= t1 - GROWTH_WINDOW_S)
         if t1 - t0 >= MIN_GROWTH_WINDOW_S:
             growth = (used - first) / (t1 - t0) * 3600          # bytes per hour
             if budget and growth > 0:
                 hours = max(0.0, (budget - used) / growth)
         status = "ok"
+        warn_at, critical_at = self.limits.get(name, (None, None))
         if budget:
             share = used / budget
-            if share >= CRITICAL or (hours is not None and hours < 2):
+            if share >= CRITICAL or (hours is not None and hours < 2) or (critical_at and used > critical_at):
                 status = "critical"
-            elif share >= WARN or (hours is not None and hours < 24):
+            elif share >= WARN or (hours is not None and hours < 24) or (warn_at and used > warn_at):
                 status = "warn"
         return {"used_bytes": used, "budget_bytes": budget, "used_pct": round(100 * used / budget, 1) if budget else None,
                 "growth_bytes_per_h": None if growth is None else round(growth),
                 "hours_to_budget": None if hours is None else round(hours, 1), "status": status,
+                **({"warn_bytes": warn_at, "critical_bytes": critical_at} if warn_at or critical_at else {}),
                 **self._detail.get(name, {})}
 
     def report(self) -> dict:

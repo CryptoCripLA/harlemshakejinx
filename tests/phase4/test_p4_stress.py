@@ -134,10 +134,6 @@ def test_separate_processes_sharing_one_ledger_cannot_take_more_than_one_slot(tm
     s.close()
 
 
-@pytest.mark.xfail(strict=True, reason="FINDING P4-F2 (2026-10-21): JinxApp._on_early_momentum marks a candidate "
-                   "'screening' before _spawn, and a lookup shed at MAX_BACKGROUND_TASKS is never retried, so a valid "
-                   "launch heard during a burst stays unscreened (blocked) for good: fail-closed, but a missed entry. "
-                   "Owner of jinx/app.py screening: Phase 2 session local_f5744230. Remove this marker when fixed.")
 def test_a_candidate_shed_during_a_burst_is_screened_once_capacity_frees(tmp_path):
     slow = h.FakeGmgn(delay_s=0.2)
     app = h.build_app(tmp_path, gmgn=slow, rugcheck=h.FakeRugCheck())

@@ -26,7 +26,12 @@ mapping, whose output is accepted only inside 0–20. "Near the threshold" is th
 order 2026-10-21, item 6): GMGN Trenches' own `near_completion` category, recorded with its source, read time and
 progress through `record_provider_status`. JINX sets no number of its own, and a token missing from a listing
 changes nothing. Ordering: the latest reading is the
-newest by event time; a late reading counts toward the peaks but never replaces it. State is RAM only and bounded.
+newest by event time; a late reading counts toward the peaks but never replaces it.
+
+State is RAM only and bounded (owner storage repair 2026-10-21: "Replace broad historical trade collections with
+compact current-state records"): per curve the latest reading, the peaks, counters and the provider status, plus a
+16-entry ring of hashed reading identities so a resend counts once (Codex round 1, F7; the bus filter covers 120 s
+too). At most MAX_MINTS curves; one with no event for IDLE_TTL_S is evicted, never a token JINX holds.
 """
 from __future__ import annotations
 
@@ -49,9 +54,9 @@ CHAD_TEXT = ("Monitors every pump.fun bonding curve in real time via Helius gRPC
              "elevated signal weight.")
 SCORE_UNRESOLVED = "not computed: CHAD gives the 0–20 range but not the progress-to-points mapping (B-03)"
 NEAR_UNRESOLVED = "no provider status yet: near graduation comes only from the provider's category (GMGN Trenches)"
-MAX_MINTS = 20_000
-IDLE_TTL_S = 2 * 3600
-MAX_SEEN = 64     # per-token reading identities for duplicate detection: they only protect the reading counter
+MAX_MINTS = 12_000
+IDLE_TTL_S = 1_800
+MAX_SEEN = 16     # per-token reading identities for duplicate detection: they only protect the reading counter
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,6 +208,14 @@ class GraduationTracker:
 
     def tracked_mints(self) -> int:
         return len(self._curves)
+
+    def set_held_provider(self, provider) -> None:
+        """`provider()` returns the mints JINX holds; they are never evicted (asked right before any eviction)."""
+        self._curves.held_provider = provider
+
+    def sweep(self, now_ns: int, held: frozenset = frozenset(), idle_ns: int | None = None) -> dict:
+        evicted = self._curves.expire(now_ns, held, idle_ns)
+        return {"tokens": len(self._curves), "evicted": evicted}
 
     def _score(self, progress: float | None) -> tuple[float | None, str]:
         if self.score_mapping is None:

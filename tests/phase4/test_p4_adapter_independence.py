@@ -70,7 +70,7 @@ def test_a_market_store_write_failure_creates_no_event_and_no_trade(tmp_path):
     the event or tell any module about it."""
     import asyncio
     app = h.build_app(tmp_path)
-    real = app.market.record_event
+    real = app.bus._persist                       # no market store since the storage repair: the hook is unset
     calls = {"n": 0}
 
     def failing(ev):
@@ -101,7 +101,7 @@ def test_gmgn_and_rugcheck_failing_leave_the_market_view_exactly_as_the_feeds_bu
     app = h.build_app(tmp_path, gmgn=h.FakeGmgn(mode=mode), rugcheck=h.FakeRugCheck(mode=mode))
     h.run(app, h.deliveries(RECORDS, "pumpapi"), settle_s=1.0)
     view = h.state_view(app)
-    for part in ("tokens", "wallets", "early_momentum", "reserve_gates", "graduation"):
+    for part in ("tokens", "early_momentum", "reserve_gates", "graduation"):
         assert view[part] == healthy[part], part
     assert view["ledger"] == []
     h.close(app)

@@ -10,8 +10,8 @@ from pathlib import Path
 import httpx
 import pytest
 
-from jinx.store import Store
-from tests.test_market_memory import ingest, trade
+from jinx.store import OUTBOX_TABLES, Store
+from tests.test_market_memory import trade
 from tests.test_persistence import ledger_activity
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,9 +29,7 @@ def test_the_outbox_holds_at_most_one_pending_row_per_trading_record(tmp_path):
     assert store.conn.execute("SELECT COUNT(*) FROM outbox WHERE tbl = 'settings' AND pk = 'probe'").fetchone()[0] == 1
     row = json.loads(store.conn.execute("SELECT row_json FROM outbox WHERE tbl = 'settings' AND pk = 'probe'").fetchone()[0])
     assert row["value"] == "499"                           # the pending row is the latest state
-    records = sum(store.conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
-                  for t in ("positions", "fills", "exit_intents", "paper_wallet", "paper_wallet_entries", "settings",
-                            "settings_audit"))
+    records = sum(store.conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in OUTBOX_TABLES)
     assert store.outbox_backlog() == records               # never more rows than records
     store.close()
 
@@ -47,35 +45,45 @@ def test_without_postgres_the_end_of_day_pass_clears_the_outbox(tmp_path):
     assert report["outbox_cleared"] > 0 and app.store.outbox_backlog() == 0
     assert app.daily.due(10 * S) is False and app.daily.due(10 * S + 86_400 * S) is True
     assert app.store.conn.execute("SELECT COUNT(*) FROM positions").fetchone()[0] == 1   # trade history kept
-    app.market.close(); app.store.close()
+    app.store.close()
 
 
 # ---- RAM (rule 2: no unbounded caches) ---------------------------------------------------------------
-def test_ram_hard_caps_hold_even_inside_the_ttl_window(tmp_path):
-    from jinx.core_state import CoreState
-    from jinx.market_memory import MarketMemory
-    from jinx.registry import TokenRegistry, WalletRegistry
-    store = Store(":memory:")
-    core = CoreState(store, TokenRegistry(store), WalletRegistry(store))
-    mem = MarketMemory(store, core, event_ttl_s=10_000, idle_ttl_s=10_000, max_events=50, max_tokens=5, max_wallets=8)
-    events = [trade(f"S{i}", f"M{i % 12}", f"W{i}", 100 + i) for i in range(120)]
-    ingest(store, core, events)
-    store.record_event(trade("PENDING", "M0", "W0", 1))          # unapplied: never removed
-    mem.prune(now_ns=300 * S, held={"M0"})
-    assert store.event_count() <= 51 and len(store.unapplied_events()) == 1
-    assert len(core.tokens) <= 6 and core.tokens.get("M0") is not None          # 5 + the held one
-    assert len(core.wallets) <= 8
-    newest = max(int(m[1:]) for m in [t.mint for t in core.tokens.all()] if m != "M0")
+def test_ram_hard_caps_hold_even_inside_the_ttl_window():
+    from jinx.registry import TokenRegistry
+    reg = TokenRegistry(max_tokens=5, idle_ttl_s=10_000)
+    reg.held_provider = lambda: frozenset({"M0"})
+    for i in range(120):
+        reg.apply(trade(f"S{i}", f"M{i % 12}", f"W{i}", 100 + i))
+    assert len(reg) <= 6 and reg.get("M0") is not None                          # 5 + the held one
+    newest = max(int(t.mint[1:]) for t in reg.all() if t.mint != "M0")
     assert newest == 119 % 12                                                    # most recent tokens survive
 
 
-def test_an_applied_event_releases_its_raw_payload(tmp_path):
-    store = Store(":memory:")
-    from jinx.core_state import CoreState
-    from jinx.registry import TokenRegistry, WalletRegistry
-    core = CoreState(store, TokenRegistry(store), WalletRegistry(store))
-    ingest(store, core, [trade("S1", "M", "A", 100)])
-    assert store.conn.execute("SELECT raw_json FROM events").fetchone()[0] == "{}"
+def test_no_market_structure_keeps_raw_events_after_a_live_capture(tmp_path):
+    """Owner storage repair 2026-10-21 §2: "Do not copy complete provider payloads into every tracker"."""
+    from jinx import config
+    from jinx.adapters.pumpapi.normalize import normalize
+    from jinx.app import JinxApp
+    from jinx.sim import load_capture
+    from tests.test_memory_trackers import _holds_market_events
+    app = JinxApp(config.load_settings(str(tmp_path)))
+    app._build_core()
+    seq = iter(range(1, 10**6))
+    events = [e for r in load_capture(ROOT / "tests" / "fixtures" / "pumpapi-live-20261021.jsonl.gz")
+              for e in normalize(r["raw"], r["recv_ns"], seq.__next__)]
+
+    async def main():
+        runner = asyncio.create_task(app.bus.run())
+        for e in events:
+            await app.bus.publish(e)
+        await app.bus.drain()
+        runner.cancel()
+    asyncio.run(main())
+    for name, obj in (("tokens", app.core.tokens), ("early", app.early), ("graduation", app.graduation),
+                      ("migration", app.migration), ("bundles", app.bundles), ("whales", app.whales)):
+        assert not _holds_market_events(obj), name
+    app.store.close()
 
 
 # ---- Redis (rule 4: bounded, expiring) ---------------------------------------------------------------
@@ -139,7 +147,8 @@ def test_daily_ledger_backups_keep_only_the_newest_n_and_restore(tmp_path):
     assert len(keys) == 3 and backups.stats["deleted"] == 3 and backups.stats["objects"] == 3
     copy = restore(asyncio.run(backups.latest()))
     assert copy.execute("SELECT COUNT(*) FROM positions").fetchone()[0] == 1
-    assert copy.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0       # no market data in a backup
+    tables = {r[0] for r in copy.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert not tables & {"events", "tokens", "token_traders", "wallets"}       # no market data in a backup
     store.close()
 
 
@@ -175,7 +184,7 @@ def test_the_neon_keys_are_read_from_the_environment_and_never_shown(tmp_path, m
     assert app.backups is not None and app.ai_gateway is not None and app.replicator is not None
     shown = json.dumps([app.backups.health(), app.ai_gateway.health()], default=str)
     assert secret not in shown and "2" * 30 not in shown
-    app.market.close(); app.store.close()
+    app.store.close()
 
 
 def test_the_ai_gateway_client_speaks_the_openai_compatible_api_with_bounded_requests():
@@ -227,7 +236,7 @@ def test_the_app_samples_every_configured_component(tmp_path):
     comps = app.monitor.report()["components"]
     assert {"ram", "disk", "filesystem"} <= set(comps)
     assert comps["ram"]["used_bytes"] > 0 and comps["disk"]["ledger_bytes"] > 0
-    app.market.close(); app.store.close()
+    app.store.close()
 
 
 def test_maintenance_releases_space_and_truncates_the_wal(tmp_path):

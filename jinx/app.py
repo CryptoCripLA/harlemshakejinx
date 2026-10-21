@@ -1,10 +1,11 @@
 """JINX runtime: the composition root that wires adapters to core.
 
 Runtime: live Pump.fun events (Mako's PumpPortal stream and the PumpAPI.io
-stream) -> bus -> in-memory market store and registries (raw events are
-discarded after their useful content is applied: owner order 2026-10-21);
-durable ledger store for trading records; paper wallet, ledger and order
-gateway; GMGN bridge health; a /health endpoint for the host.
+stream) -> bus (expiring duplicate filter) -> one RAM token state and the
+intelligence trackers, each bounded; no raw event is stored anywhere (owner
+storage repair 2026-10-21: "RAM IS A WORKBENCH. NOT A WAREHOUSE."); durable
+ledger store for trading records; paper wallet, ledger and order gateway; GMGN
+bridge health; a /health endpoint for the host.
 
 Services, all off the trading path and all optional (owner orders 2026-10-21):
 PostgreSQL (Neon) receives the trading records from the ledger outbox; Redis
@@ -22,7 +23,7 @@ import logging
 import os
 import signal
 import time
-from collections import OrderedDict, deque
+from collections import OrderedDict
 from decimal import Decimal
 from pathlib import Path
 
@@ -35,6 +36,7 @@ from jinx.adapters.neonai.gateway import NeonAiGateway
 from jinx.adapters.pumpapi.feed import PumpApiFeed
 from jinx.adapters.rugcheck.client import RugCheckClient
 from jinx.core.bus import EventBus, Lane
+from jinx.core.latency import RollingLatency
 from jinx.core.lifecycle import State as LifeState
 from jinx.confluence.board import ConfluenceBoard
 from jinx.confluence.entry import EntryCoordinator
@@ -62,7 +64,7 @@ from jinx.persistence.postgres import PostgresReplicator
 from jinx.persistence.redis_state import RedisState
 from jinx.persistence.research import ResearchStore
 from jinx.recovery import recover
-from jinx.registry import TokenRegistry, WalletRegistry
+from jinx.registry import TokenRegistry
 from jinx.sizing.kelly import QuarterKelly, load_kelly_config
 from jinx.storage import MB, DailyRun, StorageMonitor, filesystem, process_rss_bytes, tree_bytes
 from jinx.store import Store
@@ -90,24 +92,23 @@ class JinxApp:
         self.monitor = StorageMonitor({"ram": settings.ram_budget_mb * MB, "disk": settings.disk_budget_mb * MB,
                                        "postgres": settings.pg_budget_mb * MB, "redis": settings.redis_budget_mb * MB,
                                        "research_postgres": settings.research_pg_budget_mb * MB,
-                                       "object_storage": settings.s3_budget_mb * MB})
+                                       "object_storage": settings.s3_budget_mb * MB},
+                                      limits={"ram": (settings.ram_investigate_mb * MB, settings.ram_guardrail_mb * MB)})
+        self.memory_pressure = {"active": False, "entered": 0, "last_rss_bytes": None}
 
     def _build_core(self) -> None:
-        """Two stores: market events and registries in RAM (`market_db`, ":memory:" by default), trading records in
-        the durable ledger store. A restart starts the market view empty; positions, fills and wallet survive."""
+        """Market state in RAM only (one token state plus the trackers, each bounded); trading records in the
+        durable ledger store. A restart starts the market view empty; positions, fills and wallet survive."""
         s = self.s
-        self.market = Store(s.market_db)
         self.store = Store(s.db_path)
-        self.core = CoreState(self.market, TokenRegistry(self.market), WalletRegistry(self.market))
-        self.memory = MarketMemory(self.market, self.core, s.market_event_ttl_s, s.market_idle_ttl_s,
-                                   s.market_max_events, s.market_max_tokens, s.market_max_wallets)
+        self.core = CoreState(TokenRegistry(s.market_max_tokens, s.market_idle_ttl_s))
         self.ledger = PositionLedger(self.store)
         self.wallet = PaperWallet(self.store, config.PAPER_START_LAMPORTS)
         self.paper = PaperExecutor(self.store, self.ledger, self.wallet, self.core.tokens, config.PUMP_CURVE_FEES,
                                    config.NETWORK_FEE_LAMPORTS)
         self.gateway = ExecutionGateway(self.store, self.ledger, self.paper)
-        self.bus = EventBus(persist=self.market.record_event)
-        self._handler_ns: dict[str, deque] = {}            # per-handler processing time (bounded, RAM)
+        self.bus = EventBus()                              # market chatter is not persisted (storage repair)
+        self._handler_ns: dict[str, RollingLatency] = {}   # per-handler processing time (constant memory)
         self.bus.subscribe(Lane.FAST, self._timed("core_state", self.core.apply), name="core_state")
         # Phase 3 EXIT: right after core state, so every exit sees the newest reserves before any intelligence runs.
         # CHAD's mandatory protective exits first (Sybil emergency, Confluence Collapse), then the position's paper
@@ -124,7 +125,7 @@ class JinxApp:
                                         self.core.tokens, config.PUMP_CURVE_FEES,
                                         reload_sizing=lambda: load_kelly_config(self.store))
         self.bundles = BundleTracker()                     # R1 evidence, off the fast lane
-        self.bus.subscribe(Lane.BACKGROUND, self.bundles.on_event, name="bundles")
+        self.bus.subscribe(Lane.BACKGROUND, self.bundles.on_event, name="bundles", on_drop=self.bundles.on_dropped)
         # CHAD Bot 10 (C10) on the fast lane: synchronous, no I/O; detections are screened in the background
         self.early = EarlyMomentum(notify=self._on_early_momentum, request_funders=self._request_funders)
         self.bus.subscribe(Lane.FAST, self._timed("early_momentum", self.early.on_event), name="early_momentum")
@@ -139,13 +140,23 @@ class JinxApp:
         self.migrations: OrderedDict[str, dict] = OrderedDict()   # newest 500 migrations and their status (RAM)
         self.candidates: OrderedDict[str, dict] = OrderedDict()   # newest 500 detections and their safety (RAM)
         self._background: set[asyncio.Task] = set()
+        self._screens_pending: set[str] = set()                    # candidates whose screening was shed
         self._inflight: dict[tuple, asyncio.Task] = {}
         self.background_stats = {"spawned": 0, "shed": 0, "deduplicated": 0}
         self.screen_stats = {"screened": 0, "skipped": 0, "funder_lookups_skipped": 0}
         self.whales = WhaleBook()                          # CHAD C04: Layer-1 alerts and discovery candidates
-        self.bus.subscribe(Lane.BACKGROUND, self.whales.on_event, name="whales")
+        self.bus.subscribe(Lane.BACKGROUND, self.whales.on_event, name="whales", on_drop=self.whales.on_dropped)
         self.last_discovery: dict | None = None
-        self.recovery = recover(self.market, self.core, self.ledger, self.wallet, bus=self.bus)
+        # Open and pending positions are never evicted from any market structure (owner order §3), including
+        # between maintenance passes: each table asks the ledger right before it evicts anything.
+        held = lambda: frozenset(p.mint for p in self.ledger.active())
+        self.core.tokens.held_provider = held
+        for tracker in (self.early, self.graduation, self.migration, self.bundles):
+            tracker.set_held_provider(held)
+        self.memory = MarketMemory([("tokens", self.core.tokens), ("early_momentum", self.early),
+                                    ("graduation", self.graduation), ("migration", self.migration),
+                                    ("bundles", self.bundles), ("whales", self.whales)])
+        self.recovery = recover(self.ledger, self.wallet)
 
     async def start(self) -> None:
         s = self.s
@@ -223,8 +234,8 @@ class JinxApp:
     MAX_BACKGROUND_TASKS = 64
 
     def _timed(self, name: str, handler):
-        """Each fast-lane handler's own processing time, the newest 20,000 per handler (local processing only)."""
-        samples = self._handler_ns.setdefault(name, deque(maxlen=20_000))
+        """Each fast-lane handler's own processing time, rolling histogram (local processing only)."""
+        samples = self._handler_ns.setdefault(name, RollingLatency())
         clock = time.perf_counter_ns
 
         def run(ev):
@@ -232,32 +243,68 @@ class JinxApp:
             try:
                 return handler(ev)
             finally:
-                samples.append(clock() - t0)
+                samples.record(clock() - t0)
         return run
 
-    def _spawn(self, coro, key=None) -> None:
+    def handler_summary(self) -> dict:
+        return {n: h.summary(scale=1e3) for n, h in self._handler_ns.items()}
+
+    # Engineering bound, not a trading rule: under the RAM guardrail the trackers evict whatever has been idle this
+    # long (held tokens and unresolved migrations excepted), and the event is logged with each subsystem's size.
+    PRESSURE_IDLE_S = 120
+
+    def market_tick(self, now_ns: int) -> dict:
+        """Once a minute (status loop): every market structure evicts what went idle; held tokens are never
+        evicted. Above the owner's RAM guardrail (384 MB) the pass runs in overload mode and is logged."""
+        held = frozenset(p.mint for p in self.ledger.active())
+        rss = process_rss_bytes()
+        pressure = rss is not None and rss > self.s.ram_guardrail_mb * MB
+        # Overload protection: for this pass the idle time-out is PRESSURE_IDLE_S. Open positions, pending orders
+        # (held) and unresolved migrations are kept; nothing on the exit path is dropped.
+        report = self.memory.tick(now_ns, held, idle_ns=self.PRESSURE_IDLE_S * 1_000_000_000 if pressure else None)
+        if pressure:
+            if not self.memory_pressure["active"]:
+                self.memory_pressure["entered"] += 1
+                log.warning("RAM %s MB is above the %s MB guardrail: overload eviction; subsystems %s",
+                            rss // MB, self.s.ram_guardrail_mb, self.memory_counts())
+        self.memory_pressure.update(active=pressure, last_rss_bytes=rss)
+        return report
+
+    def memory_counts(self) -> dict:
+        """Size of every bounded market structure, for diagnostics (owner order 2026-10-21 §4)."""
+        return {"tokens": len(self.core.tokens), "early_momentum": self.early.tracked_mints(),
+                "graduation": self.graduation.tracked_mints(), "migration": self.migration.tracked_mints(),
+                "bundles": self.bundles.tracked(), "bundle_pending_groups": len(self.bundles._pending),
+                "whales_tracked": len(self.whales.tracked), "whale_co_buy_tokens": len(self.whales._tracked_buys),
+                "whale_graduated_queue": len(self.whales.graduated()), "candidates": len(self.candidates),
+                "migrations_index": len(self.migrations), "funding_cache": len(self.early._funding),
+                "dedup_keys": len(self.bus._dedup), "background_tasks": len(self._background)}
+
+    def _spawn(self, coro, key=None) -> bool:
         """Run a lookup in the background, never on the event path. At most MAX_BACKGROUND_TASKS at once; a lookup
-        with the same `key` already running is not started again."""
+        with the same `key` already running is not started again. Returns whether this call started (or joined an
+        identical running) lookup; False means it was shed and must be offered again (Phase 4 finding P4-F2)."""
         stats = self.background_stats
         if key is not None and key in self._inflight:
             stats["deduplicated"] += 1
             coro.close()
-            return
+            return True
         if len(self._background) >= self.MAX_BACKGROUND_TASKS:
             stats["shed"] += 1
             coro.close()
-            return
+            return False
         try:
             task = asyncio.get_running_loop().create_task(coro)
         except RuntimeError:                       # no loop (offline replay): nothing to schedule
             coro.close()
-            return
+            return False
         stats["spawned"] += 1
         self._background.add(task)
-        task.add_done_callback(self._background.discard)
+        task.add_done_callback(self._background_done)
         if key is not None:
             self._inflight[key] = task
             task.add_done_callback(lambda _t, k=key: self._inflight.pop(k, None))
+        return True
 
     def _on_early_momentum(self, evidence) -> None:
         """Fast-path notification: record the detection and screen it at once (CHAD: "Full safety check still
@@ -271,17 +318,55 @@ class JinxApp:
         while len(self.candidates) > 500:
             self.candidates.popitem(last=False)
         if "screening" not in entry:
-            entry["screening"] = True
-            never = self._never_eligible(evidence.mint)
-            if never:                       # spend no GMGN or RugCheck requests on a coin that cannot qualify
-                entry["safety"] = {"skipped": never}
-                entry["entry_check"] = self.entry_check(evidence.mint)
-                self.screen_stats["skipped"] += 1
-            else:
-                self.screen_stats["screened"] += 1
-                self._spawn(self._screen(evidence.mint, evidence.creator))
+            self._offer_screening(evidence.mint, evidence.creator, entry)
         elif (entry.get("safety") or {}).get("eligible"):
             self._fast_entry(evidence)          # safety already passed: decide now, on the event path (CHAD Bot 10)
+
+    def _offer_screening(self, mint: str, creator: str | None, entry: dict) -> None:
+        """Start a candidate's safety screening. A screening shed because the background limit was reached stays
+        pending and is offered again by the status loop (Phase 4 finding P4-F2): a candidate heard during a burst
+        is never left unscreened, which would block it for good."""
+        never = self._never_eligible(mint)
+        if never:                           # spend no GMGN or RugCheck requests on a coin that cannot qualify
+            entry["screening"] = True
+            entry.pop("screening_pending", None)
+            self._screens_pending.discard(mint)
+            entry["safety"] = {"skipped": never}
+            entry["entry_check"] = self.entry_check(mint)
+            self.screen_stats["skipped"] += 1
+        elif self._spawn(self._screen(mint, creator), key=("screen", mint)):
+            entry["screening"] = True
+            entry.pop("screening_pending", None)
+            self._screens_pending.discard(mint)
+            self.screen_stats["screened"] += 1
+        else:
+            entry["screening_pending"] = creator or ""
+            self._screens_pending.add(mint)                  # bounded: only mints in the 500-entry candidate index
+            self.screen_stats["shed_pending"] = self.screen_stats.get("shed_pending", 0) + 1
+
+    def _background_done(self, task) -> None:
+        """A background lookup finished: its slot is free, so a screening that was shed is offered again now, not
+        only at the next status tick (Phase 4 finding P4-F2)."""
+        self._background.discard(task)
+        if self._screens_pending:
+            try:
+                asyncio.get_running_loop().call_soon(self._reoffer_screenings)
+            except RuntimeError:                 # the loop is gone (shutdown): the next start screens afresh
+                pass
+
+    def _reoffer_screenings(self) -> int:
+        """Status loop: candidates whose screening was shed are offered again, oldest first, while capacity lasts."""
+        offered = 0
+        for mint in list(self._screens_pending):
+            entry = self.candidates.get(mint)
+            if entry is None or "screening" in entry:
+                self._screens_pending.discard(mint)           # evicted from the candidate index, or done
+                continue
+            if len(self._background) >= self.MAX_BACKGROUND_TASKS:
+                break
+            self._offer_screening(mint, entry.get("screening_pending") or None, entry)
+            offered += 1
+        return offered
 
     def _fast_entry(self, evidence) -> None:
         """CHAD Bot 10's fast path: the entry decision runs at once, never behind a background queue. A failure here
@@ -490,8 +575,13 @@ class JinxApp:
         if self._never_eligible(mint):
             self.screen_stats["funder_lookups_skipped"] += 1
             return
-        if self._gmgn_live():
-            self._spawn(self._fetch_funders(tuple(wallets)), key=("funders", mint, tuple(wallets)))
+        # a wallet whose funder is already known is not looked up again (speed rule S5, Phase 4 finding P4-F3):
+        # Early Momentum rebuilds the Sybil predicate from its cache
+        unknown = tuple(w for w in wallets if self.early.known_funder(w) is None)
+        if len(unknown) < len(wallets):
+            self.screen_stats["funders_cached"] = self.screen_stats.get("funders_cached", 0) + len(wallets) - len(unknown)
+        if unknown and self._gmgn_live():
+            self._spawn(self._fetch_funders(unknown), key=("funders", mint, unknown))
 
     async def _fetch_funders(self, wallets: tuple[str, ...]) -> None:
         # One wallet per request: given several addresses GMGN's wallet_stats answers only the first (live 2026-10-21).
@@ -570,10 +660,10 @@ class JinxApp:
         if getattr(self, "rugcheck", None) is not None:
             adapters.append(self.rugcheck.health())
         h = build_health(self.store, self.ledger, self.wallet, adapters, self.bus.stats, time.time_ns(),
-                         latency_ns=self.bus.latency_ns(Lane.FAST),
+                         latency=self.bus.latency(Lane.FAST).summary(),
                          feed_stale_after_ns=self.s.feed_stale_after_s * 1_000_000_000,
-                         receive_latency_ns=self.core.receive_latency_ns(), market_store=self.market)
-        h["market_memory"] = {"tokens": len(self.core.tokens), "wallets": len(self.core.wallets), **self.memory.totals}
+                         receive_latency=self.core.receive_latency().summary())
+        h["market_memory"] = self.memory_report()
         h["services"] = {
             "postgres": self.replicator.health() if self.replicator else {"configured": False},
             "research_postgres": self.research.health() if self.research else {"configured": False},
@@ -593,16 +683,28 @@ class JinxApp:
             h["status"] = "degraded"
         return h
 
+    def memory_report(self) -> dict:
+        """RAM against the owner's budgets (target 200 MB, investigate above 256 MB, guardrail 384 MB), the size of
+        every bounded market structure, the duplicate filter and the last maintenance pass (owner order §3-§4)."""
+        s, rss = self.s, process_rss_bytes()
+        return {"rss_mb": None if rss is None else round(rss / MB, 1), "target_mb": s.ram_target_mb,
+                "investigate_above_mb": s.ram_investigate_mb, "guardrail_mb": s.ram_guardrail_mb,
+                "status": ("unknown" if rss is None else "guardrail" if rss > s.ram_guardrail_mb * MB
+                           else "investigate" if rss > s.ram_investigate_mb * MB else "ok"),
+                "overload": dict(self.memory_pressure), "counts": self.memory_counts(),
+                "dedup": self.bus.dedup_stats(), "maintenance_passes": self.memory.passes,
+                "maintenance_errors": self.memory.errors, "last_pass": self.memory.last}
+
     def intel_health(self) -> dict:
         """What the intelligence modules hold in shared state right now, and the fast lane's measured delay."""
-        lat = percentiles([x / 1e6 for x in self.bus.latency_ns(Lane.FAST)])
+        lat = self.bus.latency(Lane.FAST).summary()
         detection = percentiles([c["evidence"]["freshness"]["detection_delay_ms"] for c in self.candidates.values()
                                  if c.get("evidence")])
         summaries = [s_ for s_ in (self.migration.summary(m) for m in self.migrations) if s_]
         signal = percentiles([(s_["observed_ns"] - s_["event_ns"]) / 1e6 for s_ in summaries
                               if s_["clock"] != "receipt"])
         return {"safety": dict(self.safety.stats) if self.safety else {"configured": False},
-                "bundles_tracked": len(self.bundles._tokens),
+                "bundles_tracked": self.bundles.tracked(), "bundles": dict(self.bundles.stats),
                 "early_momentum": {**self.early.stats, "candidates": len(self.candidates),
                                    "detection_delay_ms": detection,
                                    "latest": [{"mint": m, "safety": c.get("safety"),
@@ -618,9 +720,10 @@ class JinxApp:
                 "background": {**self.background_stats, "running": len(self._background)},
                 "gmgn_trenches": self.last_trenches,
                 "whales": {"tracked": len(self.whales.tracked), "candidates": len(self.whales._candidates),
-                           "alerts": len(self.whales.alerts), "last_discovery": self.last_discovery},
+                           "graduated_queued": len(self.whales.graduated()), "alerts": len(self.whales.alerts),
+                           **self.whales.stats, "last_discovery": self.last_discovery},
                 "fast_lane_admission_to_handled_ms": lat,
-                "handler_processing_us": {n: percentiles([x / 1e3 for x in v]) for n, v in self._handler_ns.items()}}
+                "handler_processing_us": self.handler_summary()}
 
     async def _http(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
@@ -656,8 +759,8 @@ class JinxApp:
     async def _status_tick(self) -> None:
         self._supervise()
         await self.feed.sync_subscriptions()  # OFF drops paid trade subscriptions except held positions
-        healed = self.core.apply_pending()  # retries events whose apply failed; exactly-once guarded
-        self.memory.prune(time.time_ns(), held={p.mint for p in self.ledger.active()})
+        self.market_tick(time.time_ns())
+        self._reoffer_screenings()
         if self.daily.due(time.time_ns()):
             await self.end_of_day(time.time_ns())
         await self.sample_storage()
@@ -665,19 +768,17 @@ class JinxApp:
             await self.redis_state.snapshot(await self.health(), self.core.tokens.all())
         if self.research is not None and time.monotonic() - self._research_at >= self.s.research_every_s:
             self._research_at = time.monotonic()
-            await self.research.flush(self.core.wallets.all(), await self.performance_sample())
-        if healed:
-            log.warning("re-applied %s stored events that had failed to apply", healed)
+            await self.research.flush(await self.performance_sample())
         h = await self.health()
-        log.info("status=%s events=%s unapplied=%s tokens=%s feed=%s latency=%s", h["status"], h["store"]["events"],
-                 h["store"]["unapplied"], len(self.core.tokens),
+        log.info("status=%s events=%s rss_mb=%s tokens=%s feed=%s latency=%s", h["status"], h["store"]["events"],
+                 h["market_memory"]["rss_mb"], len(self.core.tokens),
                  {k: h["adapters"][0].get(k) for k in ("connected", "received", "malformed", "ingest_stalled")},
                  h["receive_to_state_ms"])
 
     async def end_of_day(self, now_ns: int) -> dict:
         """Owner storage rule 9: release space, drop what is disposable, back up what is essential. Open positions
         and trade history are never touched."""
-        report: dict = {"ledger": self.store.maintain(), "market": self.market.maintain()}
+        report: dict = {"ledger": self.store.maintain()}
         if self.replicator is None:
             report["outbox_cleared"] = self.store.clear_outbox()   # nothing to replicate to; resync covers a later one
         else:
@@ -702,15 +803,13 @@ class JinxApp:
         return {"status": h["status"], "receive_to_state_ms": h["receive_to_state_ms"],
                 "admission_to_state_ms": h["admission_to_state_ms"], "events": h["store"]["events"],
                 "bus": {k: v for k, v in h["bus"].items() if isinstance(v, (int, float))},
-                "market_memory": h["market_memory"],
+                "market_memory": {k: h["market_memory"][k] for k in ("rss_mb", "status", "counts")},
                 "storage": {k: {f: c.get(f) for f in ("used_bytes", "growth_bytes_per_h", "status")}
                             for k, c in h["storage"]["components"].items()}}
 
     async def sample_storage(self) -> None:
         now_s, s = time.time(), self.s
-        self.monitor.record("ram", process_rss_bytes(), now_s,
-                            {"market_store_bytes": self.market.size_bytes(), "events": self.market.event_count(),
-                             "tokens": len(self.core.tokens), "wallets": len(self.core.wallets)})
+        self.monitor.record("ram", process_rss_bytes(), now_s, self.memory_counts())
         self.monitor.record("disk", tree_bytes(s.data_dir), now_s,
                             {"path": str(s.data_dir), "ledger_bytes": self.store.size_bytes(),
                              "outbox_rows": self.store.outbox_backlog()})
@@ -728,7 +827,7 @@ class JinxApp:
                 self.monitor.record("redis", None, now_s, {"error": type(e).__name__})
         if self.research is not None:
             self.monitor.record("research_postgres", self.research.stats["db_bytes"], now_s,
-                                {"tracked_wallets": len(self.research._sent)})
+                                {"perf_rows": self.research.stats["perf_rows"]})
         if self.backups is not None:
             self.monitor.record("object_storage", self.backups.stats["stored_bytes"], now_s,
                                 {"objects": self.backups.stats["objects"], "keep": self.backups.keep})
@@ -775,7 +874,6 @@ class JinxApp:
         if self._capture:
             self._capture.close()
         self.store.close()
-        self.market.close()
 
 
 async def run(settings: config.Settings, seconds: float | None = None, capture_path: Path | None = None) -> dict:

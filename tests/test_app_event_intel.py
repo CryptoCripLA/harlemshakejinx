@@ -68,7 +68,6 @@ def publish(app, deliveries):
 
 
 def close(app):
-    app.market.close()
     app.store.close()
 
 

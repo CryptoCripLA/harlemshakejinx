@@ -35,8 +35,22 @@ M3, a research variant, off by default: with `confirmation_delay_ms` set, the ev
 pool trade at or after migration + delay as the paper reference. Never live policy.
 
 Migration is neither a buy signal nor a reason to abandon a position: this module places nothing and permits
-nothing. Duplicate deliveries of a trade are counted once. State is RAM only and bounded (mints, reports, trades,
-seen trade identities, wallets, ranked sells, holders).
+nothing. Duplicate deliveries of a trade are counted once.
+
+State is RAM only and compact (owner storage repair 2026-10-21: "Replace broad historical trade collections with
+compact current-state records. Keep relevant reserves, confirmed lifecycle, pool, essential migration timestamps,
+verified liquidity and necessary sell evidence. Preserve active positions and unresolved migrations until safely
+reconciled"):
+- per token: the latest curve reading and its peak, the lifecycle, the one migration record, the largest sells
+  (TOP_SELLS, with seller), and a ring of recent trade identities (duplicates count once);
+- trade tallies only where evidence needs them: the creator's trades before and after the migration (developer
+  selling), and each wallet's trades after the migration (holder selling on the pool, capped at `max_wallets`).
+  Pre-migration trades of other wallets are not kept per wallet: concentrated holders and their selling come from
+  GMGN's verified holder rows (balances, share of supply and GMGN's own sell counts), never from a local archive;
+- PumpSwap trades per pool: the earliest `max_pool_trades` by event time (verification and the first competing
+  transactions), for migrated tokens only;
+- a token with no event for IDLE_TTL_S is evicted, except one JINX holds and an unresolved migration (reported, not
+  yet verified), which is kept up to UNRESOLVED_MAX_S so a late pool or GMGN report can still settle it.
 """
 from __future__ import annotations
 
@@ -61,21 +75,29 @@ LARGE_SELL_RULE = ("not classified: no approved rule says what makes a sell larg
                    "(owner order 2026-10-21, item 7)")
 OBSERVED_FLOW_BASIS = ("observed trades by fee payer since JINX saw the creation; transfers are invisible, so this is "
                        "not proof of current ownership")
+FLOW_KEPT = ("tallied per wallet: the creator before and after the migration, every wallet after it; other wallets' "
+             "pre-migration trades are not kept (owner storage repair 2026-10-21): holder concentration and holders' "
+             "selling come from verified balances (GMGN)")
+PROVIDER_SELL_FIELDS = {"sells": "sell_tx_count_cur", "tokens": "sell_amount_cur", "usd": "sell_volume_cur",
+                        "sold_income_usd": "history_sold_income"}
 TOP_SELLS = 10
 TOP_HOLDERS = 10            # the same top-10 cut as GMGN's `top_10_holder_rate`
 COMPETING_LISTED = 20
 CLOCK_RANK = {Clock.CHAIN: 0, Clock.PROVIDER: 1, Clock.RECEIPT: 2}
-# RAM bounds (owner storage rule 2), not trading rules
-MAX_MINTS = 20_000
-IDLE_TTL_S = 2 * 3600
-MAX_CURVE_TRADES = 256
-MAX_POOL_TRADES = 256
-MAX_WALLETS = 1_000         # observed wallets per token; beyond it the observed flow is marked incomplete
+# RAM bounds (owner storage rule 2, repair 2026-10-21), not trading rules
+MAX_MINTS = 12_000
+IDLE_TTL_S = 1_800
+UNRESOLVED_MAX_S = 7_200    # an unverified migration outlives the idle time-out this long, waiting to be settled
+MAX_CURVE_TRADES = 32       # with MAX_POOL_TRADES: the per-token ring of recent trade identities (64)
+MAX_POOL_TRADES = 32        # earliest trades kept per pool (>= COMPETING_LISTED)
+MIGRATED_SEEN = 512         # identity ring of a token once it migrated (few tokens; pool trades are tallied)
+MAX_WALLETS = 1_000         # wallets tallied after the migration per token; beyond it the tally is incomplete
 MAX_UNTALLIED = 256         # wallets remembered as having an untallied trade (beyond: every tally may be incomplete)
 MAX_REPORTS = 8
 MAX_POOLS = 8
 M3_RETENTION = 4_096        # pool trades kept when the M3 paper variant is on, so its reference is derived, not cached
 MAX_HOLDERS_KEPT = 100
+PRE_CREATION_KEPT = 8       # trades buffered per token until its creation names the creator
 
 
 @dataclass(frozen=True, slots=True)
@@ -347,6 +369,10 @@ class _Token:
         self.receipt_creation_after_gap = False    # creation timed only by JINX's receipt, after a gap
         self.m3: tuple[int, Trade | None, str] | None = None   # M3 only: (due time, reference, status)
         self.detection: tuple[int, int] | None = None   # (observed_ns, processing_ns) of the first report
+        # trades seen before the creation names the creator (out-of-order delivery): at most PRE_CREATION_KEPT,
+        # replayed into the creator's tally once the creation arrives, then released
+        self.pre_creation: list[tuple[Trade, bool]] | None = []
+        self.pre_creation_overflow = False
 
 
 class MigrationTracker:
@@ -380,11 +406,19 @@ class MigrationTracker:
         if ev.kind is EventKind.TOKEN_CREATED:
             tok.creator, tok.since_creation = ev.trader, True
             tok.curve_pool = tok.curve_pool or pool_id(ev)
+            buffered, tok.pre_creation = tok.pre_creation or [], None
+            for t, counted in buffered:                        # the creator's trades that arrived before this
+                if t.fee_payer == tok.creator and not self._after_migration(tok, t):
+                    self._flow(tok, t, counted, tally_only=True)
+            if tok.pre_creation_overflow:
+                self._incomplete(tok, "more trades arrived before the creation than are buffered; the creator's "
+                                      "earlier trades may be missing from its tally")
             if event_time(ev)[1] is Clock.RECEIPT and self._gap is not None and ev.recv_ns >= self._gap[0]:
                 tok.receipt_creation_after_gap = True    # its flow can never be proven complete (R4-1, R5-1)
             self._observe(tok, Kind.CREATED, ev, {"pre_pool": pool_id(ev)})
             return []
         if ev.kind is EventKind.MIGRATION:
+            tok.seen.widen(MIGRATED_SEEN)
             t, clock = event_time(ev)
             report = MigrationReport(ev.source, ev.signature, ev.slot, t, clock, ev.recv_ns, pool_id(ev), venue(ev))
             return self._report(tok, report, started)
@@ -396,7 +430,11 @@ class MigrationTracker:
             self.stats["duplicates"] += 1
             return []
         counted = True
-        if tok.seen_floor is not None and trade.event_ns <= tok.seen_floor:
+        tallied = (trade.fee_payer == tok.creator or venue(ev) == PUMPSWAP_VENUE
+                   or self._after_migration(tok, trade))     # only these feed a count or a wallet tally
+        if tok.migration is not None or venue(ev) == PUMPSWAP_VENUE:
+            tok.seen.widen(MIGRATED_SEEN)                     # a migrated token's pool trades are counted
+        if tallied and tok.seen_floor is not None and trade.event_ns <= tok.seen_floor:
             # older than the duplicate-detection window: it may be a resend, so it is left out of the wallet tallies
             # and the token's flow is marked incomplete; it still counts as ordering evidence (pool and sell lists
             # deduplicate by the trade itself), so a genuinely new old trade is never lost (round 9, R9-1)
@@ -407,6 +445,11 @@ class MigrationTracker:
         old_ns = tok.seen.add(ident, trade.event_ns)
         if old_ns is not None:
             tok.seen_floor = max(tok.seen_floor or old_ns, old_ns)
+        if is_curve(ev) and not tok.since_creation and tok.pre_creation is not None:
+            if len(tok.pre_creation) < PRE_CREATION_KEPT:
+                tok.pre_creation.append((trade, counted))
+            else:
+                tok.pre_creation_overflow = True
         if is_curve(ev):
             self._curve_trade(tok, trade, ev, counted)
             return []
@@ -452,11 +495,14 @@ class MigrationTracker:
                 continue
             share = _fraction(h.get("amount_percentage"))
             balance = h.get("balance")
+            sold = {k: (v if isinstance(v := h.get(f), (int, float)) and not isinstance(v, bool) else None)
+                    for k, f in PROVIDER_SELL_FIELDS.items()}
             rows.append({"address": h["address"], "share_of_supply": share,
                          "balance": balance if isinstance(balance, (int, float)) and not isinstance(balance, bool)
                          else None,
                          "pool_account": h["address"] in pools or bool(h.get("exchange")),
-                         "provider_tag": h.get("wallet_tag_v2")})
+                         "provider_tag": h.get("wallet_tag_v2"),
+                         "provider_sells": sold if any(v is not None for v in sold.values()) else None})
             if len(rows) >= MAX_HOLDERS_KEPT:
                 break
         wallets = [r for r in rows if not r["pool_account"]]
@@ -511,6 +557,19 @@ class MigrationTracker:
     def verified_mints(self) -> int:
         return sum(1 for _, tok in self._tokens.items() if tok.verified_by is not None)
 
+    def set_held_provider(self, provider) -> None:
+        """`provider()` returns the mints JINX holds; they are never evicted (asked right before any eviction)."""
+        self._tokens.held_provider = provider
+
+    def sweep(self, now_ns: int, held: frozenset = frozenset(), idle_ns: int | None = None) -> dict:
+        """Market maintenance: evict idle tokens, never one JINX holds nor an unresolved migration younger than
+        UNRESOLVED_MAX_S."""
+        floor = now_ns - UNRESOLVED_MAX_S * 1_000_000_000
+        unresolved = {m for m, tok in self._tokens.items()
+                      if tok.migration is not None and tok.verified_by is None and tok.migration.observed_ns >= floor}
+        evicted = self._tokens.expire(now_ns, frozenset(held) | unresolved, idle_ns)
+        return {"tokens": len(self._tokens), "evicted": evicted, "unresolved_kept": len(unresolved)}
+
     def identities_held(self, mint: str) -> int:
         tok = self._tokens.get(mint)
         return len(tok.seen) if tok else 0
@@ -554,12 +613,14 @@ class MigrationTracker:
         m = tok.migration
         return m is not None and trade.slot is not None and m.slot is not None and trade.slot > m.slot
 
-    def _flow(self, tok: _Token, trade: Trade, counted: bool = True) -> None:
+    def _flow(self, tok: _Token, trade: Trade, counted: bool = True, tally_only: bool = False) -> None:
         after = self._after_migration(tok, trade)
-        if trade.side is Side.SELL and not any(_same_trade(t, trade) for t in tok.sells):
+        if not tally_only and trade.side is Side.SELL and not any(_same_trade(t, trade) for t in tok.sells):
             tok.sells.append(trade)
             tok.sells.sort(key=lambda t: (-t.sol_lamports, t.key))
-            del tok.sells[2 * TOP_SELLS:]
+            del tok.sells[TOP_SELLS:]
+        if not (after or trade.fee_payer == tok.creator):
+            return                                           # pre-migration trades of other wallets: not tallied
         if not counted:                                      # left out of the wallet tallies (dedup horizon)
             if len(tok.untallied) < MAX_UNTALLIED:
                 tok.untallied.add(trade.fee_payer)
@@ -568,7 +629,7 @@ class MigrationTracker:
             return
         f = tok.flow.get(trade.fee_payer)
         if f is None:
-            if len(tok.flow) >= self.max_wallets:
+            if len(tok.flow) >= self.max_wallets and trade.fee_payer != tok.creator:
                 tok.flow_complete = False
                 tok.wallets_capped = True
                 self.stats["wallets_untracked"] += 1
@@ -781,16 +842,6 @@ class MigrationTracker:
 
     # ---- evidence ------------------------------------------------------------------------------------
     @staticmethod
-    def _observed_holders(tok: _Token, at_migration: bool) -> dict:
-        nets = ((w, f.net_pre if at_migration else f.net) for w, f in tok.flow.items())
-        positive = sorted(((w, n) for w, n in nets if n > 0), key=lambda x: (-x[1], x[0]))
-        total = sum(n for _, n in positive)
-        top = positive[:TOP_HOLDERS]
-        return {"holders": len(positive), "observed_net_tokens": total,
-                "top10_share": (sum(n for _, n in top) / total) if total else None,
-                "top": [w for w, _ in top]}
-
-    @staticmethod
     def _liquidity(trade: Trade | None, m: MigrationTx) -> dict | None:
         if trade is None:
             return None
@@ -872,11 +923,13 @@ class MigrationTracker:
         (Codex round 10, R10-1)."""
         f = tok.flow.get(wallet)
         untallied = wallet in tok.untallied or tok.untallied_overflow
-        if f is None and (tok.wallets_capped or untallied):
+        creator = wallet == tok.creator
+        if f is None and ((tok.wallets_capped and not creator) or untallied):
             return {"tally": "UNAVAILABLE", "before": None, "after": None}
         pre, post = (f.pre, f.post) if f is not None else ((0, 0, 0), (0, 0, 0))
         return {"tally": "may be incomplete" if untallied else "observed",
-                "before": {"sells": pre[0], "sol_lamports": pre[1], "tokens": pre[2]},
+                "before": ({"sells": pre[0], "sol_lamports": pre[1], "tokens": pre[2]} if creator
+                           else None),                       # not kept per wallet: see the verified holder row
                 "after": {"sells": post[0], "sol_lamports": post[1], "tokens": post[2]}}
 
     def _holder_selling(self, tok: _Token) -> dict:
@@ -887,21 +940,18 @@ class MigrationTracker:
             v_part = {"status": "verified balances", "source": verified["source"],
                       "observed_ns": verified["observed_ns"],
                       "holders": [{"address": h["address"], "share_of_supply": h["share_of_supply"],
+                                   "provider_sells": h.get("provider_sells"),
                                    **self._sells_of(tok, h["address"])} for h in verified["top_wallets"]]}
-        observed = [{"fee_payer": w, "net_tokens_now": tok.flow[w].net, **self._sells_of(tok, w)}
-                    for w in self._observed_holders(tok, True)["top"]]
         return {"verified": v_part,
-                "observed_trade_flow": {"basis": OBSERVED_FLOW_BASIS, "complete": self._complete(tok),
-                                        "feed_gaps": list(tok.gaps), "top_at_migration": observed}}
+                "observed_trade_flow": {"basis": OBSERVED_FLOW_BASIS, "kept": FLOW_KEPT,
+                                        "complete": self._complete(tok), "feed_gaps": list(tok.gaps)}}
 
     def _holder_distribution(self, tok: _Token) -> dict:
         verified = tok.verified_holders or {"status": "UNAVAILABLE",
                                             "reason": "no verified balances received for this token"}
         return {"verified": verified,
-                "observed_trade_flow": {"basis": OBSERVED_FLOW_BASIS, "complete": self._complete(tok),
-                                        "feed_gaps": list(tok.gaps),
-                                        "at_migration": self._observed_holders(tok, True),
-                                        "latest": self._observed_holders(tok, False)}}
+                "observed_trade_flow": {"basis": OBSERVED_FLOW_BASIS, "kept": FLOW_KEPT,
+                                        "complete": self._complete(tok), "feed_gaps": list(tok.gaps)}}
 
     @staticmethod
     def _competing(on_pool: list[Trade], m: MigrationTx) -> list:

@@ -155,8 +155,10 @@ def test_developer_selling_is_unavailable_when_the_creation_was_not_seen():
     assert m.evidence("MintApump").developer_selling["status"] == "UNAVAILABLE"
 
 
-def test_trade_flow_is_kept_but_labelled_as_not_proof_of_ownership():
-    """Owner order 2026-10-21 item 8: trade observations alone are not proof of current token ownership."""
+def test_holders_and_their_selling_come_from_verified_balances_not_a_local_per_wallet_archive():
+    """Owner order 2026-10-21 item 8 (trade observations are not proof of ownership) and the storage repair the same
+    day: pre-migration trades are not kept per wallet; GMGN's verified holder rows carry balances and sells, and
+    each wallet's selling on the pool after the migration is tallied from the stream."""
     m = MigrationTracker()
     feed(m, launched() + [migrate(t_ms=MIG_T, slot=499), pool("buy", "S1", 0.4, slot=500, tokens=10_000_000.0),
                           pool("sell", "W1", 1.0, slot=502, sol=9.0, tokens=150_000_000.0)])
@@ -165,11 +167,15 @@ def test_trade_flow_is_kept_but_labelled_as_not_proof_of_ownership():
     assert ev.holder_distribution["verified"]["status"] == "UNAVAILABLE"
     flow = ev.holder_selling["observed_trade_flow"]
     assert "not proof of current ownership" in flow["basis"] and flow["complete"] is True
-    top = flow["top_at_migration"][0]
-    assert top["fee_payer"] == "W1" and top["after"]["sells"] == 1 and top["after"]["tokens"] == 150_000_000_000_000
-    dist = ev.holder_distribution["observed_trade_flow"]
-    assert dist["at_migration"]["top10_share"] == pytest.approx(1.0)
-    assert dist["latest"]["holders"] == dist["at_migration"]["holders"] + 1
+    assert "not kept" in flow["kept"] and "top_at_migration" not in flow
+    assert any(s["fee_payer"] == "W1" and s["phase"] == "after" for s in ev.sells_around_graduation)
+    m.record_holders("MintApump", [{"address": "W1", "balance": 1.0, "amount_percentage": 0.5,
+                                    "sell_tx_count_cur": 2, "sell_amount_cur": 150.0, "sell_volume_cur": 9.5}],
+                     "gmgn.getTokenTopHolders", (MIG_T + 3_000) * 1_000_000)
+    [holder] = m.evidence("MintApump").holder_selling["verified"]["holders"]
+    assert holder["after"] == {"sells": 1, "sol_lamports": 9_000_000_000, "tokens": 150_000_000_000_000}
+    assert holder["before"] is None                                  # not tallied per wallet before the migration
+    assert holder["provider_sells"] == {"sells": 2, "tokens": 150.0, "usd": 9.5, "sold_income_usd": None}
 
 
 def test_verified_balances_are_used_where_available_and_pool_accounts_are_kept_apart():
@@ -266,8 +272,12 @@ def test_state_is_bounded():
         feed(m, [buy("A", i * 0.01, mint=f"M{i}")])
     assert m.tracked_mints() == 3
     feed(m, [buy(f"B{i}", 3600 + i * 0.01, mint="LATE") for i in range(10)])
-    assert m.tracked_mints() == 1 and m.identities_held("LATE") <= 2 * (4 + 5)
-    assert m.stats["wallets_untracked"] >= 7
+    assert m.tracked_mints() == 1 and m.identities_held("LATE") <= 4 + 5
+    assert m.stats["wallets_untracked"] == 0           # pre-migration trades of other wallets are not tallied at all
+    m2 = MigrationTracker(max_wallets=3)
+    feed(m2, launched() + [migrate(t_ms=MIG_T, slot=499)] +
+         [pool("buy", f"P{i}", 1 + i * 0.01, slot=500 + i) for i in range(10)])
+    assert m2.stats["wallets_untracked"] == 8           # the cap counts every tallied wallet (the creator holds one)
 
 
 def test_evidence_carries_the_confluence_fields_and_serializes():

@@ -29,7 +29,19 @@ Funders come through `record_funding` (the app answers `request_funders` with GM
 known funder makes the sybil check UNAVAILABLE, never clean (owner order 2026-10-21, item 5). The creator's own buy
 counts as one distinct fee payer under CHAD's stated rule and is flagged (`creator_in_window`) for safety analysis
 (item 4).
-State is RAM only and bounded (mint cap, idle time, buys per mint, funding cap).
+
+State is RAM only and bounded (owner storage repair 2026-10-21: "Keep only active entry candidates, the required
+30-second buy window with measured lateness allowance, current verified reserve, historical peak and
+history-completeness status. Evict expired inactive candidates"):
+- per token a compact record: creator, creation, current and peak reserves, history-completeness flags, and the
+  detection window if there is one;
+- the buys and trade identities only while the token is trading: its `active` part is released `RETAIN_NS` (the
+  30 s window plus the lateness allowance) after its last curve trade;
+- a token with no event for `IDLE_TTL_S` is evicted, never one JINX holds. A token that trades again after being
+  evicted starts a new record without an observed creation, so its peak is UNAVAILABLE and it is never eligible:
+  missing history is never assumed safe;
+- funders: a cache of at most `MAX_FUNDING` wallets, each kept `FUNDING_TTL_S` after it was observed, and for as long
+  as a tracked detection's window holds the wallet. A known funder is not looked up again (`known_funder`).
 """
 from __future__ import annotations
 
@@ -77,12 +89,19 @@ SUPERSEDED = {
                                           "current and peak gates apply instead"},
 }
 
-# RAM bounds (owner storage rule 2), not trading rules
-RETAIN_NS = 2 * WINDOW_NS
+# RAM bounds (owner storage rule 2, repair 2026-10-21), not trading rules
+# Lateness allowance: measured 2026-10-21 on jinx-nyc, 92,774 PumpAPI events over 17.6 min reached JINX in event
+# order per token (no buy behind its token's newest event time). The allowance keeps the earlier 30 s margin for
+# cross-feed and reconnect deliveries; a buy later than that is counted (`late_beyond_retention`), never used.
+LATENESS_ALLOWANCE_NS = WINDOW_NS
+RETAIN_NS = WINDOW_NS + LATENESS_ALLOWANCE_NS
 MAX_BUYS_PER_MINT = 512
-MAX_MINTS = 20_000
-IDLE_TTL_S = 2 * 3600
-MAX_FUNDING = 200_000
+SEEN_IDS = 64                 # recent trade identities of an active token (the bus filter covers 120 s as well)
+MAX_MINTS = 12_000
+IDLE_TTL_S = 1_800
+MAX_FUNDING = 5_000
+FUNDING_TTL_S = 2 * 3600
+UNVERIFIED_KEPT = 2           # newest unverified-reading signatures kept as evidence (the count is exact)
 
 
 class Status(StrEnum):
@@ -227,14 +246,23 @@ def first_window(buys: list[Buy]) -> tuple[Buy, ...] | None:
     return None
 
 
-class _Mint:
-    __slots__ = ("buys", "seen", "creator", "since_creation", "current", "peak_v", "peak_real", "newest_ns",
-                 "window", "detection", "sybil", "create_sig", "creation_bound", "unverified", "migrated", "gap",
-                 "receipt_creation_after_gap")
+class _Active:
+    """A trading token's buys within RETAIN_NS and its recent trade identities; released when it goes quiet."""
+    __slots__ = ("buys", "seen", "last_recv_ns")
 
     def __init__(self) -> None:
         self.buys: list[Buy] = []
-        self.seen = RecentIds(2 * MAX_BUYS_PER_MINT)  # hashed trade identities (duplicates count once)
+        self.seen = RecentIds(SEEN_IDS)               # hashed trade identities (duplicates count once)
+        self.last_recv_ns = 0
+
+
+class _Mint:
+    __slots__ = ("active", "creator", "since_creation", "current", "peak_v", "peak_real", "newest_ns",
+                 "window", "detection", "sybil", "create_sig", "creation_bound", "unverified", "unverified_n",
+                 "migrated", "gap", "receipt_creation_after_gap")
+
+    def __init__(self) -> None:
+        self.active: _Active | None = None
         self.creator: str | None = None
         self.since_creation = False
         self.current: tuple[tuple[int, int], int, int | None] | None = None   # (key, v_sol, real_sol)
@@ -246,26 +274,39 @@ class _Mint:
         self.sybil: Status | None = None
         self.create_sig: str | None = None
         self.creation_bound: int | None = None   # upper bound on real SOL right after an unverified creation
-        self.unverified: list[str] = []          # signatures of curve readings without verified real SOL
+        self.unverified: list[str] = []          # newest signatures of curve readings without verified real SOL
+        self.unverified_n = 0                    # how many such readings since creation
         self.migrated = False
         self.gap: str | None = None              # a trade-feed gap the token's history spans
         self.receipt_creation_after_gap = False     # creation timed only by JINX's receipt, after a gap
+
+    @property
+    def buys(self) -> list[Buy]:
+        return self.active.buys if self.active is not None else []
+
+    def note_unverified(self, signature: str) -> None:
+        self.unverified_n += 1
+        self.unverified.append(signature)
+        del self.unverified[:-UNVERIFIED_KEPT]
 
 
 class EarlyMomentum:
     def __init__(self, notify: Callable[[EarlyMomentumEvidence], Any] | None = None,
                  request_funders: Callable[[str, tuple[str, ...]], Any] | None = None, clock_ns=time.time_ns,
                  max_mints: int = MAX_MINTS, idle_ttl_s: float = IDLE_TTL_S,
-                 max_buys_per_mint: int = MAX_BUYS_PER_MINT, max_funding: int = MAX_FUNDING) -> None:
+                 max_buys_per_mint: int = MAX_BUYS_PER_MINT, max_funding: int = MAX_FUNDING,
+                 funding_ttl_s: float = FUNDING_TTL_S) -> None:
         self.notify, self.request_funders, self.clock_ns = notify, request_funders, clock_ns
         self.max_buys_per_mint, self.max_funding = max_buys_per_mint, max_funding
+        self.funding_ttl_ns = int(funding_ttl_s * 1_000_000_000)
         self._mints: MintTable[_Mint] = MintTable(lambda _mint: _Mint(), max_mints, int(idle_ttl_s * 1_000_000_000),
                                                   on_evict=self._unlink)
         self._funding: OrderedDict[str, Funding] = OrderedDict()
         self._wallet_mints: dict[str, set[str]] = {}
         self._gap: tuple[int, str] | None = None   # (receipt time of the latest trade-feed gap, reason)
         self.stats = {"events": 0, "curve_buys": 0, "detections": 0, "late_beyond_retention": 0,
-                      "buys_dropped_over_cap": 0, "duplicates": 0, "listener_errors": 0}
+                      "buys_dropped_over_cap": 0, "duplicates": 0, "listener_errors": 0, "released_active": 0,
+                      "funding_expired": 0}
 
     # ---- API -----------------------------------------------------------------------------------------
     def on_event(self, ev: MarketEvent) -> list[EarlyMomentumEvidence]:
@@ -281,11 +322,15 @@ class EarlyMomentum:
             st.migrated = True             # remembered even when the migration arrives before the creation (R3-1)
             return []
         if ev.kind is EventKind.TRADE:
+            act = st.active
+            if act is None:
+                act = st.active = _Active()
             key = hash(ev.idempotency_key)
-            if key in st.seen:             # a duplicate delivery counts once (also for reserve continuity)
+            if key in act.seen:            # a duplicate delivery counts once (also for reserve continuity)
                 self.stats["duplicates"] += 1
                 return []
-            st.seen.add(key)
+            act.seen.add(key)
+            act.last_recv_ns = max(act.last_recv_ns, ev.recv_ns)
         if ev.kind is EventKind.TOKEN_CREATED:
             st.creator, st.since_creation, st.create_sig = ev.trader, True, ev.signature
             if event_time(ev)[1] is Clock.RECEIPT and self._gap is not None and ev.recv_ns >= self._gap[0]:
@@ -334,6 +379,33 @@ class EarlyMomentum:
         st = self._mints.get(mint)
         return self._build(mint, st) if st is not None and st.window is not None else None
 
+    def known_funder(self, wallet: str) -> Funding | None:
+        """The cached funding observation for `wallet`, so it is not looked up again while fresh."""
+        return self._funding.get(wallet)
+
+    def set_held_provider(self, provider) -> None:
+        """`provider()` returns the mints JINX holds; they are never evicted (asked right before any eviction)."""
+        self._mints.held_provider = provider
+
+    def sweep(self, now_ns: int, held: frozenset = frozenset(), idle_ns: int | None = None) -> dict:
+        """Market maintenance: evict idle tokens (never held ones), release quiet tokens' buys and identities, and
+        expire funding nobody's window needs."""
+        evicted = self._mints.expire(now_ns, held, idle_ns)
+        quiet = now_ns - RETAIN_NS
+        active = 0
+        for _, st in self._mints.items():
+            if st.active is not None:
+                if st.active.last_recv_ns < quiet:
+                    st.active = None
+                    self.stats["released_active"] += 1
+                else:
+                    active += 1
+        cutoff = now_ns - self.funding_ttl_ns
+        for w in [w for w, f in self._funding.items() if f.observed_ns < cutoff and w not in self._wallet_mints]:
+            del self._funding[w]
+            self.stats["funding_expired"] += 1
+        return {"tokens": len(self._mints), "active": active, "evicted": evicted, "funding": len(self._funding)}
+
     def tracked_mints(self) -> int:
         return len(self._mints)
 
@@ -354,8 +426,7 @@ class EarlyMomentum:
             # the curve starts empty, so real SOL right after creation is at most what the creator put in.
             st.creation_bound = max(st.creation_bound or 0, ev.sol_lamports or 0)
         else:
-            st.unverified.append(ev.signature)
-            del st.unverified[:-8]
+            st.note_unverified(ev.signature)
         if st.current is None or key > st.current[0]:
             st.current = (key, ev.v_sol_lamports, real)
 
@@ -368,17 +439,18 @@ class EarlyMomentum:
         if st.newest_ns is not None and t < st.newest_ns - RETAIN_NS:
             self.stats["late_beyond_retention"] += 1
             return []
-        bisect.insort(st.buys, b, key=lambda x: x.key)
+        buys = st.active.buys
+        bisect.insort(buys, b, key=lambda x: x.key)
         st.newest_ns = max(st.newest_ns or t, t)
         horizon = st.newest_ns - RETAIN_NS
-        while st.buys and st.buys[0].event_ns < horizon:
-            st.buys.pop(0)
-        while len(st.buys) > self.max_buys_per_mint:
-            st.buys.pop(0)
+        while buys and buys[0].event_ns < horizon:
+            buys.pop(0)
+        while len(buys) > self.max_buys_per_mint:
+            buys.pop(0)
             self.stats["buys_dropped_over_cap"] += 1
         if st.window is not None:
             if b.key < st.window[-1].key:   # a late buy moves the window earlier or joins it, never later
-                held = sorted(set(st.buys) | set(st.window), key=lambda x: x.key)
+                held = sorted(set(buys) | set(st.window), key=lambda x: x.key)
                 window = first_window(held)
                 if window is not None and window[-1].key <= st.window[-1].key and window != st.window:
                     known = {b.fee_payer for b in st.window}
@@ -388,7 +460,7 @@ class EarlyMomentum:
                     if added:
                         self._call(self.request_funders, mint, added)
             return []
-        window = first_window(st.buys)
+        window = first_window(buys)
         if window is None:
             return []
         self._set_window(mint, st, window)
@@ -487,7 +559,8 @@ class EarlyMomentum:
         """B-02: the highest verified real SOL since creation <= 10. Unprovable history blocks."""
         detail = {"peak_real_sol": _sol(st.peak_real), "peak_virtual_sol": _sol(st.peak_v),
                   "observed_since_creation": st.since_creation, "creation_bound_real_sol": _sol(st.creation_bound),
-                  "unverified_readings": list(st.unverified), "rule": f"peak real SOL <= 10 ({B02})"}
+                  "unverified_readings": list(st.unverified), "unverified_reading_count": st.unverified_n,
+                  "rule": f"peak real SOL <= 10 ({B02})"}
         reason = None
         if st.migrated:
             status, reason = Status.FAIL, "migrated: this pre-graduation path does not apply"
@@ -501,7 +574,7 @@ class EarlyMomentum:
             status, reason = Status.UNAVAILABLE, ("history unprovable: the creation has only JINX's receipt time and "
                                                   "arrived after a feed gap, so trades and a higher peak before the "
                                                   "gap cannot be excluded")
-        elif st.unverified:
+        elif st.unverified_n:
             status, reason = Status.UNAVAILABLE, "history incomplete: unverified curve readings since creation"
         elif st.creation_bound is not None and st.creation_bound > CEILING_LAMPORTS:
             status, reason = Status.UNAVAILABLE, "creation reading unverified and the creator's buy exceeds 10 SOL"

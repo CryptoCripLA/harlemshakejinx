@@ -75,15 +75,16 @@ def test_sol_to_lamports_rounds_to_nearest_lamport():
 
 def test_deduplicator_counts_each_key_once():
     d = Deduplicator(capacity=3)
-    assert d.first_time("a") is True
-    assert d.first_time("a") is False
-    assert d.first_time("b") is True
+    assert d.first_time("a", 1) is True
+    assert d.first_time("a", 2) is False
+    assert d.first_time("b", 3) is True
     assert d.duplicates == 1
 
 
 def test_deduplicator_is_bounded_and_evicts_oldest():
     d = Deduplicator(capacity=2)
-    for k in ("a", "b", "c"):
-        d.first_time(k)
+    for i, k in enumerate(("a", "b", "c")):
+        d.first_time(k, i)
     assert len(d) == 2
-    assert d.first_time("a") is True  # evicted from memory; the durable store is the backstop
+    # evicted from memory: market chatter may be seen again; orders stay idempotent in the durable ledger
+    assert d.first_time("a", 3) is True

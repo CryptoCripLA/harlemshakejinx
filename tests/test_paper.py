@@ -121,7 +121,7 @@ def test_paper_wallet_is_not_reset_by_a_new_starting_amount(tmp_path):
 @pytest.fixture
 def rig(store):
     set_mode(store, Mode.AUTO)
-    reg = TokenRegistry(store)
+    reg = TokenRegistry()
     reg.apply(make_create(mint="A"))
     reg.apply(make_trade(mint="A", v_sol=32_000_000_000, v_tokens=1_000_000_000_000_000))
     ledger = PositionLedger(store)

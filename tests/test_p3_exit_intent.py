@@ -19,7 +19,7 @@ FEES = CurveFees(95, 5)
 
 
 def _rig(store):
-    reg = TokenRegistry(store)
+    reg = TokenRegistry()
     ledger = PositionLedger(store)
     wallet = PaperWallet(store, 2_000_000_000)
     paper = PaperExecutor(store, ledger, wallet, reg, FEES, 5_000)

@@ -55,14 +55,17 @@ def test_confidence_uses_only_what_chad_defines():
     assert c2["win_rate_points"] == pytest.approx(30.0) and c2["recency_points"] == pytest.approx(25.0)
 
 
-def test_curve_buyers_of_a_graduated_token_become_discovery_candidates():
+def test_a_graduated_token_is_queued_and_its_curve_buyers_are_not_archived():
+    """Storage repair 2026-10-21: no per-token buyer archive. The stream only queues graduated tokens; GMGN names
+    their pre-graduation buyers at the discovery pass."""
     book = WhaleBook()
     for i, w in enumerate(["A", "B", "C", "A"]):
         book.on_event(trade("M", w, 100 + i))
-    book.on_event(trade("M", "LATE", 200, pool="pump-amm"))          # after the curve: not a pre-graduation buyer
     book.on_event(trade("M", None, 300, kind=EventKind.MIGRATION))
     book.on_event(trade("N", "Z", 100))                               # never graduated
-    assert book.discovery_candidates() == {"A", "B", "C"}
+    assert set(book.graduated()) == {"M"}
+    assert book.discovery_candidates() == set()
+    assert not hasattr(book, "_curve_buyers")
 
 
 def test_tracked_wallet_buys_raise_zero_cost_alerts_and_cluster_facts():
@@ -84,35 +87,50 @@ def test_pinned_wallets_are_capped_at_fifteen():
         book.pin("P15")
 
 
-def test_discovery_pass_promotes_from_gmgn_stats_and_survives_api_failure():
-    class Gmgn:
-        def __init__(self, fail=False):
-            self.fail, self.calls = fail, []
+class FakeGmgn:
+    """getTokenTopTraders answers with traders and their start_holding_at; getWalletStats like the live API (only the
+    first address of a batch is answered)."""
 
-        async def call(self, method, chain, wallets, period):
-            self.calls.append((method, tuple(wallets), period))
-            if self.fail:
-                raise TimeoutError
-            w = wallets[0]                      # like the live API: only the first address is answered
-            return dict(STATS, wallet_address=w, pnl_stat=dict(STATS["pnl_stat"], winrate=0.5 if w == "GOOD" else 0.2))
+    def __init__(self, traders: dict, fail: bool = False):
+        self.traders, self.fail, self.calls = traders, fail, []
 
+    async def call(self, method, chain, *args):
+        self.calls.append((method, args))
+        if self.fail:
+            raise TimeoutError
+        if method == "getTokenTopTraders":
+            return {"list": self.traders.get(args[0], [])}
+        w = args[0][0]
+        return dict(STATS, wallet_address=w, pnl_stat=dict(STATS["pnl_stat"], winrate=0.5 if w == "GOOD" else 0.2))
+
+
+def test_discovery_pass_finds_pre_graduation_buyers_through_gmgn_and_promotes_from_their_stats():
     book = WhaleBook()
-    for w in ("GOOD", "BAD"):
-        book.on_event(trade("M", w, 1))
-    book.on_event(trade("M", None, 2, kind=EventKind.MIGRATION))
-    report = asyncio.run(discovery_pass(Gmgn(), book, now_ts=10))
+    book.on_event(trade("M", None, 2_000, kind=EventKind.MIGRATION))   # graduated at t = 2,000 s (receipt clock)
+    gmgn = FakeGmgn({"M": [{"address": "GOOD", "start_holding_at": 1_000}, {"address": "BAD", "start_holding_at": 1_500},
+                           {"address": "AFTER", "start_holding_at": 2_500},   # bought after graduation
+                           {"address": "NOTIME"}]})                           # unprovable
+    report = asyncio.run(discovery_pass(gmgn, book, now_ts=10))
+    assert report["graduated"] == 1 and report["unproven_traders"] == 1 and report["candidates"] == 2
     assert report["promoted"] == ["GOOD"] and book.tracked["GOOD"]["source"] == "promoted" and "BAD" not in book.tracked
-    assert book.discovery_candidates() == set()                       # consumed
-    book.on_event(trade("M2", "Q", 3)); book.on_event(trade("M2", None, 4, kind=EventKind.MIGRATION))
-    failed = asyncio.run(discovery_pass(Gmgn(fail=True), book, now_ts=20))
-    assert failed["errors"] and book.discovery_candidates() == {"Q"}  # kept for the next pass
+    assert book.discovery_candidates() == set() and book.graduated() == {}    # consumed
+
+
+def test_discovery_pass_keeps_work_queued_when_gmgn_fails():
+    book = WhaleBook()
+    book.on_event(trade("M2", None, 4, kind=EventKind.MIGRATION))
+    failed = asyncio.run(discovery_pass(FakeGmgn({}, fail=True), book, now_ts=20))
+    assert failed["errors"] and set(book.graduated()) == {"M2"}            # kept for the next pass
 
 
 def test_whale_state_is_bounded():
-    book = WhaleBook(max_tokens=10, max_buyers_per_token=5, max_candidates=7, max_alerts=3)
+    book = WhaleBook(max_tokens=10, max_candidates=7, max_alerts=3, max_graduated=5)
+    book.track("T", source="promoted")
     for i in range(50):
         for j in range(20):
             book.on_event(trade(f"M{i}", f"W{i}-{j}", i * 100 + j))
+            book.on_event(trade(f"M{i}", "T", i * 100 + j))
         book.on_event(trade(f"M{i}", None, i * 100 + 99, kind=EventKind.MIGRATION))
-    assert len(book._curve_buyers) <= 10 and len(book._candidates) <= 7
-    assert all(len(v) <= 5 for v in book._curve_buyers.values())
+    book.add_candidates(f"C{i}" for i in range(20))
+    assert len(book._tracked_buys) <= 10 and len(book._candidates) <= 7 and len(book.graduated()) <= 5
+    assert len(book.alerts) <= 3

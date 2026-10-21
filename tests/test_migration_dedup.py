@@ -17,7 +17,6 @@ from jinx.core.lifecycle import Evidence, Kind, State, TokenLifecycle
 from jinx.intel.migration import MigrationTracker
 from jinx.intel.readings import Clock
 from jinx.intel.whales import WhaleBook
-from jinx.store import Store
 from tests.pumpapi_msgs import T0_MS, amm_trade, buy, create, events, migrate
 
 MIG_T = T0_MS + 60_000
@@ -49,9 +48,8 @@ def test_the_two_reports_have_different_identities_and_a_resend_still_deduplicat
     assert api.idempotency_key == api_again.idempotency_key
 
 
-def test_the_bus_and_the_events_table_deliver_both_reports_once_each(tmp_path):
-    store = Store(tmp_path / "m.db")
-    bus = EventBus(persist=store.record_event)
+def test_the_bus_delivers_both_reports_once_each():
+    bus = EventBus()                                  # no events table since the storage repair (2026-10-21)
     got = []
     bus.subscribe(Lane.FAST, got.append)
 
@@ -67,7 +65,6 @@ def test_the_bus_and_the_events_table_deliver_both_reports_once_each(tmp_path):
     assert [(e.source, e.kind) for e in got] == [("mako.pumpportal", EventKind.MIGRATION),
                                                  ("pumpapi.stream", EventKind.MIGRATION)]
     assert bus.stats["duplicates"] == 2
-    store.close()
 
 
 def test_a_venue_only_report_first_never_prevents_the_pool_report_from_confirming():
@@ -125,14 +122,16 @@ def test_a_receipt_time_never_replaces_the_providers_migration_time():
 
 
 def test_other_consumers_act_once_per_migration():
+    """Both reports of one migration queue its token for whale discovery once."""
     whales = WhaleBook()
     for ev in curve():
         whales.on_event(ev)
     [pp] = pumpportal(PP_MIGRATE, 1)
     whales.on_event(pp)
-    candidates = list(whales._candidates)
+    queued = whales.graduated()
     whales.on_event(pumpapi_migrate()[0])
-    assert list(whales._candidates) == candidates and "W1" in candidates
+    assert whales.graduated() == queued and list(queued) == ["MintApump"]
+    assert whales.stats["graduated_queued"] == 1
 
 
 def test_gmgn_reports_only_enrich_tokens_jinx_already_tracks():

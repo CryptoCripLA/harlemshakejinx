@@ -55,7 +55,7 @@ def test_r3_1_entry_check_never_passes_a_token_the_lifecycle_has_seen_migrate(tm
         app.migration.on_event(ev)                                           # only the lifecycle hears it
     check = app.entry_check("MintApump")
     assert check["all_checks_pass"] is False and check["lifecycle_state"] == "MIGRATION_OBSERVED"
-    app.market.close(); app.store.close()
+    app.store.close()
 
 
 # ---- R3-2 (HIGH): an event that happened before the gap marks its token, whenever it is received ----------------

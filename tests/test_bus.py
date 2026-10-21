@@ -152,10 +152,9 @@ def test_ingest_to_handled_latency_is_sampled_per_event():
             await bus.publish(ev(bus, sig=f"S{i}"))
         await bus.drain()
         task.cancel()
-        return bus.latency_ns(Lane.FAST)
-    samples = run(main())
-    assert len(samples) == 4
-    assert all(s >= 0 for s in samples)
+        return bus.latency(Lane.FAST).summary()
+    summary = run(main())
+    assert summary["n"] == 4 and summary["p50"] >= 0                  # a constant-memory histogram, not samples
 
 
 def test_event_whose_durable_write_failed_is_accepted_when_resent():

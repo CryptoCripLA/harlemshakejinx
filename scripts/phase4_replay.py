@@ -38,7 +38,7 @@ def one_run(records, source, **kw) -> dict:
         view = h.state_view(app)
         out = {"digest": h.state_digest(app), "published": stats.published, "duplicates": stats.duplicates,
                "refused_records": stats.refused_records, "handler_errors": stats.handler_errors,
-               "elapsed_s": round(elapsed, 3), "tokens": len(app.core.tokens), "wallets": len(app.core.wallets),
+               "elapsed_s": round(elapsed, 3), "tokens": len(app.core.tokens),
                "detections": len(view["early_momentum"]), "graduation_curves": len(view["graduation"]),
                "migrations": len(view["migration"]), "paper_wallet_reconciled": view["paper_wallet"]["ok"]}
         h.close(app)

@@ -2,10 +2,11 @@
 
 A capture is JSON lines of {"recv_ns": int, "raw": <message>}: for source
 "pumpportal" the message exactly as Mako's stream delivered it, for source
-"pumpapi" PumpAPI's message (or its compact record, which normalizes the same). Replay runs each message through the same normalizer,
-bus (with durable dedup), and core state as the live engine. Sequence numbers
-come from the record's position in the capture, so any reordering of the same
-records must produce identical final state.
+"pumpapi" PumpAPI's message (or its compact record, which normalizes the same). Replay runs each message through the
+same normalizer, bus (with the expiring duplicate filter on the events' receipt clock) and core state as the live
+engine. Sequence numbers come from the record's position in the capture, so any reordering of the same records must
+produce identical final state. Market state is RAM only, as live: a simulated restart keeps the durable trading
+ledger and starts the market view empty.
 
 The optional accounting exercise opens and closes paper positions mechanically
 on the captured reserves to check paper accounting against real market data.
@@ -27,12 +28,12 @@ from jinx.core.bus import EventBus, Lane
 from jinx.core.events import EventKind
 from jinx.core_state import CoreState
 from jinx.execution import EntryIntent, ExecutionGateway, ExitIntent
-from jinx.health import percentiles_ms
+from jinx.core.latency import LatencyHistogram
 from jinx.ledger import PositionLedger, Status
 from jinx.modes import Mode, set_mode
 from jinx.paper import PaperExecutor, PaperWallet
 from jinx.recovery import recover
-from jinx.registry import TokenRegistry, WalletRegistry
+from jinx.registry import TokenRegistry
 from jinx.store import Store
 from jinx import config
 
@@ -54,9 +55,7 @@ class ReplayResult:
     events_admitted: int = 0
     duplicates: int = 0
     tokens: int = 0
-    wallets: int = 0
     digest: str = ""
-    unapplied_after: int = 0
     elapsed_s: float = 0.0
     latency_ms: dict | None = None
     wallet_reconciled: bool = True
@@ -65,16 +64,16 @@ class ReplayResult:
 
 class _Pipeline:
     def __init__(self, db_path: Path):
-        self.store = Store(db_path)
-        self.core = CoreState(self.store, TokenRegistry(self.store), WalletRegistry(self.store))
+        self.store = Store(db_path)                    # the durable trading ledger only
+        self.core = CoreState(TokenRegistry())
         self.ledger = PositionLedger(self.store)
         self.wallet = PaperWallet(self.store, config.PAPER_START_LAMPORTS)
         self.paper = PaperExecutor(self.store, self.ledger, self.wallet, self.core.tokens, config.PUMP_CURVE_FEES,
                                    config.NETWORK_FEE_LAMPORTS)
         self.gateway = ExecutionGateway(self.store, self.ledger, self.paper)
-        self.bus = EventBus(persist=self.store.record_event)
+        self.bus = EventBus()
         self.bus.subscribe(Lane.FAST, self.core.apply, name="core_state")
-        self.report = recover(self.store, self.core, self.ledger, self.wallet, bus=self.bus)
+        self.report = recover(self.ledger, self.wallet)
 
 
 async def _feed(pipe: _Pipeline, indexed: list[tuple[int, dict]], result: ReplayResult, exercise=None,
@@ -103,12 +102,15 @@ async def _feed(pipe: _Pipeline, indexed: list[tuple[int, dict]], result: Replay
 
 
 def _deliveries(records: list[dict], shuffle_seed: int | None, duplicate_every: int | None) -> list[tuple[int, dict]]:
-    """(capture position, record) in delivery order: every `duplicate_every`-th record twice, then shuffled."""
+    """(capture position, record) in delivery order: shuffled, then every `duplicate_every`-th record (by capture
+    position) delivered a second time right after its first delivery. A resend follows its original closely, as
+    feeds resend; the bus's duplicate filter remembers a fact for 120 s of the stream's receipt clock (owner storage
+    repair 2026-10-21), so a resend minutes later would be a new delivery, which no live feed produces."""
     indexed = list(enumerate(records))
-    if duplicate_every:
-        indexed = [x for i, x in enumerate(indexed) for _ in range(2 if i % duplicate_every == 0 else 1)]
     if shuffle_seed is not None:
         random.Random(shuffle_seed).shuffle(indexed)
+    if duplicate_every:
+        indexed = [x for x in indexed for _ in range(2 if x[0] % duplicate_every == 0 else 1)]
     return indexed
 
 
@@ -134,12 +136,12 @@ def replay(records: list[dict], db_path: Path, shuffle_seed: int | None = None, 
     indexed = _deliveries(records, shuffle_seed, duplicate_every)
     result = ReplayResult(records=len(indexed))
     t0 = time.perf_counter()
-    latency: list[int] = []
+    latency = LatencyHistogram()
     chunks = [indexed] if restart_at is None else [indexed[:restart_at], indexed[restart_at:]]
     pipe = None
     for chunk in chunks:
         if pipe is not None:      # simulate a stop and restart between chunks
-            latency += pipe.bus.latency_ns(Lane.FAST)
+            latency.merge(pipe.bus.latency(Lane.FAST).window())
             pipe.store.close()
         pipe = _Pipeline(db_path)
         exercise = _AccountingExercise(pipe, exit_after) if accounting_exercise else None
@@ -148,12 +150,11 @@ def replay(records: list[dict], db_path: Path, shuffle_seed: int | None = None, 
         asyncio.run(_feed(pipe, chunk, result, exercise, source))
         if exercise:
             result.accounting = exercise.summary()
-    latency += pipe.bus.latency_ns(Lane.FAST)
+    latency.merge(pipe.bus.latency(Lane.FAST).window())
     result.elapsed_s = time.perf_counter() - t0
-    result.tokens, result.wallets = len(pipe.core.tokens), len(pipe.core.wallets)
+    result.tokens = len(pipe.core.tokens)
     result.digest = pipe.core.tokens.digest()
-    result.unapplied_after = len(pipe.store.unapplied_events())
-    result.latency_ms = percentiles_ms(latency)
+    result.latency_ms = latency.summary()
     result.wallet_reconciled = pipe.wallet.reconcile().ok
     pipe.store.close()
     return result

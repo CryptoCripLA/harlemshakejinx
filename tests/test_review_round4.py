@@ -12,7 +12,7 @@ from jinx.ledger import PositionLedger, Status
 from jinx.modes import Mode
 from jinx.paper import CurveFees, PaperExecutor, PaperWallet
 from jinx.recovery import recover
-from jinx.registry import TokenRegistry, WalletRegistry
+from jinx.registry import TokenRegistry
 from jinx.store import Store
 from tests.conftest import make_create, make_trade
 
@@ -42,12 +42,12 @@ def without_outbox(c: sqlite3.Connection) -> None:
 
 
 def rig(s: Store):
-    reg = TokenRegistry(s)
+    reg = TokenRegistry()
     reg.apply(make_create(mint="A"))
     reg.apply(make_trade(mint="A", v_sol=32_000_000_000, v_tokens=1_000_000_000_000_000))
     ledger = PositionLedger(s)
     wallet = PaperWallet(s, 2_000_000_000)
-    recover(s, CoreState(s, reg, WalletRegistry(s)), ledger, wallet)
+    recover(ledger, wallet)
     return ledger, ExecutionGateway(s, ledger, PaperExecutor(s, ledger, wallet, reg, CurveFees(95, 5), 5_000))
 
 

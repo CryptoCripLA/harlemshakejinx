@@ -1,44 +1,20 @@
-"""Durable JINX storage: one SQLite database in WAL mode.
+"""Durable JINX storage: the trading ledger, one SQLite database in WAL mode.
 
-Holds the event log (with a unique key per on-chain fact, so dedup survives
-restarts), settings, registries, the position ledger and the paper wallet.
-WAL with synchronous=NORMAL survives a process crash; it can lose the last
-commits on power loss, which the restart reconciliation must tolerate.
+Holds settings, the position ledger (positions, fills, exit intents and their history), the paper wallet and the
+replication outbox: orders, fills, costs, position ownership, paper balances and recovery records. It holds no
+market data (owner order 2026-10-21 §1: "Normal raw market chatter is transient"); the market view lives in RAM
+(jinx/registry.py). WAL with synchronous=NORMAL survives a process crash; it can lose the last commits on power
+loss, which the restart reconciliation must tolerate.
 """
 from __future__ import annotations
 
-import json
 import sqlite3
 import threading
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from jinx.core.events import EventKind, MarketEvent, Side
-
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS events (
-    idempotency_key TEXT PRIMARY KEY,
-    seq INTEGER NOT NULL,
-    recv_ns INTEGER NOT NULL,
-    event_time_ns INTEGER NOT NULL,
-    kind TEXT NOT NULL,
-    source TEXT NOT NULL,
-    mint TEXT NOT NULL,
-    signature TEXT NOT NULL,
-    trader TEXT,
-    side TEXT,
-    sol_lamports INTEGER,
-    token_amount INTEGER,
-    v_sol_lamports INTEGER,
-    v_tokens INTEGER,
-    slot INTEGER,
-    block_time INTEGER,
-    raw_json TEXT NOT NULL,
-    applied INTEGER NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS events_unapplied ON events(applied, event_time_ns, seq);
-
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
@@ -52,35 +28,6 @@ CREATE TABLE IF NOT EXISTS settings_audit (
     new_value TEXT NOT NULL,
     changed_ns INTEGER NOT NULL,
     changed_by TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS tokens (
-    mint TEXT PRIMARY KEY,
-    creator TEXT,
-    buys INTEGER NOT NULL DEFAULT 0,
-    sells INTEGER NOT NULL DEFAULT 0,
-    unique_traders INTEGER NOT NULL DEFAULT 0,
-    v_sol_lamports INTEGER,
-    v_tokens INTEGER,
-    peak_v_sol_lamports INTEGER,
-    latest_time_ns INTEGER,
-    latest_seq INTEGER,
-    first_time_ns INTEGER,
-    first_seq INTEGER
-);
-CREATE TABLE IF NOT EXISTS token_traders (
-    mint TEXT NOT NULL,
-    trader TEXT NOT NULL,
-    PRIMARY KEY (mint, trader)
-);
-CREATE TABLE IF NOT EXISTS wallets (
-    address TEXT PRIMARY KEY,
-    buys INTEGER NOT NULL DEFAULT 0,
-    sells INTEGER NOT NULL DEFAULT 0,
-    buy_lamports INTEGER NOT NULL DEFAULT 0,
-    sell_lamports INTEGER NOT NULL DEFAULT 0,
-    first_time_ns INTEGER,
-    last_time_ns INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS positions (
@@ -170,7 +117,7 @@ CREATE TABLE IF NOT EXISTS paper_wallet_entries (
 """
 
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 # v1 (up to commit 1ad0d65): no entry budget, no exit_intents, no amount CHECK constraints.
 # v2: positions.entry_budget_lamports (NULL = unknown for positions created by v1), exit_intents, CHECKs.
 # v3: exit_intents.legacy_fill_id; v1 sell fills ("<intent>:sell") become historical exit bindings, so a
@@ -194,13 +141,18 @@ SCHEMA_VERSION = 10
 #     price peak, the entry score/threshold/filter and the sizing decision; exit_intents record the owner's ExitIntent
 #     fields; order_events records each order's lifecycle stages (decided, quoted, submitted, filled, failed) with
 #     times and failure costs. Columns are added in place (ALTER TABLE), so every existing row is kept.
+# v11: no market data (owner storage repair 2026-10-21). The legacy market tables (events, tokens, token_traders,
+#     wallets) are no longer created or written. An empty legacy table is dropped; one that still holds rows is left
+#     untouched and reported (`legacy_market_rows`), never deleted by an upgrade. No trading table changes.
+
+LEGACY_MARKET_TABLES = ("events", "tokens", "token_traders", "wallets")
 
 # trading-record tables replicated to PostgreSQL, with their primary keys
 OUTBOX_TABLES = {"positions": ("position_id",), "fills": ("fill_id",), "exit_intents": ("intent_id",),
                  "paper_wallet": ("id",), "paper_wallet_entries": ("entry_id",), "settings": ("key",),
                  "settings_audit": ("id",)}
-# order_events (Phase 3) stays in the authoritative local ledger only until tests/test_storage_hygiene.py counts the
-# replicated tables from OUTBOX_TABLES instead of a fixed list (requested from the storage session, 2026-10-21).
+# order_events (Phase 3) stays in the authoritative local ledger only; tests/test_storage_hygiene.py now counts the
+# replicated tables from OUTBOX_TABLES (storage session, 2026-10-21), so Phase 3 may add it here.
 
 # Phase 3 columns (schema v10), added in place to existing tables. Types are INTEGER or TEXT only (the PostgreSQL
 # replica maps exactly those); decimal values (scores, fractions) are stored as exact decimal text.
@@ -267,10 +219,25 @@ class Store:
         if "outbox" in self._tables() and "pk" not in self._columns("outbox"):
             self.conn.execute("DROP TABLE outbox")   # pre-release layout; the replicator's full resync covers it
         self.conn.executescript(SCHEMA)
+        self._retire_market_tables()
         self._bind_legacy_exits()
         self._phase3_columns()
         self._outbox_triggers()
         self.conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+
+    def _retire_market_tables(self) -> None:
+        """v11: drop each legacy market table that is empty; keep (and report) any that holds rows."""
+        tables = self._tables()
+        with self.transaction() as c:
+            for t in LEGACY_MARKET_TABLES:
+                if t in tables and c.execute(f"SELECT 1 FROM {t} LIMIT 1").fetchone() is None:
+                    c.execute(f"DROP TABLE {t}")   # its index goes with it
+
+    def legacy_market_rows(self) -> dict[str, int]:
+        """Rows still held by legacy market tables an upgrade kept because they were not empty (normally {})."""
+        tables = self._tables()
+        return {t: self.conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+                for t in LEGACY_MARKET_TABLES if t in tables}
 
     def _bind_legacy_exits(self) -> None:
         with self.transaction() as c:
@@ -385,50 +352,8 @@ class Store:
                         self.conn.execute("ROLLBACK")
                     raise
 
-    # ---- events -------------------------------------------------------
-    def record_event(self, ev: MarketEvent) -> bool:
-        """Store an event. Returns False when that on-chain fact was already stored."""
-        with self.transaction() as c:
-            cur = c.execute(
-                "INSERT OR IGNORE INTO events (idempotency_key, seq, recv_ns, event_time_ns, kind, source, mint,"
-                " signature, trader, side, sol_lamports, token_amount, v_sol_lamports, v_tokens, slot, block_time,"
-                " raw_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (ev.idempotency_key, ev.seq, ev.recv_ns, ev.event_time_ns, str(ev.kind), ev.source, ev.mint,
-                 ev.signature, ev.trader, str(ev.side) if ev.side else None, ev.sol_lamports, ev.token_amount,
-                 ev.v_sol_lamports, ev.v_tokens, ev.slot, ev.block_time, json.dumps(dict(ev.raw), default=str)),
-            )
-            return cur.rowcount == 1
-
-    def is_applied(self, idempotency_key: str) -> bool:
-        row = self.conn.execute("SELECT applied FROM events WHERE idempotency_key = ?", (idempotency_key,)).fetchone()
-        return bool(row and row[0])
-
-    def mark_applied(self, idempotency_key: str) -> None:
-        # the raw payload is only needed until the event is applied; release it (owner storage rule 2)
-        self.conn.execute("UPDATE events SET applied = 1, raw_json = '{}' WHERE idempotency_key = ?",
-                          (idempotency_key,))
-
-    def unapplied_events(self) -> list[sqlite3.Row]:
-        return self.conn.execute(
-            "SELECT * FROM events WHERE applied = 0 ORDER BY event_time_ns, seq").fetchall()
-
-    @staticmethod
-    def row_to_event(row: sqlite3.Row) -> MarketEvent:
-        return MarketEvent(kind=EventKind(row["kind"]), source=row["source"], mint=row["mint"],
-                           signature=row["signature"], recv_ns=row["recv_ns"], seq=row["seq"], trader=row["trader"],
-                           side=Side(row["side"]) if row["side"] else None, sol_lamports=row["sol_lamports"],
-                           token_amount=row["token_amount"], v_sol_lamports=row["v_sol_lamports"],
-                           v_tokens=row["v_tokens"], slot=row["slot"], block_time=row["block_time"],
-                           raw=json.loads(row["raw_json"]))
-
     def quick_check(self) -> bool:
         return self.conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
-
-    def event_count(self) -> int:
-        return self.conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
-
-    def max_seq(self) -> int:
-        return self.conn.execute("SELECT COALESCE(MAX(seq), 0) FROM events").fetchone()[0]
 
     def journal_mode(self) -> str:
         return self.conn.execute("PRAGMA journal_mode").fetchone()[0]

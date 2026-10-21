@@ -33,8 +33,7 @@ TRAIL_ONLY = BigMacPaperConfig(take_profit_pct=0, stop_loss_pct=20, trailing_sto
 class Rig:
     def __init__(self, path):
         self.store = Store(path)
-        self.market = Store(":memory:")
-        self.tokens = TokenRegistry(self.market)
+        self.tokens = TokenRegistry()                 # market state is RAM only (storage repair 2026-10-21)
         self.ledger = PositionLedger(self.store)
         self.wallet = PaperWallet(self.store, config.PAPER_START_LAMPORTS)
         self.paper = PaperExecutor(self.store, self.ledger, self.wallet, self.tokens, config.PUMP_CURVE_FEES,
@@ -64,7 +63,6 @@ class Rig:
 
     def close(self):
         self.store.close()
-        self.market.close()
 
 
 @pytest.fixture
@@ -225,7 +223,6 @@ def test_peak_survives_restart_and_the_trail_still_fires(tmp_path):
     assert fresh_reason is None                                   # the persisted peak is what made it fire
     assert market_state.v_sol_lamports == top
     r2.close()
-    r.market.close()
 
 
 def test_positions_of_another_strategy_or_policy_are_never_touched(rig):

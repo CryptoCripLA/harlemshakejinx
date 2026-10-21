@@ -34,25 +34,20 @@ def test_an_incomplete_migrate_message_is_refused(missing):
         normalize({k: v for k, v in MIGRATE.items() if k != missing}, 5, count(1).__next__)
 
 
-def test_a_migration_event_survives_a_store_round_trip(tmp_path):
-    from jinx.store import Store
-    s = Store(tmp_path / "db")
+def test_a_migration_event_is_normalized_and_deduplicated_once():
+    from jinx.core.dedup import Deduplicator
     [ev] = normalize(MIGRATE, 5, count(1).__next__)
-    assert s.record_event(ev) is True and s.record_event(ev) is False          # durable, deduplicated
-    [back] = [Store.row_to_event(r) for r in s.unapplied_events()]
-    assert (back.kind, back.mint, back.signature, back.raw["pool"]) == (EventKind.MIGRATION, "MintMIGpump", "MS1", "pump-amm")
-    s.close()
+    assert (ev.kind, ev.mint, ev.signature, ev.raw["pool"]) == (EventKind.MIGRATION, "MintMIGpump", "MS1", "pump-amm")
+    d = Deduplicator()
+    assert d.first_time(ev.idempotency_key, 5) is True and d.first_time(ev.idempotency_key, 6) is False
 
 
-def test_registries_ignore_a_migration_event_until_phase_2_consumes_it(tmp_path):
-    from jinx.registry import TokenRegistry, WalletRegistry
-    from jinx.store import Store
-    s = Store(tmp_path / "db")
+def test_the_token_state_ignores_a_migration_event_the_migration_module_owns():
+    from jinx.registry import TokenRegistry
     [ev] = normalize(MIGRATE, 5, count(1).__next__)
-    TokenRegistry(s).apply(ev)
-    WalletRegistry(s).apply(ev)
-    assert TokenRegistry(s).get("MintMIGpump") is None
-    s.close()
+    reg = TokenRegistry()
+    reg.apply(ev)
+    assert reg.get("MintMIGpump") is None
 
 
 def test_the_feed_subscribes_to_migrations_once_per_connection_and_publishes_them():

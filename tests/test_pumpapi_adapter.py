@@ -244,15 +244,15 @@ def test_several_trades_of_one_side_in_one_transaction_stay_separate_facts():
     assert norm(legs[0])[0].idempotency_key == keys[0]                 # a resent copy is the same fact
 
 
-def test_a_trade_leg_keeps_its_identity_through_the_store(tmp_path):
-    """Recovery recomputes the key from the stored row; the leg must survive it or the event is applied again."""
-    from jinx.store import Store
-    s = Store(tmp_path / "db")
-    [ev] = norm(dict(SELL, tokenAmount=0.463476))
-    s.record_event(ev)
-    [row] = s.unapplied_events()
-    assert Store.row_to_event(row).idempotency_key == ev.idempotency_key == row["idempotency_key"]
-    s.close()
+def test_a_trade_leg_is_part_of_the_identity_the_bus_deduplicates_on():
+    """Two legs of one transaction are two facts; a resend of the same leg is a duplicate (no store round trip
+    exists since the storage repair of 2026-10-21: the bus filter is the only place market events are compared)."""
+    from jinx.core.dedup import Deduplicator
+    [a] = norm(dict(SELL, tokenAmount=0.463476))
+    [b] = norm(dict(SELL, tokenAmount=0.5))
+    d = Deduplicator()
+    assert d.first_time(a.idempotency_key, 1) and d.first_time(b.idempotency_key, 1)
+    assert d.first_time(a.idempotency_key, 2) is False
 
 
 def test_creation_events_keep_the_cross_feed_identity():

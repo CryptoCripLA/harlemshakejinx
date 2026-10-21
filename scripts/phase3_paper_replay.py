@@ -105,7 +105,6 @@ def run_replay(capture: Path, delay_ms: int, source: str = "pumpapi", sol_usd: S
                "exit_monitor": app.exit_monitor.health(), "handler_errors": dict(app.bus.stats["handler_errors"]),
                "pending_fills_left": len(app.gateway.pending), "report": rep, "stand_ins": STAND_INS,
                "label": "SIMULATED paper replay on real captured events; not live trading, not profit"}
-        app.market.close()
         app.store.close()
         return out
     finally:

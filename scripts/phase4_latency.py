@@ -117,9 +117,10 @@ async def play(app, records, speed: float) -> dict:
         runner.cancel()
         feed_mod.normalize = real_normalize
     out = {k: stats_ms(v) for k, v in samples.items()}
-    out["admission_to_state"] = stats_ms(app.bus.latency_ns(Lane.FAST))
+    # constant-memory histograms since the storage repair (2026-10-21): their summaries, not raw samples
+    out["admission_to_state"] = app.bus.latency(Lane.FAST).summary()
     for name, v in app._handler_ns.items():
-        out[f"handler_{name}"] = stats_ms(list(v))
+        out[f"handler_{name}"] = v.summary()
     out["provider_to_receipt"] = stats_ms([r["recv_ns"] - int(r["raw"]["timestamp"] * 1_000_000) for r in records
                                            if isinstance(r["raw"].get("timestamp"), (int, float))])
     out["_counts"] = {"records": len(records), "events_published": feed.stats["published"],

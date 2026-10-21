@@ -12,7 +12,7 @@ from jinx.ledger import PositionLedger, Status
 from jinx.modes import Mode, set_mode
 from jinx.paper import PaperWallet
 from jinx.recovery import recover
-from jinx.registry import TokenRegistry, WalletRegistry
+from jinx.registry import TokenRegistry
 from jinx.store import Store
 from tests.conftest import make_create, make_trade
 
@@ -21,92 +21,68 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def open_state(path):
     s = Store(path)
-    return s, CoreState(s, TokenRegistry(s), WalletRegistry(s))
+    return s, CoreState(TokenRegistry())
 
 
-def test_event_stored_but_not_applied_before_a_crash_is_applied_once_on_restart(tmp_path):
+def _open_position(s, reg, mint="A", intent="I1"):
+    """A filled paper position bought on the token's current reserves."""
+    from jinx.execution import EntryIntent, ExecutionGateway
+    from jinx.paper import CurveFees, PaperExecutor
+    reg.apply(make_create(mint=mint))
+    reg.apply(make_trade(mint=mint, v_sol=32_000_000_000, v_tokens=1_000_000_000_000_000))
+    ledger, wallet = PositionLedger(s), PaperWallet(s, 2_000_000_000)
+    gw = ExecutionGateway(s, ledger, PaperExecutor(s, ledger, wallet, reg, CurveFees(95, 5), 5_000))
+    set_mode(s, Mode.AUTO)
+    r = gw.submit_entry(EntryIntent(intent, mint, 100_000_000, origin="test"))
+    assert r.ok, r
+    return ledger, wallet, r.position_id
+
+
+def test_restart_keeps_positions_fills_and_wallet_and_starts_the_market_view_empty(tmp_path):
+    """Owner storage repair 2026-10-21: market chatter is transient; trading records survive a restart."""
     path = tmp_path / "j.db"
     s, core = open_state(path)
-    ev = make_trade(mint="A", trader="W1")
-    assert s.record_event(ev)          # persisted by the bus...
-    s.close()                          # ...process dies before the fast-lane handler ran
+    ledger, wallet, pid = _open_position(s, core.tokens)
+    held, balance = ledger.get(pid).token_amount, wallet.balance()
+    s.close()                                                     # restart
     s, core = open_state(path)
-    report = recover(s, core, PositionLedger(s), PaperWallet(s, 1_000))
-    assert report.replayed_events == 1
-    assert core.tokens.get("A").buys == 1 and core.wallets.get("W1").buys == 1
-    assert recover(s, core, PositionLedger(s), PaperWallet(s, 1_000)).replayed_events == 0
-    assert core.tokens.get("A").buys == 1
+    ledger, wallet = PositionLedger(s), PaperWallet(s, 2_000_000_000)
+    report = recover(ledger, wallet)
+    assert report.open_positions == 1 and report.wallet_reconciled
+    assert ledger.get(pid).status is Status.OPEN and ledger.get(pid).token_amount == held
+    assert wallet.balance() == balance
+    assert len(core.tokens) == 0                                  # the market view starts empty: nothing replayed
+    tables = {r[0] for r in s.conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert not tables & {"events", "tokens", "token_traders", "wallets"}
     s.close()
 
 
-def test_applied_events_are_not_applied_again_after_restart(tmp_path):
-    path = tmp_path / "j.db"
-    s, core = open_state(path)
-    for ev in (make_create(mint="A"), make_trade(mint="A")):
-        s.record_event(ev)
-        core.apply(ev)
-    s.close()
-    s, core = open_state(path)
-    assert recover(s, core, PositionLedger(s), PaperWallet(s, 1_000)).replayed_events == 0
-    assert core.tokens.get("A").buys == 1
-    s.close()
-
-
-def test_failed_apply_rolls_back_everything_and_stays_replayable(tmp_path):
-    s, core = open_state(tmp_path / "j.db")
-    ev = make_trade(mint="A", trader="W1")
-    s.record_event(ev)
-    original = core.wallets.apply
-    core.wallets.apply = lambda e: (_ for _ in ()).throw(RuntimeError("disk hiccup"))
-    with pytest.raises(RuntimeError):
-        core.apply(ev)
-    assert core.tokens.get("A") is None            # token update was rolled back in memory too
-    assert len(s.unapplied_events()) == 1          # and the event is still waiting
-    core.wallets.apply = original
-    core.apply(ev)
-    assert core.tokens.get("A").buys == 1 and s.unapplied_events() == []
-    s.close()
-
-
-def test_hard_kill_inside_a_write_loses_nothing_and_double_counts_nothing(tmp_path):
+def test_hard_kill_during_an_exit_with_an_open_position_loses_nothing(tmp_path):
+    """Restart with active positions (owner order §4): a SIGKILL-like death inside the exit leaves the position
+    open with its full quantity and its exit owner, and the wallet reconciles."""
     path = tmp_path / "j.db"
     script = textwrap.dedent(f"""
         import os, sys
         sys.path.insert(0, {str(ROOT)!r})
         from jinx.store import Store
-        from jinx.core_state import CoreState
-        from jinx.registry import TokenRegistry, WalletRegistry
-        from tests.conftest import make_trade
+        from jinx.registry import TokenRegistry
+        from tests.test_recovery import _open_position
         s = Store({str(path)!r})
-        core = CoreState(s, TokenRegistry(s), WalletRegistry(s))
-        events = [make_trade(mint="K", trader=f"W{{i}}", sig=f"K{{i}}", seq=i, recv_ns=i) for i in range(1, 11)]
-        real = core.wallets.apply
-        def dying(e):
-            if e.signature == "K7":
-                os._exit(9)          # SIGKILL-like: no cleanup, mid-transaction
-            return real(e)
-        core.wallets.apply = dying
-        for e in events:
-            s.record_event(e)
-            core.apply(e)
+        ledger, wallet, pid = _open_position(s, TokenRegistry())
+        print(pid, ledger.get(pid).token_amount, wallet.balance(), flush=True)
+        ledger.begin_exit(pid, "X1")
+        os._exit(9)                                               # dies before any sell fill
     """)
     proc = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
     assert proc.returncode == 9, proc.stderr
-    s, core = open_state(path)
-    assert s.event_count() == 7                     # K1..K7 were persisted
-    report = recover(s, core, PositionLedger(s), PaperWallet(s, 1_000))
-    assert report.replayed_events == 1              # K7 was persisted but its apply died
-    assert core.tokens.get("K").buys == 7           # nothing lost, nothing counted twice
-    s.close()
-
-
-def test_sequence_numbers_resume_after_the_last_stored_event(tmp_path):
-    from jinx.core.bus import EventBus
-    s, core = open_state(tmp_path / "j.db")
-    s.record_event(make_trade(seq=500, recv_ns=500))
-    bus = EventBus()
-    report = recover(s, core, PositionLedger(s), PaperWallet(s, 1_000), bus=bus)
-    assert bus.next_seq() > 500 and report.resumed_seq_after == 500
+    pid, held, balance = (int(x) for x in proc.stdout.split())
+    s, _ = open_state(path)
+    ledger, wallet = PositionLedger(s), PaperWallet(s, 2_000_000_000)
+    report = recover(ledger, wallet)
+    assert report.reopened_exits == 1 and report.wallet_reconciled
+    pos = ledger.get(pid)
+    assert pos.status is Status.OPEN and pos.token_amount == held and wallet.balance() == balance
+    assert s.conn.execute("SELECT COUNT(*) FROM fills WHERE side = 'sell'").fetchone()[0] == 0
     s.close()
 
 
@@ -122,7 +98,7 @@ def test_unfilled_paper_reservation_is_released_and_unfinished_exit_returns_to_o
     exiting = led.reserve_entry("I2", "B", budget_lamports=100).position_id
     led.record_buy_fill(exiting, Fill("F2", Side.BUY, 10, 100, 1, 5, True, 1))
     led.begin_exit(exiting, "X2")
-    report = recover(s, core, led, PaperWallet(s, 1_000))
+    report = recover(led, PaperWallet(s, 1_000))
     assert led.get(stuck_open).status is Status.FAILED
     assert led.get(exiting).status is Status.OPEN and led.get(exiting).token_amount == 10
     assert (report.released_unfilled, report.reopened_exits) == (1, 1)
@@ -133,7 +109,7 @@ def test_recovery_reports_a_paper_wallet_that_does_not_reconcile(tmp_path):
     s, core = open_state(tmp_path / "j.db")
     w = PaperWallet(s, 1_000)
     s.conn.execute("UPDATE paper_wallet SET balance_lamports = 999 WHERE id = 1")  # corruption
-    report = recover(s, core, PositionLedger(s), w)
+    report = recover(PositionLedger(s), w)
     assert report.wallet_reconciled is False
     s.close()
 
@@ -150,14 +126,4 @@ def test_health_is_ok_only_when_store_wallet_and_feed_are_healthy(tmp_path):
     assert h["status"] == "degraded"
     s.conn.execute("UPDATE paper_wallet SET balance_lamports = 1 WHERE id = 1")
     assert build_health(s, led, w, adapters=[feed_up], bus_stats={}, now_ns=2)["status"] == "failed"
-    s.close()
-
-
-def test_applying_the_same_stored_event_twice_counts_it_once(tmp_path):
-    s, core = open_state(tmp_path / "j.db")
-    ev = make_trade(mint="A", trader="W1")
-    s.record_event(ev)
-    core.apply(ev)
-    core.apply(ev)  # e.g. recovery replay racing the live bus
-    assert core.tokens.get("A").buys == 1 and core.wallets.get("W1").buys == 1
     s.close()

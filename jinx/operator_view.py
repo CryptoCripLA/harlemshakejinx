@@ -155,7 +155,7 @@ def operator_view(app, now_ns: int | None = None) -> dict:
                     "unrealized_usd": usd(rep["totals"]["unrealized_pnl_lamports"]),
                     "realized_lamports": rep["totals"]["realized_pnl_lamports"],
                     "closed": rep["totals"]["closed"], "open": rep["totals"]["open"], "kind": "simulated (paper)"},
-            "latency": {"fast_lane_ms": percentiles([x / 1e6 for x in app.bus.latency_ns(Lane.FAST)]),
+            "latency": {"fast_lane_ms": app.bus.latency(Lane.FAST).summary(),   # rolling histogram (storage repair)
                         "entries": [t["entry_latency"] for t in rep["trades"][-5:]]},
             "feeds": feeds,
             "usd_rate": None if rate is None else {"rate": str(rate.rate), "source": rate.source,

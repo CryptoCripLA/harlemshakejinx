@@ -152,7 +152,6 @@ def state_view(app: JinxApp) -> dict:
     tokens = sorted(t.mint for t in app.core.tokens.all())
     view = {
         "tokens": app.core.tokens.digest(),
-        "wallets": sorted((_canon(w) for w in app.core.wallets.all()), key=lambda w: w["address"]),
         "early_momentum": {}, "reserve_gates": {}, "graduation": {}, "migration": {},
         "ledger": [_canon(p) for p in app.ledger.all()],
         "paper_wallet": dataclasses.asdict(app.wallet.reconcile()),
@@ -185,7 +184,6 @@ def close(app: JinxApp) -> None:
     if loop is not None and not loop.is_closed():
         loop.run_until_complete(asyncio.sleep(0))
         loop.close()
-    app.market.close()
     app.store.close()
 
 

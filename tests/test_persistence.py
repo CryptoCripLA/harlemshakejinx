@@ -50,7 +50,7 @@ def ledger_activity(store):
     from jinx.paper import PaperExecutor
     from jinx.execution import EntryIntent, ExecutionGateway, ExitIntent
     from jinx import config
-    tokens = TokenRegistry(store)
+    tokens = TokenRegistry()
     tokens.apply(MarketEvent(kind=EventKind.TRADE, source="t", mint="M", signature="S", recv_ns=1, seq=1, trader="A",
                              side=Side.BUY, sol_lamports=10_000_000, token_amount=350_000_000_000,
                              v_sol_lamports=31_000_000_000, v_tokens=1_038_000_000_000_000))
@@ -75,11 +75,13 @@ def test_every_ledger_change_lands_in_the_outbox_in_the_same_transaction(tmp_pat
     store.close()
 
 
-def test_market_events_never_enter_the_outbox(tmp_path):
-    from jinx.core.events import EventKind, MarketEvent, Side
+def test_market_data_never_enters_the_ledger_or_its_outbox(tmp_path):
+    """Storage repair 2026-10-21: the ledger has no market table at all, so nothing market-related can replicate."""
+    from jinx.store import OUTBOX_TABLES
     store = Store(tmp_path / "l.db")
-    store.record_event(MarketEvent(kind=EventKind.TRADE, source="t", mint="M", signature="S", recv_ns=1, seq=1,
-                                   trader="A", side=Side.BUY, sol_lamports=1, token_amount=1))
+    tables = {r[0] for r in store.conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert not tables & {"events", "tokens", "token_traders", "wallets"}
+    assert not set(OUTBOX_TABLES) & {"events", "tokens", "token_traders", "wallets"}
     assert store.conn.execute("SELECT COUNT(*) FROM outbox").fetchone()[0] == 0
     store.close()
 
@@ -163,30 +165,26 @@ def test_database_urls_with_passwords_are_caught_by_the_secret_guard():
     assert not find(PATTERNS, b"postgresql://user@host/db and JINX_DATABASE_URL=<set in /etc/jinx/jinx.env>")
 
 
-def test_research_store_accumulates_wallet_totals_across_ram_eviction_and_prunes(fresh_pg):
-    """Railway research store (owner order 2026-10-21): totals keep adding up after a wallet leaves RAM and returns;
-    retention removes wallets unseen for the retention window and old performance samples."""
+def test_research_store_writes_performance_samples_only_and_retention_expires_old_wallet_rows(fresh_pg):
+    """Storage repair 2026-10-21: "Research history should be obtained from GMGN when needed, not copied into our
+    local databases". No observed-wallet totals are written any more; rows from earlier builds are not deleted
+    wholesale, the retention pass expires them."""
     import psycopg
     from jinx.persistence.research import ResearchStore
-    from jinx.registry import WalletState
     day = 86_400 * 1_000_000_000
     now = 100 * day
     rs = ResearchStore(fresh_pg, wallet_retention_days=30, perf_retention_days=30)
-    a1 = WalletState("A", buys=2, sells=1, buy_lamports=20, sell_lamports=5, first_time_ns=now - day, last_time_ns=now)
-    old = WalletState("OLD", buys=1, buy_lamports=1, first_time_ns=now - 40 * day, last_time_ns=now - 40 * day)
-    assert asyncio.run(rs.flush([a1, old], {"receive_to_state_ms": {"p99": 1.0}})) == 2
-    a2 = WalletState("A", buys=5, sells=1, buy_lamports=50, sell_lamports=5, first_time_ns=now - day, last_time_ns=now + 1)
-    assert asyncio.run(rs.flush([a2, old])) == 1                      # only A changed: +3 buys, +30 lamports
-    a3 = WalletState("A", buys=1, buy_lamports=7, first_time_ns=now + 9, last_time_ns=now + 9)   # evicted, came back
-    assert asyncio.run(rs.flush([a3])) == 1
+    assert asyncio.run(rs.flush({"receive_to_state_ms": {"p99": 1.0}})) == 1
+    assert asyncio.run(rs.flush(None)) == 0
     with psycopg.connect(fresh_pg) as c:
-        assert c.execute("SELECT buys, sells, buy_lamports, first_time_ns, last_time_ns FROM wallet_stats"
-                         " WHERE address = 'A'").fetchone() == (6, 1, 57, now - day, now + 9)
+        assert c.execute("SELECT COUNT(*) FROM wallet_stats").fetchone()[0] == 0
         assert c.execute("SELECT COUNT(*) FROM perf_samples").fetchone()[0] == 1
+        c.execute("INSERT INTO wallet_stats (address, last_time_ns) VALUES ('LEGACY_OLD', %s), ('LEGACY_NEW', %s)",
+                  (now - 40 * day, now - day))                     # left by an earlier build
     pruned = asyncio.run(rs.prune(now))
     assert pruned["wallets"] == 1 and rs.stats["db_bytes"] > 0
     with psycopg.connect(fresh_pg) as c:
-        assert [r[0] for r in c.execute("SELECT address FROM wallet_stats")] == ["A"]
+        assert [r[0] for r in c.execute("SELECT address FROM wallet_stats")] == ["LEGACY_NEW"]
 
 
 def test_replicator_resync_restores_a_cleared_outbox(fresh_pg, tmp_path):

@@ -13,10 +13,17 @@ T = TypeVar("T")
 
 
 class MintTable(Generic[T]):
+    """Least recently active mint first. A mint JINX holds is never evicted to meet the cap or the idle time-out: an
+    open position's evidence outlives any market-cache limit. The held set comes from `held_provider` (the ledger's
+    open and pending positions), asked at the moment something is about to be evicted, so a position opened since
+    the last maintenance pass is protected too; `expire` also refreshes it."""
+
     def __init__(self, factory: Callable[[str], T], max_mints: int, idle_ttl_ns: int,
                  on_evict: Callable[[str, T], None] | None = None) -> None:
         self.factory, self.max_mints, self.idle_ttl_ns, self.on_evict = factory, max_mints, idle_ttl_ns, on_evict
         self._rows: OrderedDict[str, tuple[int, T]] = OrderedDict()
+        self.held: frozenset[str] = frozenset()
+        self.held_provider: Callable[[], frozenset] | None = None
         self.now_ns = 0
         self.evicted = 0
 
@@ -27,23 +34,54 @@ class MintTable(Generic[T]):
         value = row[1] if row is not None else self.factory(mint)
         self._rows[mint] = (self.now_ns, value)
         self._rows.move_to_end(mint)
-        while len(self._rows) > self.max_mints:
-            self._drop(*self._rows.popitem(last=False))
-        while self._rows:
-            oldest, (seen, _) = next(iter(self._rows.items()))
-            if self.now_ns - seen <= self.idle_ttl_ns:
-                break
-            self._drop(oldest, self._rows.pop(oldest))
+        self._evict()
         return value
+
+    def set(self, mint: str, value: T) -> None:
+        """Replace a tracked mint's state, keeping its activity time (a new mint is marked active now)."""
+        row = self._rows.get(mint)
+        self._rows[mint] = (row[0] if row is not None else self.now_ns, value)
+
+    def expire(self, now_ns: int, held: frozenset = frozenset(), idle_ns: int | None = None) -> int:
+        """Market maintenance: refresh the held set and evict what went idle with no event (`idle_ns` overrides the
+        idle time-out for this pass only). Returns the count."""
+        self.held = frozenset(held)
+        self.now_ns = max(self.now_ns, now_ns)
+        before = self.evicted
+        self._evict(idle_ns)
+        return self.evicted - before
+
+    def _evict(self, idle_ns: int | None = None) -> None:
+        cutoff = self.now_ns - (self.idle_ttl_ns if idle_ns is None else min(idle_ns, self.idle_ttl_ns))
+        skipped, asked = 0, False
+        while self._rows and skipped < len(self._rows):
+            mint, (seen, _) = next(iter(self._rows.items()))
+            if len(self._rows) <= self.max_mints and seen >= cutoff:
+                break
+            if not asked and self.held_provider is not None:     # the current positions, before any eviction
+                self.held, asked = self.held | frozenset(self.held_provider()), True
+            if mint in self.held:
+                self._rows.move_to_end(mint)
+                skipped += 1
+                continue
+            self._drop(mint, self._rows.pop(mint))
 
     def _drop(self, mint: str, row: tuple[int, T]) -> None:
         self.evicted += 1
         if self.on_evict is not None:
             self.on_evict(mint, row[1])
 
+    def discard(self, mint: str) -> None:
+        row = self._rows.pop(mint, None)
+        if row is not None:
+            self._drop(mint, row)
+
     def get(self, mint: str) -> T | None:
         row = self._rows.get(mint)
         return row[1] if row is not None else None
+
+    def __contains__(self, mint: str) -> bool:
+        return mint in self._rows
 
     def items(self) -> Iterator[tuple[str, T]]:
         return ((m, row[1]) for m, row in self._rows.items())
@@ -71,6 +109,10 @@ class RecentIds:
 
     def __len__(self) -> int:
         return len(self._ring)
+
+    def widen(self, cap: int) -> None:
+        """Keep up to `cap` identities from now on (never narrows)."""
+        self.cap = max(self.cap, cap)
 
     def add(self, ident: int, t: int = 0) -> int | None:
         self._ring.append(ident)

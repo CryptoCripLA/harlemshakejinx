@@ -34,7 +34,7 @@ def test_upgrade_from_v9_keeps_every_row_and_adds_the_phase3_columns(tmp_path):
         import pytest
         pytest.skip("main's v9 store.py is not available in this checkout")
     s = Store(path)
-    assert s.schema_version() == SCHEMA_VERSION == 10
+    assert s.schema_version() == SCHEMA_VERSION >= 10       # v11 (storage repair) builds on v10
     for tbl, cols in PHASE3_COLUMNS.items():
         have = {r[1] for r in s.conn.execute(f"PRAGMA table_info({tbl})")}
         assert {c for c, _ in cols} <= have
@@ -45,5 +45,5 @@ def test_upgrade_from_v9_keeps_every_row_and_adds_the_phase3_columns(tmp_path):
     assert tuple(s.conn.execute("SELECT sol_lamports, quote_lamports FROM fills").fetchone()) == (100, None)
     s.close()
     s2 = Store(path)                                      # idempotent on the next open
-    assert s2.schema_version() == 10 and PositionLedger(s2).get(1).token_amount == 7
+    assert s2.schema_version() == SCHEMA_VERSION and PositionLedger(s2).get(1).token_amount == 7
     s2.close()

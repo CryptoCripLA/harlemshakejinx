@@ -110,7 +110,7 @@ def test_f2_background_lookups_are_bounded_and_deduplicated(tmp_path):
         return n
     assert asyncio.run(main()) == 5
     assert app.background_stats["shed"] == 90 and app.background_stats["deduplicated"] == 5
-    app.market.close(); app.store.close()
+    app.store.close()
 
 
 # ---- F3 (HIGH): per-token lifecycle lists are bounded ----------------------------------------------------------
@@ -208,7 +208,7 @@ def test_f5_the_engine_reads_the_trackers_current_evidence(tmp_path):
     assert view["holder_concentration"]["verified"]["source"] == "gmgn.getTokenTopHolders"
     latest = app.intel_health()["migration"]["latest"][-1]
     assert latest["mint"] == "MintApump" and latest["verified"] is True
-    app.market.close(); app.store.close()
+    app.store.close()
 
 
 # ---- F6 (MEDIUM): conflicting pools are adjudicated, not decided by arrival order -------------------------------
@@ -251,12 +251,14 @@ def test_f7_duplicate_deliveries_do_not_inflate_migration_evidence():
     assert len(ev.competing_early_transactions) == 2
 
 
-def test_f7_the_holders_at_the_migration_include_earlier_buys_delivered_after_it():
+def test_f7_a_creators_trade_from_before_the_migration_delivered_after_it_counts_as_before():
+    """F7's rule (late delivery converges on the same evidence), applied to what the storage repair still tallies per
+    wallet: the creator. Other wallets' pre-migration holdings come from GMGN's verified balances (2026-10-21)."""
     m = MigrationTracker()
     feed(m, [create(dev="DEV", slot=100), migrate(pool_id=POOL, t_ms=MIG_T, slot=499),
-             buy("W1", 1, v_quote=60.0, slot=110, tokens=300_000_000.0)])     # a historical buy, delivered late
-    at = m.evidence("MintApump").holder_distribution["observed_trade_flow"]["at_migration"]
-    assert "W1" in at["top"]
+             sell("DEV", 1, v_quote=60.0, slot=110, sol=0.7)])                   # a historical sell, delivered late
+    dev = m.evidence("MintApump").developer_selling
+    assert dev["before"]["sells"] == 1 and dev["after"]["sells"] == 0
 
 
 # ---- F8 (MEDIUM): the largest sells survive the retention caps ------------------------------------------------

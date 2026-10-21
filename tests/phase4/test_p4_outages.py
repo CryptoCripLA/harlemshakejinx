@@ -115,10 +115,6 @@ def test_an_unreachable_pumpapi_keeps_retrying_and_the_reserve_check_fails_close
     h.close(app)
 
 
-@pytest.mark.xfail(strict=True, reason="FINDING P4-F1 (2026-10-21): jinx/health.py::build_health judges feed health from "
-                   "the PumpPortal (mako) adapter only, so /health stays 'ok' while the PumpAPI trade feed that Early "
-                   "Momentum depends on is down. Owner of jinx/health.py: storage session local_f5744230. Remove this "
-                   "marker when fixed.")
 def test_health_reports_degraded_when_the_pumpapi_trade_feed_is_down(tmp_path):
     """The trade feed is the one Early Momentum depends on. While it is down every entry is refused (above); the
     top-level health status must say so too, not only a nested adapter field."""

@@ -13,7 +13,7 @@ from jinx.ledger import PositionLedger, Status
 from jinx.modes import Mode
 from jinx.paper import CurveFees, PaperExecutor, PaperWallet
 from jinx.recovery import recover
-from jinx.registry import TokenRegistry, WalletRegistry
+from jinx.registry import TokenRegistry
 from jinx.store import SCHEMA_VERSION, Store
 from tests.conftest import make_create, make_trade
 
@@ -46,12 +46,12 @@ def migrated(tmp_path):
     path = tmp_path / "v1.db"
     v1_with_exits(path)
     s = Store(path)
-    reg = TokenRegistry(s)
+    reg = TokenRegistry()
     reg.apply(make_create(mint="A"))
     reg.apply(make_trade(mint="A", v_sol=32_000_000_000, v_tokens=1_000_000_000_000_000))
     ledger = PositionLedger(s)
     wallet = PaperWallet(s, 2_000_000_000)
-    recover(s, CoreState(s, reg, WalletRegistry(s)), ledger, wallet)  # v1 left position 1 PENDING_CLOSE
+    recover(ledger, wallet)  # v1 left position 1 PENDING_CLOSE
     gw = ExecutionGateway(s, ledger, PaperExecutor(s, ledger, wallet, reg, CurveFees(95, 5), 5_000))
     yield s, ledger, gw
     s.close()
@@ -156,21 +156,22 @@ def test_health_is_degraded_while_an_unsubscribe_is_pending(store):
 def test_state_latency_is_recorded_only_when_the_apply_succeeds(store):
     from jinx.core.bus import EventBus, Lane
 
-    core = CoreState(store, TokenRegistry(store), WalletRegistry(store))
-    real = core.wallets.apply
-    core.wallets.apply = lambda e: (_ for _ in ()).throw(RuntimeError("apply failed"))
+    core = CoreState(TokenRegistry())
+    real = core.tokens.apply
+    core.tokens.apply = lambda e: (_ for _ in ()).throw(RuntimeError("apply failed"))
+    bus = EventBus()
+    bus.subscribe(Lane.FAST, core.apply, name="core_state")
 
     async def main():
-        bus = EventBus(persist=store.record_event)
-        bus.subscribe(Lane.FAST, core.apply, name="core_state")
         task = asyncio.create_task(bus.run())
         await bus.publish(make_trade(mint="A"))
         await bus.drain()
+        failed = (bus.latency(Lane.FAST).summary()["n"], core.receive_latency().summary()["n"],
+                  dict(bus.stats["handler_errors"]))
+        core.tokens.apply = real
+        await bus.publish(make_trade(mint="A"))
+        await bus.drain()
         task.cancel()
-        return bus
-    bus = asyncio.run(main())
-    assert len(store.unapplied_events()) == 1
-    assert bus.latency_ns(Lane.FAST) == [] and core.receive_latency_ns() == []
-    core.wallets.apply = real
-    assert core.apply_pending() == 1
-    assert len(core.receive_latency_ns()) == 1   # counted once, when the state was actually applied
+        return failed
+    assert asyncio.run(main()) == (0, 0, {"core_state": 1})
+    assert core.receive_latency().summary()["n"] == 1   # counted once, when the state was actually applied

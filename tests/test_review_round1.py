@@ -12,7 +12,7 @@ from jinx.ops.entry_slots import set_entry_slots
 from jinx.paper import CurveFees, PaperExecutor, PaperWallet
 from jinx.recovery import recover
 from jinx.core_state import CoreState
-from jinx.registry import TokenRegistry, WalletRegistry
+from jinx.registry import TokenRegistry
 from tests.conftest import make_create, make_trade
 
 START = 2_000_000_000
@@ -21,7 +21,7 @@ START = 2_000_000_000
 @pytest.fixture
 def rig(store):
     set_mode(store, Mode.AUTO)
-    reg = TokenRegistry(store)
+    reg = TokenRegistry()
     reg.apply(make_create(mint="A"))
     reg.apply(make_trade(mint="A", v_sol=32_000_000_000, v_tokens=1_000_000_000_000_000))
     ledger = PositionLedger(store)
@@ -83,7 +83,7 @@ def test_retrying_a_failed_entry_returns_the_original_failure(rig):
 def test_retrying_an_entry_released_by_recovery_is_not_reported_as_executed(rig):
     store, reg, ledger, wallet, gw = rig
     ledger.reserve_entry("E1", "A", budget_lamports=1_000)  # reserved, then the process died
-    recover(store, CoreState(store, reg, WalletRegistry(store)), ledger, wallet)
+    recover(ledger, wallet)
     r = gw.submit_entry(EntryIntent("E1", "A", budget_lamports=1_000))
     assert not r.ok and r.reason == "RECOVERED_UNFILLED"
 
@@ -140,7 +140,7 @@ def test_replayed_partial_exit_after_restart_is_already_applied_and_not_stuck(ri
     p = gw.submit_entry(EntryIntent("E1", "A", budget_lamports=1_000_000)).position_id
     half = ledger.get(p).token_amount // 2
     gw.submit_exit(ExitIntent("X1", p, token_amount=half))
-    recover(store, CoreState(store, reg, WalletRegistry(store)), ledger, wallet)
+    recover(ledger, wallet)
     before = ledger.get(p).token_amount
     r = gw.submit_exit(ExitIntent("X1", p, token_amount=half))
     assert r.ok and r.reason == "ALREADY_APPLIED"
@@ -210,12 +210,15 @@ def test_live_event_survives_a_transient_write_failure_through_makos_dispatcher(
 
 
 # ---- Finding 6: health and supervision -------------------------------------------
-def test_health_is_degraded_while_stored_events_wait_to_be_applied(store):
+def test_health_has_no_stored_market_backlog_and_counts_events_from_the_bus(store):
+    """Storage repair 2026-10-21 supersedes the stored-event backlog check: market chatter is RAM only, so there is
+    no unapplied event to wait for; the ledger store holds no market rows."""
     from jinx.health import build_health
     ledger, wallet = PositionLedger(store), PaperWallet(store, 1_000)
-    store.record_event(make_trade(mint="A"))  # stored, not yet applied
     feed = {"adapter": "mako", "connected": True, "last_message_ns": 1}
-    assert build_health(store, ledger, wallet, [feed], {}, now_ns=2)["status"] == "degraded"
+    h = build_health(store, ledger, wallet, [feed], {"published": 7}, now_ns=2)
+    assert h["status"] == "ok" and h["store"]["events"] == 7 and h["store"]["legacy_market_rows"] == {}
+    assert "unapplied" not in h["store"]
 
 
 def test_health_is_degraded_while_ingestion_is_stalled_on_writes(store):
