@@ -356,6 +356,11 @@ class PositionLedger:
         self.store.conn.execute("UPDATE positions SET last_mark_lamports=?, last_mark_ns=? WHERE position_id=?",
                                 (value_lamports, ts_ns, position_id))
 
+    def exit_binding(self, intent_id: str) -> int | None:
+        """The token amount an exit intent id was first bound to (None if unbound or bound to the whole position)."""
+        row = self.store.conn.execute("SELECT token_amount FROM exit_intents WHERE intent_id = ?", (intent_id,)).fetchone()
+        return None if row is None else row[0]
+
     def bought_tokens(self, position_id: int) -> int:
         return self.store.conn.execute("SELECT COALESCE(SUM(token_amount), 0) FROM fills WHERE position_id = ?"
                                        " AND side = 'buy'", (position_id,)).fetchone()[0]

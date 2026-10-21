@@ -151,7 +151,7 @@ class PositionMonitor:
         self.ledger.raise_peak(pos.position_id, new_peak, event_ns)   # 3. persist the peak before any sell
         if intent is None:
             return None
-        return self._submit(pos, intent, source, now, event_ns)       # 4. one intent, the existing gateway
+        return self.submit(pos, intent, source, now, event_ns)        # 4. one intent, the existing gateway
 
     def _bigmac(self, ctx: Context) -> tuple[ExitIntent | None, int]:
         pos = ctx.position
@@ -180,7 +180,8 @@ class PositionMonitor:
             quote_status="QUOTED", quote_lamports=ctx.value_lamports, exit_policy=BIGMAC_PAPER)
         return intent, peak
 
-    def _submit(self, pos: Position, intent: ExitIntent, source: str, decided_ns: int, event_ns: int) -> Decision:
+    def submit(self, pos: Position, intent: ExitIntent, source: str, decided_ns: int, event_ns: int) -> Decision:
+        """Record the decision and send the one intent through the gateway. Every exit decider uses this."""
         self.ledger.record_order_event(intent.intent_id, pos.position_id, "sell", "DECIDED", decided_ns,
                                        pos.simulated, detail=json.dumps({"source": source, "signal_ns": event_ns,
                                                                          "reason": intent.reason_code}))
