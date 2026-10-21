@@ -1,0 +1,193 @@
+{
+ "what": "Phase 4 V14/S7 per-stage latency; LOCAL processing except provider_to_receipt; not order landing time (paper only, no GMGN order placed)",
+ "capture": "pumpapi-live-20261021.jsonl.gz",
+ "speed": 1.0,
+ "commit": "03ec4b822fd4b0a9fc9d7cc0f9a3f95e888dfc72",
+ "host": "jinx-nyc",
+ "utc": "2026-10-21T15:05:18Z",
+ "stages_ms": {
+  "receive_normalize": {
+   "p50": 0.0842,
+   "p95": 0.1364,
+   "p99": 0.1622,
+   "max": 1.6784,
+   "n": 1200
+  },
+  "detection": {
+   "p50": 0.0522,
+   "p95": 0.0835,
+   "p99": 0.1009,
+   "max": 0.1009,
+   "n": 38
+  },
+  "entry_decision": {
+   "p50": 0.0336,
+   "p95": 0.0664,
+   "p99": 0.1221,
+   "max": 0.1221,
+   "n": 38
+  },
+  "paper_submission": {
+   "p50": 0.546,
+   "p95": 1.0151,
+   "p99": 1.5174,
+   "max": 1.5174,
+   "n": 38
+  },
+  "receipt_to_paper_fill": {
+   "p50": 1.4261,
+   "p95": 2.1944,
+   "p99": 2.3825,
+   "max": 2.3825,
+   "n": 38
+  },
+  "admission_to_state": {
+   "p50": 0.6003,
+   "p95": 2.0601,
+   "p99": 2.959,
+   "max": 22.6286,
+   "n": 1211
+  },
+  "handler_core_state": {
+   "p50": 0.1066,
+   "p95": 0.1812,
+   "p99": 0.2847,
+   "max": 22.261,
+   "n": 1211
+  },
+  "handler_early_momentum": {
+   "p50": 0.0333,
+   "p95": 0.0864,
+   "p99": 1.5689,
+   "max": 5.3835,
+   "n": 1211
+  },
+  "handler_graduation": {
+   "p50": 0.0307,
+   "p95": 0.0494,
+   "p99": 0.0731,
+   "max": 1.3268,
+   "n": 1211
+  },
+  "handler_migration": {
+   "p50": 0.0596,
+   "p95": 0.1071,
+   "p99": 0.1406,
+   "max": 3.9281,
+   "n": 1211
+  },
+  "provider_to_receipt": {
+   "p50": 726.1667,
+   "p95": 1546.6049,
+   "p99": 1648.8765,
+   "max": 1691.2432,
+   "n": 1200
+  },
+  "_counts": {
+   "records": 1200,
+   "events_published": 1211,
+   "detections": 38,
+   "paper_probes": 38,
+   "background_dropped": 0,
+   "handler_errors": {}
+  }
+ },
+ "ranked_by_p95": [
+  {
+   "stage": "provider_to_receipt",
+   "p50_ms": 726.1667,
+   "p95_ms": 1546.6049,
+   "max_ms": 1691.2432
+  },
+  {
+   "stage": "receipt_to_paper_fill",
+   "p50_ms": 1.4261,
+   "p95_ms": 2.1944,
+   "max_ms": 2.3825
+  },
+  {
+   "stage": "admission_to_state",
+   "p50_ms": 0.6003,
+   "p95_ms": 2.0601,
+   "max_ms": 22.6286
+  },
+  {
+   "stage": "paper_submission",
+   "p50_ms": 0.546,
+   "p95_ms": 1.0151,
+   "max_ms": 1.5174
+  },
+  {
+   "stage": "receive_normalize",
+   "p50_ms": 0.0842,
+   "p95_ms": 0.1364,
+   "max_ms": 1.6784
+  },
+  {
+   "stage": "detection",
+   "p50_ms": 0.0522,
+   "p95_ms": 0.0835,
+   "max_ms": 0.1009
+  },
+  {
+   "stage": "entry_decision",
+   "p50_ms": 0.0336,
+   "p95_ms": 0.0664,
+   "max_ms": 0.1221
+  }
+ ],
+ "external_recorded": {
+  "pumpapi_provider_to_receipt_10min_soak": {
+   "p50": 49.9,
+   "p95": 59.9,
+   "n": 2000,
+   "source": "docs/evidence/pumpapi_soak_20261021.json"
+  },
+  "rugcheck_http_jinx_nyc": {
+   "n": 16,
+   "p50": 85.1,
+   "p95": 683.5,
+   "p99": 683.5,
+   "source": "docs/evidence/rugcheck_check_20261021.json"
+  },
+  "rugcheck_http_contabo": {
+   "n": 97,
+   "p50": 88.8,
+   "p95": 257.1,
+   "p99": 329.1,
+   "source": "docs/evidence/screening_contabo_20261021.json"
+  },
+  "safety_screen_attempts_contabo": {
+   "examples": [
+    {
+     "verdict": "FAIL",
+     "checks": {
+      "honeypot": "PASS",
+      "mint_authority": "FAIL",
+      "freeze_authority": "FAIL",
+      "rugcheck": "not requested (GMGN veto)"
+     },
+     "latency_ms": 130.6
+    },
+    {
+     "verdict": "PASS",
+     "attempts": 2,
+     "latency_ms": 221.4
+    },
+    {
+     "verdict": "PASS",
+     "attempts": 3,
+     "latency_ms": 223.7,
+     "note": "RugCheck had not indexed the token on attempts 1-2"
+    }
+   ],
+   "source": "docs/evidence/screening_contabo_20261021.json"
+  },
+  "rugcheck_indexing_after_creation_s": {
+   "min": 7.9,
+   "max": 10.2,
+   "source": "docs/BLOCKERS.md B-19 (measured live 2026-10-21)",
+   "effect": "the safety verdict, and so any entry, waits until RugCheck has indexed the token"
+  }
+ }
+}
