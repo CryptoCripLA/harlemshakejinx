@@ -65,7 +65,6 @@ ARRIVAL_FIELDS = {
 # pinned by a strict-xfail test in test_p4_replay_determinism.py; the owner deletes the entry here and the marker there
 # in the fixing commit. Every other part must be identical under any delivery order.
 KNOWN_ORDER_DEFECTS = {
-    "whales": "P4-F8",        # discovery candidates taken only from buys that arrived before the migration
     "bundles": "P4-F11",      # a later-slot trade delivered before the creation never marks the bundle final
     "candidates": "P4-F10",   # a detection skipped as never-eligible on an incomplete history is never screened
 }
@@ -183,6 +182,7 @@ def state_view(app: JinxApp) -> dict:
         "tokens": app.core.tokens.digest(),
         "early_momentum": {}, "reserve_gates": {}, "graduation": {}, "migration": {}, "bundles": {},
         "whales": {"tracked": sorted((w, v["source"]) for w, v in app.whales.tracked.items()),
+                   "graduated": sorted(_canon(getattr(app.whales, "_graduated", {}))),
                    "discovery_candidates": sorted(app.whales.discovery_candidates()),
                    "alerts": sorted((a["mint"], a["wallet"], a["signature"], a["ts"]) for a in app.whales.alerts)},
         "candidates": {},

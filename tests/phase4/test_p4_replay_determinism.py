@@ -78,12 +78,9 @@ def _order_independent(baselines, tmp_path, part):
             assert view[part] == baselines[name][1][part], f"{part} differs: {name} seed {seed}"
 
 
-@pytest.mark.xfail(strict=True, reason="FINDING P4-F8 (Codex Phase 4 round 1, finding 4): jinx/intel/whales.py "
-                   "WhaleBook.on_event turns curve buyers into discovery candidates only when the migration arrives; "
-                   "a buy delivered after the migration (with an earlier event time) is never considered, so "
-                   "discovery depends on arrival order (live capture: 38 vs 11 candidates). Owner: storage session "
-                   "local_f5744230.")
 def test_whale_discovery_candidates_do_not_depend_on_delivery_order(baselines, tmp_path):
+    """Was P4-F8 (Codex round 1, finding 4); fixed by the storage repair a6bad05: candidates now come from GMGN's top
+    traders and their start-holding time at each discovery pass, so arrival order cannot change them."""
     _order_independent(baselines, tmp_path, "whales")
 
 

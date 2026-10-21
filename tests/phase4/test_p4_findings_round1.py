@@ -31,31 +31,43 @@ def buys(n, mint="GrowMint", trader=lambda i: "W", slot=7):
 
 # ---- P4-F5: unbounded per-token lists (speed rule S6) -------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason=f"FINDING P4-F5a (Codex round 1, finding 1): jinx/intel/whales.py appends every "
-                   f"tracked-wallet buy to a per-mint list; the cap bounds the number of mints, not the list. Owner: "
-                   f"{STORAGE}.")
+def retained(obj, seen=None) -> int:
+    """Every item held anywhere inside `obj` (containers and object attributes, recursively): a measure that does not
+    depend on how the module lays out its state."""
+    seen = set() if seen is None else seen
+    if id(obj) in seen or isinstance(obj, (str, bytes, int, float, bool, type(None))):
+        return 0
+    seen.add(id(obj))
+    if isinstance(obj, dict):
+        return len(obj) + sum(retained(k, seen) + retained(v, seen) for k, v in obj.items())
+    if isinstance(obj, (list, tuple, set, frozenset)) or type(obj).__name__ == "deque":
+        return len(obj) + sum(retained(v, seen) for v in obj)
+    attrs = list(getattr(obj, "__dict__", {}).values())
+    attrs += [getattr(obj, n) for n in getattr(type(obj), "__slots__", ()) if hasattr(obj, n)]
+    return sum(retained(v, seen) for v in attrs if not callable(v))
+
+
 def test_S6_tracked_wallet_buys_per_token_stop_growing():
+    """Fixed by the storage repair (a6bad05); was P4-F5a (Codex round 1, finding 1)."""
     book = WhaleBook()
     book.track("W", "test", {"why": "labelled test fixture"})
     for ev in buys(10_000):
         book.on_event(ev)
-    at_10k = len(book._tracked_buys.get("GrowMint", []))
+    at_10k = retained(book)
     for ev in buys(20_000)[10_000:]:
         book.on_event(ev)
-    assert len(book._tracked_buys.get("GrowMint", [])) == at_10k          # a plateau, not linear growth
+    assert retained(book) <= at_10k + 16                 # a plateau, not growth with every buy
 
 
-@pytest.mark.xfail(strict=True, reason=f"FINDING P4-F5b (Codex round 1, finding 1): jinx/intel/bundles.py keeps every "
-                   f"buy that arrives before its creation in a per-(mint, slot) list; the cap bounds the keys, not the "
-                   f"list. Owner: {STORAGE}.")
 def test_S6_buys_parked_before_their_creation_stop_growing():
+    """Fixed by the storage repair (a6bad05); was P4-F5b (Codex round 1, finding 1)."""
     tracker = BundleTracker()
     for ev in buys(10_000, trader=lambda i: f"B{i}"):
         tracker.on_event(ev)
-    at_10k = len(tracker._pending.get(("GrowMint", 7), []))
+    at_10k = retained(tracker)
     for ev in buys(20_000, trader=lambda i: f"B{i}")[10_000:]:
         tracker.on_event(ev)
-    assert len(tracker._pending.get(("GrowMint", 7), [])) == at_10k
+    assert retained(tracker) <= at_10k + 16
 
 
 # ---- P4-F9: the daily backup blocks the event loop (speed rules S3/S4) --------------------------------------------

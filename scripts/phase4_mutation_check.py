@@ -96,8 +96,7 @@ MUTATIONS = [
      "import jinx.ledger as l; l.DEFAULT_SLOTS = 2",
      f"{STR}::test_a_burst_of_entry_intents_never_holds_more_positions_than_the_owner_slots[1]"),
     ("dedup_off", "V03/V11 duplicates counted once",
-     "import jinx.core.dedup as d; d.Deduplicator.first_time = lambda self, key: True; "
-     "import jinx.store as st; o = st.Store.record_event; st.Store.record_event = lambda self, ev: (o(self, ev), True)[1]",
+     "import jinx.core.dedup as d; d.Deduplicator.first_time = lambda self, key, now_ns=None: True",
      f"{REP}::test_shuffled_and_resent_delivery_gives_the_identical_state[1-pumpapi-live]"),
 ]
 
