@@ -1,0 +1,30 @@
+{
+  "generated_utc": "2026-10-21T00:40:53Z",
+  "window_s": 240.0,
+  "errors": [],
+  "pumpapi_max_gap_s": 1.0346829990157858,
+  "drops": [
+    "ConnectionClosedError after 50s"
+  ],
+  "pumpapi_connected_s": 209.0,
+  "pumpportal_creations_mid_window": 101,
+  "also_in_pumpapi": 94,
+  "of_which_sol_quoted": 70,
+  "of_which_other_quote": 24,
+  "pumpportal_only_missing_from_pumpapi": [
+    "J53B\u2026pump",
+    "2Hdj\u2026pump",
+    "3Fwt\u2026pump",
+    "B7o6\u2026pump",
+    "CecV\u2026fiF1",
+    "AEm2\u2026Xk5v",
+    "6GmA\u2026UNgx"
+  ],
+  "pumpapi_creations_mid_window": 165,
+  "pumpapi_only": 71,
+  "pumpapi_only_quote_mix": {
+    "sol": 33,
+    "other": 38,
+    "mayhem_mode": 13
+  }
+}

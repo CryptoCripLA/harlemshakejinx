@@ -1,0 +1,135 @@
+{
+  "generated_utc": "2026-10-21T00:24:35Z",
+  "window_s": 610.0,
+  "connections": [
+    {
+      "start_utc": "2026-10-21T00:24:36Z",
+      "seconds": 610.0,
+      "messages": 567378,
+      "end_reason": "stall"
+    }
+  ],
+  "stats": {
+    "received": 567378,
+    "filtered": 353272,
+    "published": 26183,
+    "duplicates": 0,
+    "malformed": 0,
+    "not_quoted_in_sol": 35878,
+    "amm_not_followed": 152250,
+    "connections": 1,
+    "disconnects": 1,
+    "stalls": 1
+  },
+  "messages_per_s": 930.1,
+  "published_per_s": 42.9,
+  "receipt_lag_ms_last_2000": {
+    "p50": 49.9,
+    "p95": 59.9,
+    "n": 2000
+  },
+  "cpu_share_of_one_core": 0.095,
+  "connected_share_of_window": 1.0,
+  "creations_while_connected": {
+    "pumpapi_sol_quoted": 287,
+    "pumpportal": 233,
+    "pumpportal_only": [
+      {
+        "mint": "HCMi\u2026gsUd",
+        "on_chain": "pump create"
+      },
+      {
+        "mint": "BhEn\u2026YoMV",
+        "on_chain": "pump create"
+      },
+      {
+        "mint": "6boG\u20269rgN",
+        "on_chain": "pump create"
+      },
+      {
+        "mint": "81wo\u20269ZZu",
+        "on_chain": "pump create"
+      },
+      {
+        "mint": "QX6j\u2026F1eJ",
+        "on_chain": "pump create"
+      },
+      {
+        "mint": "BNSw\u20269CQC",
+        "on_chain": "pump create"
+      },
+      {
+        "mint": "gZPk\u202645HC",
+        "on_chain": "pump create"
+      },
+      {
+        "mint": "7coA\u2026aUgn",
+        "on_chain": "pump create"
+      },
+      {
+        "mint": "Gknq\u20265yhd",
+        "on_chain": "pump create"
+      },
+      {
+        "mint": "8K6B\u2026bLsw",
+        "on_chain": "pump create"
+      }
+    ],
+    "pumpportal_only_count": 48,
+    "pumpapi_only_sol_quoted_count": 102,
+    "pumpapi_only_sample": [
+      {
+        "mint": "E7rm\u2026pump",
+        "on_chain": "pump create"
+      },
+      {
+        "mint": "4ysH\u2026pump",
+        "on_chain": "pump create"
+      },
+      {
+        "mint": "AvLy\u2026pump",
+        "on_chain": "pump create"
+      },
+      {
+        "mint": "HAHL\u2026pump",
+        "on_chain": "pump create"
+      },
+      {
+        "mint": "9HzG\u2026pump",
+        "on_chain": "pump create"
+      }
+    ]
+  },
+  "migrations_while_connected": {
+    "pumpapi": 13,
+    "pumpportal": 9,
+    "pumpportal_only": [
+      {
+        "mint": "GnM6\u2026pump",
+        "on_chain": "pump create"
+      }
+    ],
+    "pumpapi_only": [
+      {
+        "mint": "De5V\u2026pump",
+        "on_chain": "pump create"
+      },
+      {
+        "mint": "2gJY\u2026pump",
+        "on_chain": "pump create"
+      },
+      {
+        "mint": "8Mug\u2026pump",
+        "on_chain": "pump create"
+      },
+      {
+        "mint": "7DzC\u2026pump",
+        "on_chain": "pump create"
+      },
+      {
+        "mint": "FsvU\u2026pump",
+        "on_chain": "pump create"
+      }
+    ]
+  }
+}

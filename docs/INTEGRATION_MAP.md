@@ -56,7 +56,7 @@ Request latency through the persistent bridge was 95–451 ms per call.
 
 | CHAD trigger / input | Best GMGN source | What GMGN gives | Enough? | Minimum extra |
 |---|---|---|---|---|
-| **Early Momentum**: "3 buys · 3 unique wallets · 30-second window", "3 distinct fee payers", live curve SOL, peak SOL gate | trenches (new_creation, w2), token info `launchpad_progress` (w1), top traders (w5), 1-second candles (Pro only) | polled aggregates (swaps, holders, progress); no per-buy stream with fee-payer wallet and time | **No** | A per-trade stream. The cheapest is PumpPortal's trade stream through the Mako code already built: every pump.fun buy/sell with trader wallet, SOL, tokens and curve reserves. Cost: API key funded with ≥ 0.02 SOL, then 0.01 SOL per 10,000 trades streamed (pumpportal.fun/fees). B-01 |
+| **Early Momentum**: "3 buys · 3 unique wallets · 30-second window", "3 distinct fee payers", live curve SOL, peak SOL gate | GMGN: polled aggregates only. **PumpAPI.io free stream** (verified 2026-10-21) | every curve buy/sell with fee payer (`txSigner`), amounts, curve reserves, slot, ms timestamp; median 50 ms lag | **Yes (free)** with reconnects; PumpPortal's free creations/migrations alongside for coverage | none; storage needs disk or retention (B-18). `docs/PUMPAPI_EVALUATION.md` |
 | **Sybil funder** ("3+ wallets share the same SOL funder") | holder analysis "linked funding" (funded within 60 s) via holders (w5) | holder-level funding links, polled | Partly (post-hoc, polled) | Per-buyer funder lookup on the 3 trigger wallets (RPC) in Phase 2 |
 | **Whale Layer 1** (tracked wallet buys) | track smartmoney / kol (w1), follow-wallet (w10) | recent trades of GMGN-tagged and followed wallets, polled | Usable at polling cadence; latency set by GMGN indexing | Push alternative: PumpPortal `subscribeAccountTrade` (same key as above) |
 | **Whale discovery** (4 h cycle, 40 % win rate, 50/25/25 confidence, 14-day half-life) | wallet stats / profits (w3), activity (w3) | win rate, P&L, activity history | **Yes** (slow path) | — |
@@ -69,7 +69,7 @@ Request latency through the persistent bridge was 95–451 ms per call.
 | **X Scout** | none (GMGN exposes social links, not X analysis data) | — | **No** | X data access (B-05) |
 | **TG Scout** | none | — | **No** | Telegram access + group list (B-06) |
 
-Conclusion: GMGN covers the slow-path intelligence (safety, dev history, wallet scoring and discovery, smart-money tracking, graduation progress) and all execution. It does **not** deliver individual-wallet buy events fast enough for CHAD's Early Momentum trigger. The current free PumpPortal feed (token creations only) **cannot** detect three-wallet momentum: it contains no external-wallet trades. The minimum additional feed is PumpPortal's paid trade stream (B-01), which plugs into the Mako stream JINX already runs.
+Conclusion: GMGN covers the slow-path intelligence (safety, dev history, wallet scoring and discovery, smart-money tracking, graduation progress) and all execution. It does not deliver individual-wallet buy events fast enough for CHAD's Early Momentum trigger. **Since 2026-10-21 that gap is covered free** by the PumpAPI.io stream: every curve and PumpSwap trade with fee payer, reserves, slot and a ~50 ms median lag (`docs/PUMPAPI_EVALUATION.md`). PumpPortal's free creation and migration streams run alongside for coverage. The paid PumpPortal trade stream (B-01) is no longer needed.
 
 ## 5. Latency labels
 

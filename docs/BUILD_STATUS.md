@@ -1,6 +1,6 @@
 # BUILD STATUS — harlemshakejinx
 
-**Current stage: Phase 1 built, including the GMGN integration readiness the owner's 2026-10-20 mandate added (`docs/OWNER_GMGN_MANDATE_20261020.md`). The independent Codex review passed in round 12 (2026-10-20). Phase 1 is at its review gate, waiting for owner acceptance. No Phase 2 work starts without owner approval.**
+**Current stage: Phase 1 accepted by the owner (2026-10-21) after Codex round 12 PASS. Phase 2 (CHAD hunting intelligence) is in progress. Owner directives: `docs/OWNER_GMGN_MANDATE_20261020.md`, `docs/OWNER_DIRECTIVES_20261021.md`.**
 
 How to read the numbers here: paper round trips prove **accounting consistency**, not trading performance. Sub-millisecond figures are **local event processing inside JINX**, never order-execution latency. Since review round 2 the live figure runs from feed receive to state applied, durable write included. Figures recorded earlier (0.22 ms, 0.49 ms) started *after* the durable write and understate local processing. Execution latency is measured in Phase 3 against GMGN's confirmed orders.
 
@@ -36,13 +36,13 @@ Status words: NOT STARTED / IN PROGRESS / TESTING / PASSED / FAILED / BLOCKED. E
 | Live trades from other wallets | BLOCKED | PumpPortal needs a key funded with 0.02 SOL | — | B-01 |
 | GMGN live API access | PASSED | key applied 2026-10-20; `gmgn-cli config --apply` verified | live capability check | B-08 resolved |
 | Runtime host | PASSED (jinx-nyc, existing) | GMGN does not host custom code; jinx-nyc is the minimum existing environment and the GMGN-trusted IP | — | B-10. Railway not provisioned; `Dockerfile`/`railway.json` ready but unused (image not built: no Docker permission) |
-| Independent Codex review | PASSED (round 12) | Codex 0.160.0 on the owner's Windows PC (logged in), read-only, clean GitHub clone | Round 12 on 127d3d5 returned **VERDICT: PASS** with no CRITICAL, HIGH, MEDIUM or LOW findings, and found every current Phase 1 claim supported by code, tests or committed evidence (`docs/audits/phase1-codex-20261020-round12.md`). Rounds 1–11 returned FAIL; every finding was fixed and confirmed (`docs/audits/phase1-codex-20261020-round{1..11}.md`). Not rerun by the reviewer, and so builder evidence only: disk durability and restart tests, the compiled-bridge integration tests, authenticated GMGN calls, and the full 317-test run (it confirmed 317 collected) | Phase 1 is at the review gate; waiting for owner acceptance |
+| Independent Codex review (Phase 1) | PASSED (round 12) | Codex 0.160.0 on the owner's Windows PC (logged in), read-only, clean GitHub clone | Round 12 on 127d3d5 returned **VERDICT: PASS** with no CRITICAL, HIGH, MEDIUM or LOW findings, and found every current Phase 1 claim supported by code, tests or committed evidence (`docs/audits/phase1-codex-20261020-round12.md`). Rounds 1–11 returned FAIL; every finding was fixed and confirmed (`docs/audits/phase1-codex-20261020-round{1..11}.md`). Not rerun by the reviewer, and so builder evidence only: disk durability and restart tests, the compiled-bridge integration tests, authenticated GMGN calls, and the full 317-test run (it confirmed 317 collected) | Phase 1 is at the review gate; waiting for owner acceptance |
 
 ## Phases 2–4
 
 | Phase | Status |
 |---|---|
-| Phase 2 — CHAD intelligence, safety and fast signals | NOT STARTED (waits for Phase 1 approval; see blockers B-01..B-07) |
+| Phase 2 — CHAD intelligence, safety and fast signals | IN PROGRESS: Phase 1 accepted by the owner 2026-10-21. Done so far: the free PumpAPI feed adapter (PASS for Early Momentum's raw events, `docs/PUMPAPI_EVALUATION.md`) and PumpPortal's free migration stream. Completeness requirements are in `docs/SOURCE_FIDELITY_MATRIX.md` §B2 |
 | Phase 3 — Size, fire, exit and realized-profit accounting | NOT STARTED |
 | Phase 4 — Hardening, full simulation and independent audit | NOT STARTED |
 

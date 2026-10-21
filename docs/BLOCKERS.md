@@ -2,7 +2,8 @@
 
 Each entry: what is blocked, the evidence, what is needed, and one reversible option. Work that does not depend on a blocker continues.
 
-## B-01 PumpPortal trade stream needs a funded API key (blocks live trades in Phase 1 capture; needed for Phase 2 signals)
+## B-01 PumpPortal trade stream needs a funded API key — RESOLVED 2026-10-21 by the free PumpAPI stream (no purchase)
+- Resolution: PumpAPI.io's free stream delivers every bonding-curve and PumpSwap trade with the fee payer, amounts, reserves, slot and a millisecond timestamp. PASS for Early Momentum's raw events (`docs/PUMPAPI_EVALUATION.md`). The paid PumpPortal trade stream is not needed. The history below is kept.
 - Evidence: PumpPortal replied on 2026-10-20: "'subscribeTokenTrade' and 'subscribeAccountTrade' methods are only available when connecting with an API key funded with at least 0.02 SOL." Mako's `pumpportal.py` predates this and assumes free trade streams.
 - Effect now: the live feed carries token creations only (each including the creator's initial buy). Health reports `trade_stream: BLOCKED`.
 - GMGN checked first (owner directive 2026-10-20): GMGN's API is polled request/response with plan rate limits. It gives aggregates (swaps, holders, curve progress) and smart-money/KOL trade lists, but no per-buy stream with the fee-payer wallet and time. It cannot drive CHAD's "3 buys · 3 unique wallets · 30-second window" trigger. See `docs/INTEGRATION_MAP.md` §4.
@@ -34,7 +35,8 @@ safety 0–100 formula and pass threshold; momentum "stall" and "sustained volum
 ## B-06 TG Scout has no data source among the four approved repos
 - Needed: a Telegram account/API credentials for JINX and the owner's list of alpha groups.
 
-## B-07 Helius gRPC (CHAD Bot 5 and Bot 10 "on-chain gRPC stream")
+## B-07 Helius gRPC (CHAD Bot 5 and Bot 10 "on-chain gRPC stream") — data need covered free
+- 2026-10-21: the free PumpAPI stream carries bonding-curve reserves (`vQuoteInBondingCurve`, `vTokensInBondingCurve`) on every curve trade, delivered with a median 50 ms lag. Helius is not needed for the data. Replacing CHAD's named source is the owner's choice; history below.
 - CHAD names Helius gRPC. GMGN gives curve progress only by polling (`launchpad_progress`). The PumpPortal trade stream (B-01) carries curve reserves on every trade, which covers the same data without Helius.
 - Needed: the owner's choice between Helius (paid) as CHAD names it, or B-01's stream as the source of curve data.
 
