@@ -228,7 +228,7 @@ class EarlyMomentum:
                  max_buys_per_mint: int = MAX_BUYS_PER_MINT, max_funding: int = MAX_FUNDING) -> None:
         self.notify, self.request_funders, self.clock_ns = notify, request_funders, clock_ns
         self.max_buys_per_mint, self.max_funding = max_buys_per_mint, max_funding
-        self._mints: MintTable[_Mint] = MintTable(_Mint, max_mints, int(idle_ttl_s * 1_000_000_000),
+        self._mints: MintTable[_Mint] = MintTable(lambda _mint: _Mint(), max_mints, int(idle_ttl_s * 1_000_000_000),
                                                   on_evict=self._unlink)
         self._funding: OrderedDict[str, Funding] = OrderedDict()
         self._wallet_mints: dict[str, set[str]] = {}
@@ -320,7 +320,12 @@ class EarlyMomentum:
                 held = sorted(set(st.buys) | set(st.window), key=lambda x: x.key)
                 window = first_window(held)
                 if window is not None and window[-1].key <= st.window[-1].key and window != st.window:
+                    known = {b.fee_payer for b in st.window}
                     self._set_window(mint, st, window)
+                    added = tuple(dict.fromkeys(b.fee_payer for b in window if b.fee_payer not in known))
+                    st.sybil = self._sybil_status(self._build(mint, st))
+                    if added:
+                        self._call(self.request_funders, mint, added)
             return []
         window = first_window(st.buys)
         if window is None:

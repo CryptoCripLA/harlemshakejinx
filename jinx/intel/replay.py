@@ -17,6 +17,7 @@ from typing import Iterable
 from jinx.core.events import MarketEvent
 from jinx.intel.early_momentum import EarlyMomentum, EarlyMomentumEvidence
 from jinx.intel.graduation import GraduationTracker
+from jinx.intel.migration import MigrationEvidence, MigrationTracker
 
 
 def percentiles(values) -> dict:
@@ -32,6 +33,8 @@ class ReplayRun:
     momentum: list[EarlyMomentumEvidence] = field(default_factory=list)
     early_momentum: EarlyMomentum | None = None
     graduation: GraduationTracker | None = None
+    migration: MigrationTracker | None = None
+    migrations: list[MigrationEvidence] = field(default_factory=list)
     curve_mints: set[str] = field(default_factory=set)
     processing_ns: dict[str, list[int]] = field(default_factory=dict)
     events: int = 0
@@ -68,7 +71,25 @@ class ReplayRun:
                 "blocking": sorted({b for e in em for b in e.blocking}),
             },
             "graduation": self._graduation_report(),
+            "migration": self._migration_report(),
         }
+
+    def _migration_report(self) -> dict:
+        first = {}
+        for e in self.migrations:
+            first.setdefault(e.mint, e)
+        verified = {e.mint: e for e in self.migrations if e.verified}
+        finals = [self.migration.evidence(m) for m in first]
+        return {"migrations": len(first), "verified": len(verified),
+                "signal_delay_ms": percentiles([(e.observed_ns - e.event_ns + e.processing_ns) / 1e6
+                                                for e in first.values()]),
+                "migration_to_first_verified_trade_ms": percentiles(
+                    [e.first_verified_liquidity["ms_after_migration"] for e in verified.values()]),
+                "slots_to_first_verified_trade": percentiles(
+                    [e.first_verified_liquidity["slots_after_migration"] for e in verified.values()
+                     if e.first_verified_liquidity["slots_after_migration"] is not None]),
+                "unverifiable": sum(e.migration.pool_id is None for e in finals),
+                "foreign_pool_trades": sum(e.foreign_pool_trades for e in finals)}
 
     def _graduation_report(self) -> dict:
         finals = [e for e in (self.graduation.evidence(m) for m in self.curve_mints) if e is not None]
@@ -81,8 +102,9 @@ class ReplayRun:
 
 
 def replay_events(deliveries: Iterable[list[MarketEvent] | None]) -> ReplayRun:
-    run = ReplayRun(early_momentum=EarlyMomentum(), graduation=GraduationTracker())
-    modules = {"early_momentum": run.early_momentum.on_event, "graduation": run.graduation.on_event}
+    run = ReplayRun(early_momentum=EarlyMomentum(), graduation=GraduationTracker(), migration=MigrationTracker())
+    modules = {"early_momentum": run.early_momentum.on_event, "graduation": run.graduation.on_event,
+               "migration": run.migration.on_event}
     run.processing_ns = {name: [] for name in modules}
     for events in deliveries:
         if events is None:
@@ -98,4 +120,6 @@ def replay_events(deliveries: Iterable[list[MarketEvent] | None]) -> ReplayRun:
                 run.processing_ns[name].append(time.perf_counter_ns() - t0)
                 if name == "early_momentum":
                     run.momentum.extend(out)
+                elif name == "migration":
+                    run.migrations.extend(out)
     return run

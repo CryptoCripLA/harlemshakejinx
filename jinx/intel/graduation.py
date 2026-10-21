@@ -148,7 +148,7 @@ class GraduationTracker:
     def __init__(self, score_mapping: Callable[[float], float] | None = None, max_mints: int = MAX_MINTS,
                  idle_ttl_s: float = IDLE_TTL_S) -> None:
         self.score_mapping = score_mapping
-        self._curves: MintTable[_Curve] = MintTable(_Curve, max_mints, int(idle_ttl_s * 1_000_000_000))
+        self._curves: MintTable[_Curve] = MintTable(lambda _mint: _Curve(), max_mints, int(idle_ttl_s * 1_000_000_000))
         self.stats = {"readings": 0, "late_readings": 0, "score_errors": 0}
 
     def on_event(self, ev: MarketEvent) -> list[GraduationEvidence]:

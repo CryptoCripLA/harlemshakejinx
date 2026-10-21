@@ -12,7 +12,7 @@ T = TypeVar("T")
 
 
 class MintTable(Generic[T]):
-    def __init__(self, factory: Callable[[], T], max_mints: int, idle_ttl_ns: int,
+    def __init__(self, factory: Callable[[str], T], max_mints: int, idle_ttl_ns: int,
                  on_evict: Callable[[str, T], None] | None = None) -> None:
         self.factory, self.max_mints, self.idle_ttl_ns, self.on_evict = factory, max_mints, idle_ttl_ns, on_evict
         self._rows: OrderedDict[str, tuple[int, T]] = OrderedDict()
@@ -23,7 +23,7 @@ class MintTable(Generic[T]):
         """The mint's state (created if new), marked active at `recv_ns`; evicts over the cap and idle mints."""
         self.now_ns = max(self.now_ns, recv_ns)
         row = self._rows.get(mint)
-        value = row[1] if row is not None else self.factory()
+        value = row[1] if row is not None else self.factory(mint)
         self._rows[mint] = (self.now_ns, value)
         self._rows.move_to_end(mint)
         while len(self._rows) > self.max_mints:

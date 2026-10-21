@@ -78,3 +78,16 @@ def test_graduation_reads_every_curve_mint_and_converges_under_reordering():
     report = base.report()
     assert report["graduation"]["mints"] == len(curve_mints) and report["graduation"]["not_standard_curves"] == 26
     assert report["per_event_processing_us"]["graduation"]["n"] == report["events"]
+
+
+def test_the_lifecycle_feed_follows_every_curve_mint_and_infers_no_migration():
+    """The capture holds no migration, so none may appear: graduation is never inferred from prices or progress."""
+    from jinx.core.lifecycle import State
+    run = replay_capture(RECORDS)
+    curve_mints = {r["raw"]["mint"] for r in RECORDS if r["raw"]["pool"] == "pump"}
+    states = {run.migration.lifecycle(m).state for m in curve_mints}
+    assert states <= {State.NEWLY_DETECTED, State.ON_BONDING_CURVE} and State.ON_BONDING_CURVE in states
+    assert all(run.migration.evidence(m) is None for m in curve_mints)
+    report = run.report()
+    assert report["migration"]["migrations"] == 0
+    assert report["per_event_processing_us"]["migration"]["n"] == report["events"]

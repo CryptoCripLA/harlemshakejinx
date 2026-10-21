@@ -227,6 +227,15 @@ def test_the_funder_investigation_is_requested_at_detection():
     assert asked == [("MintApump", ("A", "B", "C"))]
 
 
+def test_a_wallet_that_joins_the_window_late_is_also_investigated():
+    asked = []
+    em = EarlyMomentum(request_funders=lambda mint, wallets: asked.append(wallets))
+    feed(em, [fresh(), buy("A", 0), buy("B", 10), buy("C", 20)])
+    em.on_event(one(buy("D", 5)))                         # happened earlier: the window becomes A, D, B
+    assert [b.fee_payer for b in em.evidence("MintApump").window] == ["A", "D", "B"]
+    assert asked == [("A", "B", "C"), ("D",)]
+
+
 def test_the_creators_buy_counts_and_is_flagged():
     em = EarlyMomentum()
     [ev] = feed(em, [create(dev="DEV"), buy("A", 1), buy("B", 2)])
