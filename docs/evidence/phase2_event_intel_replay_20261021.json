@@ -1,0 +1,50 @@
+{
+ "capture": "pumpapi-live-20261021.jsonl.gz",
+ "records": 1200,
+ "commit": "8955a52",
+ "host": "jinx-nyc",
+ "python": "3.12.3",
+ "generated_utc": "2026-10-21T03:50:07Z",
+ "events": 1211,
+ "refused": 0,
+ "per_event_processing_us": {
+  "early_momentum": {
+   "p50": 8.329,
+   "p95": 20.98,
+   "p99": 46.05,
+   "max": 141.02,
+   "n": 1211
+  }
+ },
+ "early_momentum": {
+  "detections": 38,
+  "feed_delay_ms": {
+   "p50": 671.623016,
+   "p95": 1458.596888,
+   "p99": 1537.564913,
+   "max": 1537.564913,
+   "n": 38
+  },
+  "processing_us": {
+   "p50": 13.549,
+   "p95": 22.379,
+   "p99": 31.34,
+   "max": 31.34,
+   "n": 38
+  },
+  "detection_delay_ms": {
+   "p50": 671.634276,
+   "p95": 1458.616799,
+   "p99": 1537.577964,
+   "max": 1537.577964,
+   "n": 38
+  },
+  "trade_permitted": 0,
+  "blocking": [
+   "curve_gate_0_5_to_10_sol",
+   "curve_gate_below_35_sol",
+   "peak_sol_gate",
+   "sybil_funder"
+  ]
+ }
+}

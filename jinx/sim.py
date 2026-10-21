@@ -102,14 +102,36 @@ async def _feed(pipe: _Pipeline, indexed: list[tuple[int, dict]], result: Replay
         runner.cancel()
 
 
-def replay(records: list[dict], db_path: Path, shuffle_seed: int | None = None, duplicate_every: int | None = None,
-           restart_at: int | None = None, accounting_exercise: bool = False, exit_after: int = 0,
-           source: str = "pumpportal") -> ReplayResult:
+def _deliveries(records: list[dict], shuffle_seed: int | None, duplicate_every: int | None) -> list[tuple[int, dict]]:
+    """(capture position, record) in delivery order: every `duplicate_every`-th record twice, then shuffled."""
     indexed = list(enumerate(records))
     if duplicate_every:
         indexed = [x for i, x in enumerate(indexed) for _ in range(2 if i % duplicate_every == 0 else 1)]
     if shuffle_seed is not None:
         random.Random(shuffle_seed).shuffle(indexed)
+    return indexed
+
+
+def capture_events(records: list[dict], source: str = "pumpapi", shuffle_seed: int | None = None,
+                   duplicate_every: int | None = None) -> list[list | None]:
+    """The capture as MarketEvents, one list per delivered record (None when the normalizer refuses the record),
+    for in-memory consumers such as jinx/intel/replay.py. Sequence numbers come from the record's position, as in
+    replay()."""
+    normalize_fn, refused = NORMALIZERS[source]
+    out: list[list | None] = []
+    for idx, rec in _deliveries(records, shuffle_seed, duplicate_every):
+        seqs = iter((2 * idx + 1, 2 * idx + 2))
+        try:
+            out.append(normalize_fn(rec["raw"], rec["recv_ns"], seqs.__next__))
+        except refused:
+            out.append(None)
+    return out
+
+
+def replay(records: list[dict], db_path: Path, shuffle_seed: int | None = None, duplicate_every: int | None = None,
+           restart_at: int | None = None, accounting_exercise: bool = False, exit_after: int = 0,
+           source: str = "pumpportal") -> ReplayResult:
+    indexed = _deliveries(records, shuffle_seed, duplicate_every)
     result = ReplayResult(records=len(indexed))
     t0 = time.perf_counter()
     latency: list[int] = []

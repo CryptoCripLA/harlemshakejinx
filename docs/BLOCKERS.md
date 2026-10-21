@@ -19,10 +19,17 @@ Each entry: what is blocked, the evidence, what is needed, and one reversible op
 ## B-02 CHAD contradicts itself on the Early Momentum curve gate
 - Evidence: CHAD Bot 10 says "all below the 35 SOL bonding curve threshold", and the same section says "0.5–10 SOL bonding curve gate … (0.5 SOL floor) … (10 SOL ceiling)".
 - Needed: the owner picks which gate applies, or how the two combine.
+- It is also unstated which reserve each gate reads. PumpAPI reports both on every curve trade: the virtual SOL reserve (`vQuoteInBondingCurve`, which starts at 30 SOL, so "0.5–10" can never hold for it) and the real SOL in the curve (`quoteInPool`). CHAD's peak example ("ran to 60 SOL and dumped to 25 SOL") cannot be virtual SOL either, since that never falls below 30.
+- Built 2026-10-21 (`jinx/intel/early_momentum.py`): both gates are separate predicates, `curve_gate_0_5_to_10_sol` and `curve_gate_below_35_sol`, status UNRESOLVED. Each records the virtual and the real reading at detection (per buy for the 35 SOL gate) and what each reading would give, without choosing. While either is UNRESOLVED the evidence's `trade_permitted` is False.
 
 ## B-03 CHAD values that are not specified (Phases 2-3)
 These are left unset, and entries that depend on them stay disabled:
 safety 0–100 formula and pass threshold; momentum "stall" and "sustained volume" quantities; X Scout verdict cut-offs and the @SolBotChad bonus; graduation progress → 0–20 points mapping; cluster "short window"; freshness decay function; dev-reputation formula and cut-off; confluence weights and the global score threshold; Kelly cap, payout-ratio prior and bucket edges; stop-loss and trailing values and the "high-conviction" cut-off; priority-fee escalation amounts; the shared-funder look-back; the whale volume-points mapping (CHAD: "More confirmed observed buys = more reliable signal"); the second-degree co-buy window; the win-rate look-back used for whale promotion (GMGN `period`, 7d used for now).
+
+Added 2026-10-21 with the Early Momentum build (`jinx/intel/early_momentum.py`); each is recorded as evidence and blocks entry until decided:
+- **Peak SOL gate rule.** CHAD says the gate "tracks all-time high virtualSolReserves" and "catches" a pump-and-dump retrace, but not what peak or retrace rejects a token. JINX records the peak, the current reading and the retrace from the peak (`peak_sol_gate`, UNRESOLVED). The peak is all-time only when JINX saw the creation; otherwise the predicate is UNAVAILABLE.
+- **The creator's own buy.** CHAD counts "3 unique wallets buying"; it does not say whether the creator's initial buy is one of them. JINX counts it, as it is a buy by a distinct fee payer, and flags `creator_in_window`.
+- **Sybil funder check before entry.** CHAD names its effect only after entry ("emergency exit fires instantly"). JINX fails closed: unknown funders (`sybil_funder` UNAVAILABLE) block entry, and three or more buyers with one funder are a FAIL with `emergency_exit` set. No feed supplies funders yet: PumpAPI carries no SOL transfers, so funders arrive only through `EarlyMomentum.record_funding` (the module asks for them through `request_funders` at detection).
 
 ## B-04 Position count: CHAD tiers vs the owner's standing slot rule
 - CHAD product tiers allow 3, 10 or unlimited positions. The owner's permanent directive (2026-10-17) is one global slot, two only by owner order, never three.
