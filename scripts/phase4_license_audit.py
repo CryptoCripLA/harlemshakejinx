@@ -152,9 +152,13 @@ def main() -> None:
         if not ok:
             problems.append(f"upstream {name}: license file missing or changed")
     shipped = {p.parent.name: p.read_text()[:60].strip().splitlines()[0] for p in (ROOT / "third_party").glob("*/LICENSE*")}
-    for name in ("d3ad", "gmgn"):
+    for name in ("d3ad", "gmgn", "bigmac"):
         if name not in shipped:
             problems.append(f"third_party/{name}/LICENSE missing")
+    if "bigmac" in shipped:
+        notes.append("third_party/bigmac (owner-ordered BigMac exit port, jinx/exits/bigmac_exit.py): Ms-PL, a file-level "
+                     "weak copyleft; the ported file stays under Ms-PL with the license and attribution kept "
+                     "(tests/test_bigmac_license.py)")
     rows = {norm(l.split("|")[1].strip().split(" ")[0]) for l in (ROOT / "docs" / "LICENSES.md").read_text().splitlines()
             if l.startswith("| ") and not l.startswith("| ---")}
     unlisted = [n for n in dict.fromkeys(direct) if n not in rows]

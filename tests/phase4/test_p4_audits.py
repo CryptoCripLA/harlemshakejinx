@@ -31,6 +31,16 @@ def test_the_keypair_detector_ignores_transaction_signatures_of_the_same_shape()
     assert secrets_audit.scan(" ".join(sigs).encode(), []) == []
 
 
+def test_a_credential_inside_a_gzip_capture_is_found():
+    import gzip
+    secret = b"postgresql://jinx:" + b"p4-not-a-real-password" + b"@db.example/jinx"   # split: no shape in this file
+    assert secrets_audit.scan(secret, []) == ["database URL with a password"]
+    assert secrets_audit.scan(gzip.compress(b'{"raw": "' + secret + b'"}'), []) == [
+        "database URL with a password (inside gzip)"]
+    kp = bytes(Keypair())
+    assert "Solana keypair (base58) (inside gzip)" in secrets_audit.scan(gzip.compress(base58.b58encode(kp)), [])
+
+
 def test_a_configured_value_is_found_and_reported_by_name_only():
     found = secrets_audit.scan(b"x=" + b"p4-not-a-real-secret-value-123" + b"\n",
                                [("jinx.env:TEST_TOKEN", b"p4-not-a-real-secret-value-123")])

@@ -6,6 +6,7 @@ Checks every blob reachable from any ref (all branches, remotes, tags) plus ever
 - the credential shapes of tests/test_secrets.py (GMGN key, PEM private key body, GitHub token, database URL with a
   password, Neon keys);
 - the exact values configured on this host (~/.config/gmgn/.env, the JINX service env file) — reported by NAME only;
+- gzip blobs and files (the committed captures): their inflated content, with the same checks;
 - Solana keypairs: any 87-88 character base58 string or 64-number JSON array whose second half is the ed25519 public
   key of its first half (a transaction signature has the same shape but fails this check, so fixtures do not
   false-positive).
@@ -77,7 +78,26 @@ def configured_secrets() -> list[tuple[str, bytes]]:
     return out
 
 
+MAX_INFLATED = 256 * 1024 * 1024        # a gzip member larger than this when inflated is reported, not scanned
+
+
 def scan(data: bytes, secrets) -> list[str]:
+    """Credential kinds found in `data`; gzip content (captures, backups) is inflated and scanned as well."""
+    kinds = _scan_bytes(data, secrets)
+    if data[:2] == b"\x1f\x8b":
+        import zlib
+        try:
+            d = zlib.decompressobj(16 + zlib.MAX_WBITS)
+            inflated = d.decompress(data, MAX_INFLATED)
+            if d.unconsumed_tail:
+                kinds.append("gzip content larger than the scan cap (not scanned past it)")
+            kinds += [f"{k} (inside gzip)" for k in _scan_bytes(inflated, secrets)]
+        except zlib.error:
+            kinds.append("unreadable gzip content")
+    return kinds
+
+
+def _scan_bytes(data: bytes, secrets) -> list[str]:
     kinds = [name for name, rx in PATTERNS.items() if rx.search(data)]
     kinds += [f"configured value {name}" for name, v in secrets if v in data]
     for m in B58.finditer(data):

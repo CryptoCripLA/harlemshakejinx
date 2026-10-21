@@ -49,6 +49,7 @@ FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 VOLATILE_KEYS = frozenset({
     "detected_ns",          # wall clock when Early Momentum first emitted
     "processing_ns", "processing_us",
+    "detection_delay_ms",   # feed delay (compared) plus this host's processing time (wall clock)
     "latency_ms", "read_ns", "fetched_ns", "first_detected_ns", "decided_ns", "ts_ns",
 })
 # Fields that record WHICH ARRIVAL completed or first reported something. Two deliveries of the same facts in another

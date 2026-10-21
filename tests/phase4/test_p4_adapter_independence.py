@@ -27,13 +27,16 @@ LIVE = load_capture(h.FIXTURES / "pumpapi-live-20261021.jsonl.gz")
 MIGR = load_capture(h.FIXTURES / "pumpapi-migrations-live-20261021.jsonl.gz")
 RECORDS = LIVE + MIGR
 
-# module -> (class whose event handler is broken, the state_view parts that module alone owns)
+# module -> (class whose event handler is broken, the state_view parts it feeds). "candidates" and "entries" are the
+# entry decision, which reads every module: when a module it reads fails, the decision may change, but only towards
+# refusing (checked below), never towards entering.
+DECISION = {"candidates", "entries"}
 CONSUMERS = {
-    "early_momentum": (EarlyMomentum, {"early_momentum", "reserve_gates"}),
-    "graduation": (GraduationTracker, {"graduation"}),
-    "migration": (MigrationTracker, {"migration"}),
-    "bundles": (BundleTracker, set()),
-    "whales": (WhaleBook, set()),
+    "early_momentum": (EarlyMomentum, {"early_momentum", "reserve_gates"} | DECISION),
+    "graduation": (GraduationTracker, {"graduation"} | DECISION),
+    "migration": (MigrationTracker, {"migration"} | DECISION),
+    "bundles": (BundleTracker, {"bundles"}),
+    "whales": (WhaleBook, {"whales"}),
 }
 
 
@@ -61,6 +64,9 @@ def test_a_module_failing_on_every_event_corrupts_no_other_module_and_creates_no
     for part in healthy:
         if part not in owned:
             assert view[part] == healthy[part], f"{module} failing changed {part}"
+    for mint, c in view["candidates"].items():                       # a failure can only make the decision stricter
+        if c["entry_check"]["all_checks_pass"]:
+            assert healthy["candidates"].get(mint, {}).get("entry_check", {}).get("all_checks_pass"), mint
     assert view["ledger"] == [] and view["paper_wallet"]["ok"] is True
     h.close(app)
 

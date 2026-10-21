@@ -217,8 +217,14 @@ def test_L16_without_a_rugcheck_answer_the_safety_check_is_not_a_pass(tmp_path, 
 # ---- CHAD L16/L41 cluster: "3 or more tracked profitable wallets buy the same token within a short window" ----------
 
 def test_L41_the_unquantified_cluster_window_never_reports_a_firing_cluster(tmp_path, close_apps):
-    _, _, app = run_case(tmp_path, close_apps, baseline_msgs())
+    """Three tracked wallets buy the token (they are tracked BEFORE their buys arrive, so the cluster is populated)."""
+    gmgn = h.FakeGmgn(wallet_stats=DISTINCT)
+    app = h.build_app(tmp_path, gmgn=gmgn, rugcheck=h.FakeRugCheck())
+    close_apps.append(app)
+    app.pumpapi = LiveFeed()
     for w in ("A", "B", "C"):
         app.whales.track(w, "test", {"why": "labelled test fixture: tracked wallet"})
+    h.run(app, [events(m) for m in baseline_msgs()])
     facts = app.whales.cluster_facts(M)
+    assert facts["tracked_buyers"] == 3                       # the cluster facts are really there
     assert facts["cluster"] is None and "B-03" in facts["cluster_status"]

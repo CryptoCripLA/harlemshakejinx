@@ -1,6 +1,6 @@
 {
- "utc": "2026-10-21T15:02:11Z",
- "commit": "569afae2b86ac4dfa3af42748b3ea589d10e8e73",
+ "utc": "2026-10-21T15:36:34Z",
+ "commit": "33ee23381d16c51143cb26d16ce0c6d73463d010",
  "python_interpreter": "/home/atlasops/work/harlemshakejinx/.venv/bin/python",
  "python_direct": [
   "base58",
@@ -176,13 +176,15 @@
   }
  },
  "third_party_licenses_shipped": {
+  "bigmac": "Microsoft Public License (Ms-PL)",
   "d3ad": "Apache License",
   "gmgn": "MIT License"
  },
  "problems": [],
  "notes": [
   "python psycopg-binary 3.2.13: LGPL-3.0-only: weak copyleft; JINX installs it unmodified from PyPI and links it at run time (no copy, no modification, not vendored)",
-  "python psycopg 3.2.13: LGPL-3.0-only: weak copyleft; JINX installs it unmodified from PyPI and links it at run time (no copy, no modification, not vendored)"
+  "python psycopg 3.2.13: LGPL-3.0-only: weak copyleft; JINX installs it unmodified from PyPI and links it at run time (no copy, no modification, not vendored)",
+  "third_party/bigmac (owner-ordered BigMac exit port, jinx/exits/bigmac_exit.py): Ms-PL, a file-level weak copyleft; the ported file stays under Ms-PL with the license and attribution kept (tests/test_bigmac_license.py)"
  ],
  "result": "PASS"
 }

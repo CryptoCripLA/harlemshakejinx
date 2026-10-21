@@ -80,7 +80,8 @@ def test_window_buys_happened_before_the_trigger_and_were_received_before_the_de
         window = evidence["payload"]["window"]
         trigger = window[-1]
         assert all(b["event_ns"] <= trigger["event_ns"] for b in window), mint
-        assert all(b["recv_ns"] <= max(x["recv_ns"] for x in window) for b in window), mint
+        # observed_ns = receipt of the arrival that completed the detection: nothing received later is in it
+        assert all(b["recv_ns"] <= evidence["observed_ns"] for b in window), mint
 
 
 def test_developer_history_counts_only_launches_before_the_decision():

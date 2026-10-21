@@ -31,7 +31,7 @@ def calls(path: Path, names: set[str]) -> list[tuple[str, int]]:
 
 
 def rel(p: Path) -> str:
-    return str(p.relative_to(ROOT))
+    return p.relative_to(ROOT).as_posix()                # the same on Windows (the review host) and Linux
 
 
 # Who may do what. Every entry is the one approved site, verified by reading the code (2026-10-21, Phase 3 a962856):

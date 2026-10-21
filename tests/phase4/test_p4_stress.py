@@ -7,6 +7,7 @@ ever share the ledger (a restart overlap, an operator tool), because the reserva
 cross-token contamination, and background lookups beyond the engineering cap must leave evidence UNAVAILABLE (blocked),
 never wrong. Synthetic launches are built with the live PumpAPI field layout (tests/pumpapi_msgs.py); counts are
 engineering stress sizes, not trading values."""
+import asyncio
 import subprocess
 import sys
 import textwrap
@@ -140,7 +141,20 @@ def test_a_candidate_shed_during_a_burst_is_screened_once_capacity_frees(tmp_pat
     app.pumpapi = LiveFeed()
     h.run(app, [events(m) for m in launches(N)], settle_s=0.05, cancel_background=False)
     assert app.background_stats["shed"] > 0
-    h.run(app, [], settle_s=10.0)                       # the burst is over; capacity is free again
+    from jinx.adapters.d3ad.adapter import D3adExecutionAdapter
+    from jinx.adapters.datanomad.adapter import DataNomadResearchAdapter
+    from tests.phase4.test_p4_outages import LiveMako
+    app.feed = LiveMako()                               # so the periodic status tick can run here too
+    app.d3ad = D3adExecutionAdapter(app.s.upstream_dir / "d3ad")
+    app.datanomad = DataNomadResearchAdapter(app.s.upstream_dir / "datanomad")
+
+    async def after_the_burst():                        # capacity is free again: background work and status ticks
+        for _ in range(20):
+            await app._status_tick()
+            await asyncio.sleep(0.5)
+            if all(c.get("safety") for c in app.candidates.values()):
+                return
+    h.loop_of(app).run_until_complete(after_the_burst())
     unscreened = [m for m, c in app.candidates.items() if not c.get("safety")]
     h.close(app)
     assert unscreened == []
