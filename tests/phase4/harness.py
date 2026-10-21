@@ -116,8 +116,17 @@ async def run_async(app: JinxApp, delivered, settle: bool = True, settle_s: floa
     return st
 
 
+def loop_of(app: JinxApp) -> asyncio.AbstractEventLoop:
+    """One event loop per app for its whole life: the bus queues bind to the loop that first uses them, so later
+    deliveries to the same app (a second batch, a re-check at the decision) run on that same loop."""
+    loop = getattr(app, "_p4_loop", None)
+    if loop is None or loop.is_closed():
+        loop = app._p4_loop = asyncio.new_event_loop()
+    return loop
+
+
 def run(app: JinxApp, delivered, settle: bool = True) -> RunStats:
-    return asyncio.run(run_async(app, delivered, settle))
+    return loop_of(app).run_until_complete(run_async(app, delivered, settle))
 
 
 def _canon(x):
@@ -170,6 +179,10 @@ def state_digest(app: JinxApp) -> str:
 
 
 def close(app: JinxApp) -> None:
+    loop = getattr(app, "_p4_loop", None)
+    if loop is not None and not loop.is_closed():
+        loop.run_until_complete(asyncio.sleep(0))
+        loop.close()
     app.market.close()
     app.store.close()
 

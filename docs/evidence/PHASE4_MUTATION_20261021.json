@@ -1,0 +1,107 @@
+{
+ "utc": "2026-10-21T14:46:39Z",
+ "commit": "eb5ed31e87f26921b36e8c12a8d7fd900f38396c",
+ "unmutated_run": {
+  "exit_code": 0,
+  "pytest": "35 passed in 1.15s"
+ },
+ "mutations": [
+  {
+   "mutation": "fee_payers_2",
+   "chad": "L78 3 distinct fee payers",
+   "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L78_three_buys_from_one_wallet_never_count_as_three_wallets",
+   "exit_code": 1,
+   "caught": true,
+   "pytest": "1 failed in 0.27s"
+  },
+  {
+   "mutation": "window_31s",
+   "chad": "L65 30-second window",
+   "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L65_three_wallets_spread_over_more_than_30_seconds_do_not_trigger",
+   "exit_code": 1,
+   "caught": true,
+   "pytest": "1 failed in 0.27s"
+  },
+  {
+   "mutation": "window_29s",
+   "chad": "L65 30-second window (inclusive)",
+   "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L65_three_wallets_exactly_30_seconds_apart_trigger",
+   "exit_code": 1,
+   "caught": true,
+   "pytest": "1 failed in 0.25s"
+  },
+  {
+   "mutation": "floor_0_1",
+   "chad": "L68 0.5 SOL floor",
+   "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L68_below_the_half_sol_floor_is_refused",
+   "exit_code": 1,
+   "caught": true,
+   "pytest": "1 failed in 0.27s"
+  },
+  {
+   "mutation": "ceiling_9_9",
+   "chad": "L69 10 SOL ceiling (inclusive)",
+   "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L69_exactly_ten_sol_is_inside_the_gate",
+   "exit_code": 1,
+   "caught": true,
+   "pytest": "1 failed in 0.29s"
+  },
+  {
+   "mutation": "floor_0_6",
+   "chad": "L68 0.5 SOL floor (inclusive)",
+   "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L68_exactly_half_a_sol_is_inside_the_gate",
+   "exit_code": 1,
+   "caught": true,
+   "pytest": "1 failed in 0.27s"
+  },
+  {
+   "mutation": "ceiling_20",
+   "chad": "L69 10 SOL ceiling",
+   "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L69_above_the_ten_sol_ceiling_is_refused",
+   "exit_code": 1,
+   "caught": true,
+   "pytest": "1 failed in 0.27s"
+  },
+  {
+   "mutation": "peak_ceiling_20",
+   "chad": "L227 peak gate",
+   "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L227_a_token_that_ran_past_the_ceiling_and_came_back_is_refused",
+   "exit_code": 1,
+   "caught": true,
+   "pytest": "1 failed in 0.29s"
+  },
+  {
+   "mutation": "sybil_4",
+   "chad": "L81 3+ wallets share a funder",
+   "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L81_three_buyers_sharing_one_funder_block_and_raise_the_emergency_exit",
+   "exit_code": 1,
+   "caught": true,
+   "pytest": "1 failed in 0.28s"
+  },
+  {
+   "mutation": "honeypot_ignored",
+   "chad": "L16 honeypot detection",
+   "test": "tests/phase4/test_p4_safety_rejections.py::test_L16_a_reported_honeypot_is_a_hard_veto",
+   "exit_code": 1,
+   "caught": true,
+   "pytest": "1 failed in 0.31s"
+  },
+  {
+   "mutation": "mint_authority_ignored",
+   "chad": "L16 mint authority",
+   "test": "tests/phase4/test_p4_safety_rejections.py::test_L16_a_held_mint_authority_is_a_hard_veto",
+   "exit_code": 1,
+   "caught": true,
+   "pytest": "1 failed in 0.55s"
+  },
+  {
+   "mutation": "unknown_is_pass",
+   "chad": "L16 missing evidence fails closed",
+   "test": "tests/phase4/test_p4_safety_rejections.py::test_L16_no_security_data_is_unknown_and_never_eligible",
+   "exit_code": 1,
+   "caught": true,
+   "pytest": "1 failed in 0.28s"
+  }
+ ],
+ "result": "PASS"
+}
