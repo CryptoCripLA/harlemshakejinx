@@ -16,8 +16,15 @@ What it does, per mint, on every event (`on_event`, synchronous, no I/O):
   (`request_funders`); listener failures are counted and never stop detection;
 - tracks the live and the peak curve reserves. A late report counts toward the peak, never toward the current value.
 
-What it does not do: place or permit orders, choose between B-02's two curve gates, or define what retrace the peak
-gate rejects (B-03). Every predicate that is UNRESOLVED or UNAVAILABLE blocks: `trade_permitted` stays False.
+Reserve policy (owner decision B-02, 2026-10-21): the current verified real SOL in the curve must be within
+0.5-10 SOL, and the highest verified real SOL since creation must not exceed 10 SOL (a token that already ran past
+10 and came back is not early). Real SOL is PumpAPI's `quoteInPool` on a SOL-quoted pre-migration curve
+(`readings.verified_real_sol`), never virtual SOL minus 30. Missing or incomplete history, an unverified reading
+after creation, or a migrated pool blocks. CHAD's "below 35 SOL" statement is retired as an entry condition and kept
+as a superseded specification (`SUPERSEDED`). `reserve_check` repeats both gates on the current state at the entry
+decision, so a stale snapshot never qualifies. These rules belong to this pre-graduation path only.
+
+What it does not do: place or permit orders. Every predicate that is not PASS blocks: `trade_permitted` stays False.
 Funders come only from `record_funding` (no feed supplies them yet); unknown funders are UNAVAILABLE, never assumed.
 State is RAM only and bounded (mint cap, idle time, buys per mint, funding cap).
 """
@@ -33,7 +40,8 @@ from typing import Any, Callable, Mapping
 
 from jinx.core.events import LAMPORTS_PER_SOL, EventKind, MarketEvent, Side
 from jinx.intel.bounded import MintTable
-from jinx.intel.readings import Clock, event_time, is_curve, real_reserves, standard_curve, traders_involved
+from jinx.intel.readings import (Clock, event_time, is_curve, standard_curve, traders_involved,
+                                 verified_real_sol)
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +51,10 @@ REQUIRED_BUYS = 3                   # CHAD "3 buys"
 REQUIRED_FEE_PAYERS = 3             # CHAD "3 distinct fee payers required"
 SHARED_FUNDER_WALLETS = 3           # CHAD "If 3+ wallets share the same SOL funder"
 GATE_FLOOR_SOL, GATE_CEILING_SOL = 0.5, 10.0   # CHAD "0.5–10 SOL bonding curve gate"
-GATE_BELOW_SOL = 35.0                          # CHAD "all below the 35 SOL bonding curve threshold"
+GATE_BELOW_SOL = 35.0                          # CHAD "all below the 35 SOL bonding curve threshold": superseded
+FLOOR_LAMPORTS = int(GATE_FLOOR_SOL * LAMPORTS_PER_SOL)      # owner decision B-02: 0.5 <= current real SOL
+CEILING_LAMPORTS = int(GATE_CEILING_SOL * LAMPORTS_PER_SOL)  # ... <= 10, and the verified peak real SOL <= 10
+B02 = "owner decision B-02, 2026-10-21"
 CHAD = {
     "window": "3 buys · 3 unique wallets · 30-second window; 3 distinct fee payers required — not 3 txs from one "
               "wallet",
@@ -54,6 +65,13 @@ CHAD = {
     "peak": "Peak SOL Pump-and-Dump Gate: Bot 10 tracks all-time high virtualSolReserves, not just current value. A "
             "token that ran to 60 SOL and dumped to 25 SOL looks early on a snapshot. The peak gate catches it.",
     "sybil": "Sybil funder check: If 3+ wallets share the same SOL funder → emergency exit fires instantly",
+}
+CURRENT_GATE = "current_reserve_0_5_to_10_real_sol"
+PEAK_GATE = "peak_reserve_max_10_real_sol"
+SUPERSEDED = {
+    "curve_gate_below_35_sol": {"chad": CHAD["gate_high"],
+                                "status": f"superseded by {B02}: not an entry condition; the 0.5-10 real SOL "
+                                          "current and peak gates apply instead"},
 }
 
 # RAM bounds (owner storage rule 2), not trading rules
@@ -178,6 +196,7 @@ class EarlyMomentumEvidence:
                             "creator": self.creator, "creator_in_window": self.creator_in_window,
                             "reserves": dict(self.reserves)},
                 "predicates": [p.to_dict() for p in self.predicates], "blocking": list(self.blocking),
+                "superseded": SUPERSEDED,
                 "trade_permitted": self.trade_permitted, "emergency_exit": self.emergency_exit}
 
 
@@ -205,7 +224,7 @@ def first_window(buys: list[Buy]) -> tuple[Buy, ...] | None:
 
 class _Mint:
     __slots__ = ("buys", "seen", "creator", "since_creation", "current", "peak_v", "peak_real", "newest_ns",
-                 "window", "detection", "sybil")
+                 "window", "detection", "sybil", "create_sig", "creation_bound", "unverified", "migrated")
 
     def __init__(self) -> None:
         self.buys: list[Buy] = []
@@ -219,6 +238,10 @@ class _Mint:
         self.window: tuple[Buy, ...] | None = None
         self.detection: tuple[int, int, int] | None = None   # (observed_ns, detected_ns, processing_ns)
         self.sybil: Status | None = None
+        self.create_sig: str | None = None
+        self.creation_bound: int | None = None   # upper bound on real SOL right after an unverified creation
+        self.unverified: list[str] = []          # signatures of curve readings without verified real SOL
+        self.migrated = False
 
 
 class EarlyMomentum:
@@ -239,11 +262,18 @@ class EarlyMomentum:
     def on_event(self, ev: MarketEvent) -> list[EarlyMomentumEvidence]:
         started = time.perf_counter_ns()
         self.stats["events"] += 1
+        if ev.kind is EventKind.MIGRATION:
+            st = self._mints.get(ev.mint)
+            if st is not None:
+                st.migrated = True
+            return []
         if ev.kind not in (EventKind.TOKEN_CREATED, EventKind.TRADE):
             return []
         st = self._mints.touch(ev.mint, ev.recv_ns)
         if ev.kind is EventKind.TOKEN_CREATED:
-            st.creator, st.since_creation = ev.trader, True
+            st.creator, st.since_creation, st.create_sig = ev.trader, True, ev.signature
+        if ev.kind is EventKind.TRADE and not is_curve(ev) and ev.raw.get("pool") not in (None, "pump"):
+            st.migrated = True                                       # trading on the migrated pool
         if is_curve(ev):
             self._reserves(st, ev)
         if ev.kind is EventKind.TRADE and ev.side is Side.BUY and is_curve(ev):
@@ -284,10 +314,17 @@ class EarlyMomentum:
     def _reserves(self, st: _Mint, ev: MarketEvent) -> None:
         t, _ = event_time(ev)
         key = (t, ev.seq)
-        real, _ = real_reserves(ev)
+        real = verified_real_sol(ev)
         st.peak_v = max(st.peak_v or 0, ev.v_sol_lamports)
         if real is not None:
-            st.peak_real = max(st.peak_real or 0, real)
+            st.peak_real = max(st.peak_real or 0, real)              # never lowered by a later, lower reading
+        elif st.since_creation and ev.signature == st.create_sig:
+            # The creation transaction reported without a real reserve (PumpPortal's copy won the cross-feed dedup):
+            # the curve starts empty, so real SOL right after creation is at most what the creator put in.
+            st.creation_bound = max(st.creation_bound or 0, ev.sol_lamports or 0)
+        else:
+            st.unverified.append(ev.signature)
+            del st.unverified[:-8]
         if st.current is None or key > st.current[0]:
             st.current = (key, ev.v_sol_lamports, real)
 
@@ -301,7 +338,7 @@ class EarlyMomentum:
             st.seen.popitem(last=False)
         self.stats["curve_buys"] += 1
         t, clock = event_time(ev)
-        real, _ = real_reserves(ev)
+        real = verified_real_sol(ev)
         b = Buy(ev.signature, ev.trader, t, clock, ev.recv_ns, ev.seq, ev.slot, ev.sol_lamports, ev.v_sol_lamports,
                 real, ev.source, traders_involved(ev))
         if st.newest_ns is not None and t < st.newest_ns - RETAIN_NS:
@@ -377,6 +414,8 @@ class EarlyMomentum:
             "current_virtual_sol": _sol(cur_v), "current_real_sol": _sol(cur_real),
             "peak_virtual_sol": _sol(st.peak_v), "peak_real_sol": _sol(st.peak_real),
             "retrace_from_peak": (st.peak_v - cur_v) / st.peak_v if st.peak_v and cur_v is not None else None,
+            "retrace_from_peak_real": ((st.peak_real - cur_real) / st.peak_real
+                                       if st.peak_real and cur_real is not None else None),
             "observed_since_creation": st.since_creation,
         }
         observed_ns, detected_ns, processing_ns = st.detection
@@ -384,8 +423,7 @@ class EarlyMomentum:
             mint=mint, window=window, fee_payers=payers, creator=st.creator,
             creator_in_window=(st.creator in payers) if st.creator is not None else None, reserves=reserves,
             predicates=(self._window_predicate(window, payers), self._reserve_predicate(trigger),
-                        self._gate_low(trigger), self._gate_high(window), self._peak(st, reserves),
-                        self._sybil(payers)),
+                        self._current_gate(st), self._peak_gate(st), self._sybil(payers)),
             observed_ns=observed_ns, detected_ns=detected_ns, processing_ns=processing_ns)
 
     # ---- predicates ----------------------------------------------------------------------------------
@@ -404,33 +442,61 @@ class EarlyMomentum:
         return Predicate("sol_reserve_read", status, CHAD["reserve"], detail)
 
     @staticmethod
-    def _gate_low(trigger: Buy) -> Predicate:
-        v, r = _sol(trigger.v_sol_lamports), _sol(trigger.real_sol_lamports)
-        inside = (lambda x: None if x is None else GATE_FLOOR_SOL <= x <= GATE_CEILING_SOL)
-        detail = {"virtual_sol_at_trigger": v, "real_sol_at_trigger": r, "if_virtual_sol": inside(v),
-                  "if_real_sol": inside(r),
-                  "standard_curve_at_trigger": standard_curve(trigger.v_sol_lamports, trigger.real_sol_lamports)}
-        status = Status.UNRESOLVED if r is not None else Status.UNAVAILABLE
-        return Predicate("curve_gate_0_5_to_10_sol", status, CHAD["gate_low"], detail, blocker="B-02")
+    def _current_gate(st: _Mint) -> Predicate:
+        """B-02: 0.5 <= current verified real SOL <= 10 (inclusive), read from the newest curve reading."""
+        cur_v = st.current[1] if st.current else None
+        real = st.current[2] if st.current else None
+        detail = {"current_real_sol": _sol(real), "current_virtual_sol": _sol(cur_v), "rule": f"0.5 <= real SOL <= 10 ({B02})",
+                  "reading_event_ns": st.current[0][0] if st.current else None,
+                  "standard_curve": standard_curve(cur_v, real)}
+        if st.migrated:
+            return Predicate(CURRENT_GATE, Status.FAIL, CHAD["gate_low"],
+                             {**detail, "reason": "migrated: this pre-graduation path does not apply"}, blocker="B-02")
+        if real is None:
+            return Predicate(CURRENT_GATE, Status.UNAVAILABLE, CHAD["gate_low"],
+                             {**detail, "reason": "no verified real SOL in the newest reading"}, blocker="B-02")
+        ok = FLOOR_LAMPORTS <= real <= CEILING_LAMPORTS
+        return Predicate(CURRENT_GATE, Status.PASS if ok else Status.FAIL, CHAD["gate_low"], detail, blocker="B-02")
 
     @staticmethod
-    def _gate_high(window) -> Predicate:
-        virtual = [_sol(b.v_sol_lamports) for b in window]
-        real = [_sol(b.real_sol_lamports) for b in window]
-        below = (lambda xs: None if any(x is None for x in xs) else all(x < GATE_BELOW_SOL for x in xs))
-        detail = {"virtual_sol_per_buy": virtual, "real_sol_per_buy": real, "if_virtual_sol": below(virtual),
-                  "if_real_sol": below(real),
-                  "standard_curve_at_trigger": standard_curve(window[-1].v_sol_lamports,
-                                                              window[-1].real_sol_lamports)}
-        status = Status.UNRESOLVED if None not in real else Status.UNAVAILABLE
-        return Predicate("curve_gate_below_35_sol", status, CHAD["gate_high"], detail, blocker="B-02")
+    def _peak_gate(st: _Mint) -> Predicate:
+        """B-02: the highest verified real SOL since creation <= 10. Unprovable history blocks."""
+        detail = {"peak_real_sol": _sol(st.peak_real), "peak_virtual_sol": _sol(st.peak_v),
+                  "observed_since_creation": st.since_creation, "creation_bound_real_sol": _sol(st.creation_bound),
+                  "unverified_readings": list(st.unverified), "rule": f"peak real SOL <= 10 ({B02})"}
+        reason = None
+        if st.migrated:
+            status, reason = Status.FAIL, "migrated: this pre-graduation path does not apply"
+        elif st.peak_real is not None and st.peak_real > CEILING_LAMPORTS:
+            status, reason = Status.FAIL, "verified real SOL already exceeded 10"
+        elif not st.since_creation:
+            status, reason = Status.UNAVAILABLE, "history incomplete: creation not observed"
+        elif st.unverified:
+            status, reason = Status.UNAVAILABLE, "history incomplete: unverified curve readings since creation"
+        elif st.creation_bound is not None and st.creation_bound > CEILING_LAMPORTS:
+            status, reason = Status.UNAVAILABLE, "creation reading unverified and the creator's buy exceeds 10 SOL"
+        elif st.peak_real is None:
+            status, reason = Status.UNAVAILABLE, "no verified real SOL reading"
+        else:
+            status = Status.PASS
+        return Predicate(PEAK_GATE, status, CHAD["peak"], {**detail, "reason": reason}, blocker="B-02")
 
-    @staticmethod
-    def _peak(st: _Mint, reserves: Mapping[str, Any]) -> Predicate:
-        detail = {k: reserves[k] for k in ("peak_virtual_sol", "peak_real_sol", "current_virtual_sol",
-                                           "current_real_sol", "retrace_from_peak", "observed_since_creation")}
-        status = Status.UNRESOLVED if st.since_creation else Status.UNAVAILABLE
-        return Predicate("peak_sol_gate", status, CHAD["peak"], detail, blocker="B-02, B-03")
+    def reserve_check(self, mint: str, feed_live: bool) -> dict:
+        """Both reserve gates on the current state, for the entry decision itself (B-02 §5). `feed_live` is the
+        trade feed's own health (connected and not stalled): without it the newest reading may not be current."""
+        st = self._mints.get(mint)
+        if st is None:
+            return {"eligible": False, "reason": "no reserve history for this mint", "current": None, "peak": None}
+        cur, peak = self._current_gate(st), self._peak_gate(st)
+        out = {"current": cur.to_dict(), "peak": peak.to_dict()}
+        if st.migrated:
+            return {**out, "eligible": False, "reason": "migrated: outside the Early Momentum reserve path"}
+        if not feed_live:
+            return {**out, "eligible": False, "reason": "stale: trade feed not live, reserves cannot be confirmed"}
+        eligible = cur.status is Status.PASS and peak.status is Status.PASS
+        return {**out, "eligible": eligible,
+                "reason": "ok" if eligible else "; ".join(f"{p.name}: {p.status}" for p in (cur, peak)
+                                                           if p.status is not Status.PASS)}
 
     def _sybil(self, payers: tuple[str, ...]) -> Predicate:
         known = {w: self._funding[w] for w in payers if w in self._funding}

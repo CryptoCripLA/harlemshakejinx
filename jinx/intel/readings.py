@@ -27,6 +27,7 @@ PUMPAPI = "pumpapi.stream"        # jinx/adapters/pumpapi/normalize.py SOURCE
 PUMPPORTAL = "mako.pumpportal"    # jinx/adapters/mako/normalize.py SOURCE
 DEFAULT_DECIMALS = 6              # jinx/adapters/pumpapi/normalize.py DEFAULT_DECIMALS (pump.fun mints)
 CURVE_VENUE = "pump"
+WSOL = "So11111111111111111111111111111111111111112"   # wrapped SOL mint: PumpAPI's `quoteMint` for SOL quotes
 PUMPSWAP_VENUE = "pump-amm"
 INITIAL_VIRTUAL_SOL = 30_000_000_000   # D3AD shred-sniper/sniper/src/pumpfun.rs:538 (recorded mainnet global value)
 
@@ -83,6 +84,16 @@ def real_reserves(ev: MarketEvent) -> tuple[int | None, int | None]:
     quote, tokens = _number(ev.raw.get("quoteInPool")), _number(ev.raw.get("tokensInPool"))
     return (sol_to_lamports(quote) if quote is not None else None,
             int(round(tokens * 10 ** _decimals(ev))) if tokens is not None else None)
+
+
+def verified_real_sol(ev: MarketEvent) -> int | None:
+    """Real SOL (lamports) in a pre-migration pump.fun bonding curve, only when verified (owner decision B-02,
+    2026-10-21): a PumpAPI record on the curve (`pool: pump`) whose quote asset is stated as SOL/WSOL, with a numeric
+    non-negative `quoteInPool`. Never derived from virtual SOL; any other case is None (unverified)."""
+    if ev.source != PUMPAPI or ev.raw.get("pool") != CURVE_VENUE or ev.raw.get("quoteMint") != WSOL:
+        return None
+    quote = _number(ev.raw.get("quoteInPool"))
+    return sol_to_lamports(quote) if quote is not None and quote >= 0 else None
 
 
 def traders_involved(ev: MarketEvent) -> tuple[str, ...] | None:

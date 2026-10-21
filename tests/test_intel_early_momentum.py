@@ -2,7 +2,7 @@
 
 CHAD (docs/CHAD_BLUEPRINT.md, Bot 10): "3 buys · 3 unique wallets · 30-second window"; "3 distinct fee payers
 required — not 3 txs from one wallet"; "0.5–10 SOL bonding curve gate" vs "all below the 35 SOL bonding curve
-threshold" (B-02, unresolved); "Peak SOL Pump-and-Dump Gate … tracks all-time high virtualSolReserves"; "If 3+
+threshold" (B-02, decided by the owner 2026-10-21: 0.5–10 real SOL now and at the peak); "Peak SOL Pump-and-Dump Gate … tracks all-time high virtualSolReserves"; "If 3+
 wallets share the same SOL funder → emergency exit fires instantly". Adverse cases from CLAUDE.md, PHASE 2,
 "Required simulation"."""
 import itertools
@@ -122,59 +122,52 @@ def test_a_duplicate_delivery_is_not_counted_twice():
     assert feed(em, [buy("B", 1)]) == []
 
 
-def test_both_curve_gates_are_separate_unresolved_predicates_that_block_any_trade():
+def test_the_owner_decided_reserve_gates_replace_the_contradiction():
+    """B-02 decided 2026-10-21: 0.5-10 real SOL now and at the peak; the 35 SOL statement is superseded."""
     em = EarlyMomentum()
     [ev] = feed(em, [fresh(), buy("A", 1, v_quote=31.5), buy("B", 2, v_quote=32.0),
                      buy("C", 3, v_quote=33.0)])
-    low = predicate(ev, "curve_gate_0_5_to_10_sol")
-    high = predicate(ev, "curve_gate_below_35_sol")
-    for p in (low, high):
-        assert p.status is Status.UNRESOLVED and p.blocker == "B-02"
-    assert "0.5–10 SOL bonding curve gate" in low.chad and "35 SOL bonding curve threshold" in high.chad
-    # the readings and what each one would mean are shown, but no choice is made
-    assert low.detail["virtual_sol_at_trigger"] == pytest.approx(33.0)
-    assert low.detail["real_sol_at_trigger"] == pytest.approx(3.0)
-    assert low.detail["if_virtual_sol"] is False and low.detail["if_real_sol"] is True
-    assert high.detail["if_virtual_sol"] is True and high.detail["if_real_sol"] is True
-    assert low.detail["standard_curve_at_trigger"] is True and high.detail["standard_curve_at_trigger"] is True
-    assert {"curve_gate_0_5_to_10_sol", "curve_gate_below_35_sol"} <= set(ev.blocking)
-    assert ev.trade_permitted is False
+    cur = predicate(ev, "current_reserve_0_5_to_10_real_sol")
+    peak = predicate(ev, "peak_reserve_max_10_real_sol")
+    assert cur.status is Status.PASS and peak.status is Status.PASS and cur.blocker == "B-02"
+    assert "0.5–10 SOL bonding curve gate" in cur.chad
+    assert cur.detail["current_real_sol"] == pytest.approx(3.0) and cur.detail["current_virtual_sol"] == pytest.approx(33.0)
+    assert cur.detail["standard_curve"] is True
+    assert "curve_gate_below_35_sol" not in {p.name for p in ev.predicates}
+    assert ev.trade_permitted is False                   # funders still unknown: the sybil check blocks
 
-
-def test_a_curve_that_is_not_a_standard_30_sol_curve_is_flagged_in_both_gates():
+def test_a_curve_that_is_not_a_standard_30_sol_curve_is_flagged_and_judged_on_its_verified_real_sol():
     """Live finding (tests/test_intel_graduation.py): some curves report virtual SOL far below 30."""
     em = EarlyMomentum()
     odd = [buy(p, i, v_quote=0.13) for i, p in enumerate("ABC")]
     for m in odd:
         m["quoteInPool"] = 0.03
     [ev] = feed(em, [fresh()] + odd)
-    for name in ("curve_gate_0_5_to_10_sol", "curve_gate_below_35_sol"):
-        assert predicate(ev, name).detail["standard_curve_at_trigger"] is False
-
+    cur = predicate(ev, "current_reserve_0_5_to_10_real_sol")
+    assert cur.detail["standard_curve"] is False and cur.status is Status.FAIL     # 0.03 real SOL is below 0.5
 
 def test_the_peak_gate_sees_a_reserve_that_retraced_after_a_higher_peak():
-    """A token that ran up and dumped looks early on a snapshot; the peak is kept (CHAD's Peak SOL gate)."""
+    """A token that ran up and dumped looks early on a snapshot; the peak is kept and rejects it (B-02)."""
     em = EarlyMomentum()
-    run_up = [buy(f"W{i}", 0.1 * i, v_quote=31 + i * 3) for i in range(1, 11)]       # to 61 SOL virtual
-    dump = [sell(f"W{i}", 40 + i, v_quote=61 - i * 3) for i in range(1, 9)]          # back to 37 SOL
+    run_up = [buy(f"W{i}", 0.1 * i, v_quote=31 + i * 3) for i in range(1, 11)]       # to 61 SOL virtual, 31 real
+    dump = [sell(f"W{i}", 40 + i, v_quote=61 - i * 3) for i in range(1, 9)]          # back to 37 virtual, 7 real
     ([first],) = [feed(em, [create()] + run_up)]
     late = feed(em, dump + [buy("X", 120, v_quote=37.5), buy("Y", 121, v_quote=38), buy("Z", 122, v_quote=38.5)])
     assert late == []                                   # already emitted for this mint at the run-up
     ev = em.evidence("MintApump")
     r = ev.reserves
     assert r["peak_virtual_sol"] == pytest.approx(61.0) and r["current_virtual_sol"] == pytest.approx(38.5)
+    assert r["peak_real_sol"] == pytest.approx(31.0) and r["current_real_sol"] == pytest.approx(8.5)
     assert r["retrace_from_peak"] == pytest.approx((61 - 38.5) / 61)
-    peak = predicate(ev, "peak_sol_gate")
-    assert peak.status is Status.UNRESOLVED and peak.blocker == "B-02, B-03"
-    assert peak.detail["peak_virtual_sol"] == pytest.approx(61.0)
-
+    assert predicate(ev, "current_reserve_0_5_to_10_real_sol").status is Status.PASS
+    peak = predicate(ev, "peak_reserve_max_10_real_sol")
+    assert peak.status is Status.FAIL and peak.detail["peak_real_sol"] == pytest.approx(31.0)
 
 def test_the_peak_is_not_all_time_when_the_creation_was_not_observed():
     em = EarlyMomentum()
     [ev] = feed(em, [buy("A", 0), buy("B", 1), buy("C", 2)])
     assert ev.reserves["observed_since_creation"] is False
-    assert predicate(ev, "peak_sol_gate").status is Status.UNAVAILABLE
-
+    assert predicate(ev, "peak_reserve_max_10_real_sol").status is Status.UNAVAILABLE
 
 def test_a_late_reserve_report_counts_toward_the_peak_but_not_the_current_reading():
     em = EarlyMomentum()

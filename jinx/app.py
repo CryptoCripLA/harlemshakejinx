@@ -195,6 +195,25 @@ class JinxApp:
     # 2026-10-21), so a not-yet-indexed candidate is asked again every 2 s, at most 8 times.
     SCREEN_RETRY_S, SCREEN_ATTEMPTS = 2.0, 8
 
+    def _trade_feed_live(self) -> bool:
+        """The PumpAPI trade stream is connected and not stalled, so the newest reserve reading is current."""
+        if getattr(self, "pumpapi", None) is None:
+            return False
+        h = self.pumpapi.health()
+        return bool(h.get("connected")) and not h.get("ingest_stalled")
+
+    def entry_check(self, mint: str) -> dict:
+        """Everything known about entering `mint` right now (owner decision B-02 §5: re-checked at the decision).
+        Phase 2 records it; nothing here places an order."""
+        entry = self.candidates.get(mint) or {}
+        reserve = self.early.reserve_check(mint, self._trade_feed_live())
+        evidence = self.early.evidence(mint)
+        safety = entry.get("safety") or {}
+        blocking = list(evidence.blocking) if evidence else ["no detection"]
+        return {"reserve_eligible": reserve["eligible"], "reserve_reason": reserve["reason"],
+                "safety_eligible": bool(safety.get("eligible")), "early_momentum_blocking": blocking,
+                "all_checks_pass": reserve["eligible"] and bool(safety.get("eligible")) and not blocking}
+
     async def _screen(self, mint: str, creator: str | None) -> None:
         for attempt in range(1, self.SCREEN_ATTEMPTS + 1):
             result = await self.check_candidate(mint, creator, priority=0)
@@ -206,6 +225,7 @@ class JinxApp:
                                "veto": result.safety.veto_reasons, "rugcheck_error": rc_error, "attempts": attempt,
                                "checks": {c.name: c.verdict.value for c in result.safety.checks},
                                "latency_ms": round(result.latency_ms, 1)}
+            entry["entry_check"] = self.entry_check(mint)
             if result.safety.verdict.value != "UNKNOWN" or rc_error not in ("not_indexed", "rate_limited", "timeout"):
                 return
             await asyncio.sleep(self.SCREEN_RETRY_S)
@@ -280,7 +300,8 @@ class JinxApp:
                       "bundles_tracked": len(self.bundles._tokens),
                       "early_momentum": {**self.early.stats, "candidates": len(self.candidates),
                                          "latest": [{"mint": m, "safety": c.get("safety"),
-                                                     "trade_permitted": c.get("trade_permitted")}
+                                                     "trade_permitted": c.get("trade_permitted"),
+                                                     "entry_check": c.get("entry_check")}
                                                     for m, c in list(self.candidates.items())[-5:]]},
                       "whales": {"tracked": len(self.whales.tracked), "candidates": len(self.whales._candidates),
                                  "alerts": len(self.whales.alerts), "last_discovery": self.last_discovery}}

@@ -62,7 +62,7 @@ def test_a_detection_is_screened_rechecked_until_indexed_and_funders_are_recorde
     [(mint, entry)] = app.candidates.items()
     assert entry["safety"]["verdict"] == "PASS" and entry["safety"]["attempts"] == 2
     assert rc.calls == [0, 0]                                   # fast path: top priority, re-asked once indexed
-    assert entry["trade_permitted"] is False                    # B-02 and B-03 predicates stay unresolved
+    assert entry["trade_permitted"] is False                    # funders/reserves decide; nothing trades in Phase 2
     ev = app.early.evidence(mint)
     sybil = [p for p in ev.predicates if "sybil" in p.name][0]
     assert sybil.status.value != "UNAVAILABLE"                  # GMGN supplied the three buyers' funder

@@ -44,7 +44,7 @@ def test_early_momentum_detects_exactly_what_an_independent_scan_of_the_capture_
     expected = independent_scan(RECORDS)
     assert len(expected) >= 5
     assert {e.mint: e.trigger.signature for e in run.momentum} == expected
-    assert all(not e.trade_permitted for e in run.momentum)          # B-02 is unresolved: nothing may trade
+    assert all(not e.trade_permitted for e in run.momentum)          # offline replay: funders unknown, nothing may trade
 
 
 def test_shuffled_and_duplicated_delivery_converges_on_the_same_evidence():

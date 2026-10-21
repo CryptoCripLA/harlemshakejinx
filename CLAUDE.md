@@ -1,5 +1,22 @@
 # HARLEMSHAKEJINX — OWNER'S BINDING CLAUDE CONTRACT
 
+## OWNER RULE — TALK TO THE OWNER IN DOLLARS ONLY (2026-10-18, repeated 2026-10-20 and 2026-10-21)
+
+**Every amount Claude shows the owner is in US dollars.** That includes balances, profit and loss, fees, prices, order sizes, and also curve limits and "how much money is in a coin". No SOL, lamports, "real SOL" or "virtual SOL" wording in anything written for the owner. Owner, 2026-10-21: "only use usd ive said this before i hate the sol lingo its confusing." Give the dollar rate in plain words once per report (for example "at $105.70 per SOL from GMGN, 21 Oct"). SOL amounts belong only in code, tests and evidence files.
+
+## OWNER REFERENCE — EARLY-LAUNCH ENTRY RULE (B-02, decided by the owner 2026-10-21)
+
+Dollar figures at $105.70 per SOL (GMGN, 21 Oct 2026, 04:45 UTC). The limits are fixed in the coin's own currency, so the dollar amounts move a little with its price.
+- JINX's early-launch hunter only considers a new coin while buyers have put **about $53 to about $1,057** into it.
+- **More than about $1,057 already in:** too late for this strategy. Skip.
+- **It went over about $1,057 at any point, then fell back into range:** skip. JINX remembers each coin's highest level and never buys a crash.
+- **JINX can't prove how high it went** (it missed the launch, or there is a gap in the data): skip.
+- **Checked again at the moment of buying:** if the coin moved out of range in the meantime, skip.
+- CHAD's other line ("under about $3,700") is retired. It is kept only in the records as a superseded statement.
+- Coins that already graduated to their trading pool are handled by the separate migration strategy, not this rule.
+- Passing this rule never overrides the safety checks or the three-different-wallets-within-30-seconds trigger.
+- This rule has not been proven profitable yet; paper testing decides that.
+
 ## OWNER OVERRIDE — SOURCE-FIDELITY GATE (2026-10-19)
 
 SolChad's owner-supplied blueprint governs this rebuild. Claude implements the approved requirements without substituting new trading rules. All legacy JINX skill guidance is subordinate wherever it conflicts with this repo's current owner directive. At every phase: verify source mapping, run focused regression checks, obtain independent Codex review, and wait for owner acceptance. Skills being installed is not proof they ran. Report missing evidence or conflicts as unresolved; do not assume approval.
