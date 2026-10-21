@@ -617,9 +617,11 @@ class MigrationTracker:
         found = [t for t in (kept, tracked) if t is not None]
         if found:
             tok.m3 = (due, min(found, key=lambda t: t.key), "found")
-        elif pool is not None and len(pool.full) >= pool.cap and pool.full[-1].event_ns < due:
-            tok.m3 = (due, None, f"{self.LOST}: trades past migration + delay left the {pool.cap} kept on the pool "
-                                 "before the migration time was known")
+        elif pool is not None and len(pool.full) >= pool.cap:
+            # the kept set is full: trades later than every kept one were discarded and any of them may qualify
+            # under the current record, so the first qualifying trade cannot be known (round 7, R7-1)
+            tok.m3 = (due, None, f"{self.LOST}: none of the {pool.cap} trades kept on the pool qualifies under the "
+                                 "current migration record, and later trades were not kept")
         else:
             tok.m3 = (due, None, "no qualifying trade yet")
         return tok.m3[1], tok.m3[2]

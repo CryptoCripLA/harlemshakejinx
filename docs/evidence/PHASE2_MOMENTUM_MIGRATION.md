@@ -119,9 +119,9 @@ first; Early Momentum itself remembers a migration even when it arrives before t
   that arrive later.
 - **M3:** off by default; `confirmation_delay_ms` names a paper reference trade (`live_policy: False`) for the current
   record, taken from the kept trades (4,096 per pool with M3 on) and from a reference tracked as trades arrive. When
-  the migration time changes after trades past the new boundary have left the kept set, the first such trade cannot
-  be known: `reference_status` says "not determinable", and that answer stands for that migration time, so a later
-  trade is never reported in its place.
+  the migration record changes once the kept set is full and none of the kept trades qualifies under the new record,
+  the first qualifying trade cannot be known: `reference_status` says "not determinable", and that answer stands for
+  that migration time, so a later trade is never reported in its place.
 - **Measured:** live module run at 254434f (600 s): 8 migrations, 8 verified; migrate to evidence p50 45.4 ms; first
   pool trade p50 1 slot / 245 ms after the migrate (max 5 slots / 1,056 ms).
 
@@ -175,7 +175,11 @@ Codex round 6 on 872be0d (`docs/audits/phase2-intel-codex-20261021-round6.md`): 
 R3-2, R4-1, R5-1 confirmed FIXED): R6-1, in the off-by-default M3 variant, a later trade could replace an
 undeterminable reference after the migration time changed. Fixed: "not determinable" stands for that migration time
 and the reference is settled as soon as the record's time changes (`tests/test_review_phase2_intel_round6.py`).
-Later rounds are listed in `docs/audits/`.
+
+Codex round 7 on f4496a8 (`docs/audits/phase2-intel-codex-20261021-round7.md`): FAIL with 1 MEDIUM only, again in M3
+(R6-1 confirmed FIXED): with a full kept set and no kept trade qualifying under a changed record, "no qualifying trade
+yet" was claimed. Fixed: a full kept set without a qualifying trade is "not determinable"
+(`tests/test_review_phase2_intel_round7.py`). Later rounds are listed in `docs/audits/`.
 
 ## Deployment
 
