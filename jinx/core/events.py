@@ -79,8 +79,12 @@ class MarketEvent:
 
     @property
     def idempotency_key(self) -> str:
-        """Identity of the on-chain fact, independent of when or how often it was received."""
-        return f"{self.signature}:{self.kind}:{self.mint}:{self.side or '-'}:{self.trader or '-'}"
+        """Identity of the on-chain fact, independent of when or how often it was received. A source that reports
+        several trades of one side by one trader in one transaction as separate events marks each with a `leg` in
+        its stored record, so the key survives a store round trip; events without a leg keep the plain key."""
+        key = f"{self.signature}:{self.kind}:{self.mint}:{self.side or '-'}:{self.trader or '-'}"
+        leg = self.raw.get("leg")
+        return f"{key}:leg={leg}" if leg is not None else key
 
     @property
     def event_time_ns(self) -> int:

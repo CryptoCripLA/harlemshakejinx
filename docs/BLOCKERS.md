@@ -77,3 +77,28 @@ safety 0–100 formula and pass threshold; momentum "stall" and "sustained volum
   - Someone holding only the key can spend this account's read quota.
   - Trading also needs the request-signing key, which never left jinx-nyc, and the trusted IP.
 - Reversible option: rotate at any time with the steps in `docs/SECRETS.md` §4. No code change is needed.
+
+## B-17 pump.fun website endpoints versus pump.fun's Terms of Use
+- Owner request 2026-10-20: "implement pumpfuns api and swap api". The useful data (every trade with wallet, side, USD price and amount, time; 1-minute USD candles; coin details) is served by pump.fun's website endpoints `swap-api.pump.fun/v2/coins/{mint}/trades|candles` and `frontend-api-v3.pump.fun/coins-v3/{mint}`.
+  - All three answered without a login on 2026-10-20.
+  - pump.fun does not publish them: its official docs (`pump-fun/pump-public-docs` @ 639b87f) cover on-chain programs, IDLs and SDKs only. The endpoint lists online were reverse-engineered by a third party.
+- pump.fun's Terms of Use (updated 17 October 2026):
+  - §6.1: access "through such automated means (including bots) as we expressly permit";
+  - §21(h): no "bots, spiders or other automatic devices, programs, scripts … to access, obtain, copy or monitor any part of the Pump Platform … except as expressly permitted under Section 6.1";
+  - §21(j): no reverse-engineering.
+- So JINX does not call them automatically. The same data is available within terms:
+  - PumpAPI's free stream: every curve and PumpSwap trade with fee payer, amounts, reserves, slot and time;
+  - PumpAPI's free hourly replay archives for history;
+  - GMGN's candles and token info;
+  - pump.fun's official MIT SDKs (`@pump-fun/pump-sdk` 4.2.0, `@pump-fun/pump-swap-sdk` 2.2.0) for on-chain quotes.
+- Needed: an owner decision only if pump.fun's site endpoints are still wanted despite §21(h).
+- Reversible option: written permission from pump.fun, after which a read-only adapter is about a day's work.
+
+## B-18 Storage for the PumpAPI feed
+- Measured 2026-10-21: under the follow policy (all bonding-curve events, all migrations, PumpSwap trades only for followed or held mints), JINX would store about 43 events/s. That is ≈ 164 MB/hour, ≈ 3.9 GB/day with compact records.
+- jinx-nyc had 3.8 GB free (92 % used) when measured.
+- The Phase 1 store keeps every event forever, so the feed cannot run unattended as is.
+- Needed (owner): free disk on jinx-nyc, and/or approve a retention window for applied raw events.
+  - Recovery needs only unapplied events plus derived state.
+  - PumpAPI keeps hourly replay archives of everything, so history stays recoverable for backtests.
+- Reversible option: a retention job that deletes applied events older than N hours (N set by the owner), off by default.

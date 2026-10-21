@@ -46,6 +46,48 @@ Verbatim source (key redacted): `docs/OWNER_GMGN_MANDATE_20261020.md`. Its bindi
 2. **Keep the pasted API key** ("use the fucking key claude"): no rotation for now. It lives only in jinx-nyc `~/.config/gmgn/.env`, never in the repo, docs, tests or logs. Risk recorded as B-16; rotation steps are in `docs/SECRETS.md`.
 3. **The signing key may load in paper runs** ("its ok for paper we need real data i dont care if it loaded whatever"). This enables GMGN's signed reads. Trading methods stay refused by the bridge allowlist until the owner activates live trading.
 
+## OWNER DIRECTIVES 2026-10-20/21 — FREE DATA SOURCES; HUNTING AND EXIT COMPLETENESS
+
+Verbatim source: `docs/OWNER_DIRECTIVES_20261021.md`. **Phase 1 is accepted** (owner, 2026-10-21: "Already accepted. Preserve it. No rebuilding."). Phase 2 is open. Still four phases; no fifth phase, no new bot runtimes, no strategy invention.
+
+**Data sources (free first):**
+- **Test free sources before asking for paid ones.** Test PumpAPI.io (and any other free source) before asking for PumpPortal, Helius, Yellowstone or another subscription. Where a free feed is inadequate, name the exact missing data first.
+- **PumpAPI.io stream** is free, one connection per IP, and sends every DEX event. It sits behind the JINX-owned adapter `jinx/adapters/pumpapi/`. It hears the market. It does not replace GMGN's token intelligence, Smart Money, wallet scoring or order integration. Evaluation: `docs/PUMPAPI_EVALUATION.md`.
+- **PumpPortal's free creation and migration streams** run through the existing Mako adapter. Per-coin and per-wallet trade streams still require a key funded with 0.02 SOL (re-verified 2026-10-21).
+- **pump.fun's website endpoints** (`frontend-api-v3`, `swap-api`) are not published APIs. pump.fun's Terms of Use §6.1 and §21(h) prohibit bots except as expressly permitted, so they are not used without an owner decision (B-17). pump.fun's official, MIT-licensed SDKs and IDLs are available for program-level work.
+- **Execution stays GMGN.** No competing order gateway.
+
+**Hunting and exit completeness.** These are required capabilities. CHAD's formulas, weights, vetoes and exits are kept intact.
+- **Phase 2, realized-profit wallet intelligence:**
+  - realized P&L and win rates;
+  - average winning and losing hold times;
+  - win and loss multiples;
+  - performance after fees where available;
+  - exposure to tokens that later rugged;
+  - selling into deteriorating volume;
+  - trade size relative to liquidity;
+  - **copyability** after observation and execution delays;
+  - loss streaks and dumping after followed entries.
+
+  Wallet demotion is evidence plus paper-tested policies; there is no invented live demotion threshold. CHAD's wallet-confidence structure (50/25/25, 14-day half-life, 40 % promotion) stays.
+- **Phase 2, migration intelligence:**
+  - the actual migration transaction;
+  - the first verified post-migration liquidity;
+  - pre- and post-migration liquidity;
+  - large sells around graduation;
+  - developer and concentrated-holder selling;
+  - holder-distribution changes;
+  - competing early transactions.
+
+  Record decision-time evidence; there is no invented migration-buy threshold. A configurable confirmation delay exists for paper experiments only, never as live policy by default.
+- **Phase 2, token risk:** deployer history, early holder concentration, bundle and common-funder evidence, liquidity versus recent volume, insider activity and large-holder distribution, and CHAD's mandatory safety verdicts. CHAD's hard vetoes stay; there are no new live rejection thresholds.
+- **Phase 3, exits:**
+  - CHAD's Confluence Collapse and Negative Divergence exits, exactly;
+  - GMGN copy-sell and protective orders;
+  - **research variants** that are independently testable and off by default: partial profit ladders, volume-sensitive trailing, time exits, response to large tracked-wallet sells, and priority execution during liquidity deterioration.
+- **Phase 3, execution and capital:** exposure limits, balance reservation, liquidity-aware sizing, GMGN fee and priority mechanisms, and reason-coded trade logs. Daily loss stops need owner-approved parameters. A dedicated limited-capital wallet (B-14) is an activation requirement; it does not block Phase 2.
+- **Paper proof, Phases 2–4:** every capability shows its input data, output, failure cases, decision latency and test. Experimental variants are compared against CHAD on replay and forward paper, with realistic fees, delays, liquidity and failed exits. No hindsight sell prices. No claim of improvement without reproducible evidence.
+
 ## PRIORITY ZERO — PROFITS. PROFITS. PROFITS.
 **JINX EXISTS TO MAKE MONEY: MAXIMUM REALIZED NET SOL PROFIT.** The number-one trading priority is identifying actual early explosive moves, entering early at executable prices, sizing intelligently, firing rapidly, riding genuine momentum, and exiting to REALIZE NET SOL. Every line of code and every engineering action must answer: **HOW DOES THIS HELP JINX MAKE MORE REALIZED NET SOL?** Paper profits, backtest winnings, submitted orders, win-rate vanity, and transaction counts are not realized profits. Show real outcomes accurately; no one can guarantee a winning trade.
 

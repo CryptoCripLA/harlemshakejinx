@@ -1,0 +1,500 @@
+{
+  "generated_utc": "2026-10-20T23:56:31Z",
+  "window_s": 310.1,
+  "stream": {
+    "connections": 1,
+    "disconnects": 0,
+    "messages": 286653,
+    "bytes": 436641549,
+    "unparseable": 0,
+    "parse_cpu_s": 4.38,
+    "max_gap_s": 0.8764118029503152,
+    "errors": [],
+    "filtered_out": 193240,
+    "receipt_lag_ms_by_10s": {
+      "0-10s": {
+        "n": 3225,
+        "p50": 51.4,
+        "p95": 83.1,
+        "p99": 98.4,
+        "min": 47.8,
+        "max": 118.0
+      },
+      "10-20s": {
+        "n": 3178,
+        "p50": 51.5,
+        "p95": 62.6,
+        "p99": 82.9,
+        "min": 47.9,
+        "max": 91.8
+      },
+      "20-30s": {
+        "n": 3125,
+        "p50": 51.8,
+        "p95": 66.9,
+        "p99": 96.1,
+        "min": 48.0,
+        "max": 111.9
+      },
+      "30-40s": {
+        "n": 3044,
+        "p50": 51.3,
+        "p95": 60.4,
+        "p99": 75.7,
+        "min": 48.0,
+        "max": 131.6
+      },
+      "40-50s": {
+        "n": 2945,
+        "p50": 50.9,
+        "p95": 59.0,
+        "p99": 62.2,
+        "min": 47.9,
+        "max": 71.9
+      },
+      "50-60s": {
+        "n": 2773,
+        "p50": 51.2,
+        "p95": 62.9,
+        "p99": 74.4,
+        "min": 47.8,
+        "max": 150.2
+      },
+      "60-70s": {
+        "n": 2881,
+        "p50": 51.8,
+        "p95": 70.4,
+        "p99": 94.5,
+        "min": 47.8,
+        "max": 117.0
+      },
+      "70-80s": {
+        "n": 2735,
+        "p50": 51.5,
+        "p95": 60.6,
+        "p99": 140.2,
+        "min": 47.9,
+        "max": 212.0
+      },
+      "80-90s": {
+        "n": 2880,
+        "p50": 51.7,
+        "p95": 62.1,
+        "p99": 68.3,
+        "min": 47.8,
+        "max": 73.6
+      },
+      "90-100s": {
+        "n": 2754,
+        "p50": 51.1,
+        "p95": 58.6,
+        "p99": 62.1,
+        "min": 47.8,
+        "max": 71.4
+      },
+      "100-110s": {
+        "n": 3235,
+        "p50": 51.5,
+        "p95": 64.4,
+        "p99": 160.0,
+        "min": 47.7,
+        "max": 222.0
+      },
+      "110-120s": {
+        "n": 3213,
+        "p50": 51.5,
+        "p95": 60.6,
+        "p99": 68.4,
+        "min": 47.7,
+        "max": 77.1
+      },
+      "120-130s": {
+        "n": 3388,
+        "p50": 51.6,
+        "p95": 65.0,
+        "p99": 70.9,
+        "min": 47.8,
+        "max": 75.8
+      },
+      "130-140s": {
+        "n": 3018,
+        "p50": 51.5,
+        "p95": 82.1,
+        "p99": 169.6,
+        "min": 47.6,
+        "max": 271.4
+      },
+      "140-150s": {
+        "n": 3294,
+        "p50": 51.5,
+        "p95": 61.5,
+        "p99": 67.9,
+        "min": 47.8,
+        "max": 72.6
+      },
+      "150-160s": {
+        "n": 2957,
+        "p50": 50.5,
+        "p95": 57.8,
+        "p99": 62.3,
+        "min": 47.6,
+        "max": 69.8
+      },
+      "160-170s": {
+        "n": 3125,
+        "p50": 50.6,
+        "p95": 60.7,
+        "p99": 198.9,
+        "min": 47.6,
+        "max": 320.4
+      },
+      "170-180s": {
+        "n": 2792,
+        "p50": 50.8,
+        "p95": 56.2,
+        "p99": 60.0,
+        "min": 47.7,
+        "max": 71.6
+      },
+      "180-190s": {
+        "n": 3059,
+        "p50": 50.8,
+        "p95": 59.9,
+        "p99": 65.4,
+        "min": 47.6,
+        "max": 76.1
+      },
+      "190-200s": {
+        "n": 2966,
+        "p50": 51.2,
+        "p95": 60.6,
+        "p99": 75.1,
+        "min": 47.7,
+        "max": 116.0
+      },
+      "200-210s": {
+        "n": 2770,
+        "p50": 50.8,
+        "p95": 66.3,
+        "p99": 104.6,
+        "min": 47.8,
+        "max": 113.2
+      },
+      "210-220s": {
+        "n": 2607,
+        "p50": 52.5,
+        "p95": 115.0,
+        "p99": 366.0,
+        "min": 47.5,
+        "max": 440.6
+      },
+      "220-230s": {
+        "n": 3191,
+        "p50": 51.2,
+        "p95": 64.1,
+        "p99": 74.7,
+        "min": 47.6,
+        "max": 81.2
+      },
+      "230-240s": {
+        "n": 3265,
+        "p50": 51.5,
+        "p95": 66.0,
+        "p99": 79.6,
+        "min": 47.6,
+        "max": 88.9
+      },
+      "240-250s": {
+        "n": 3117,
+        "p50": 51.4,
+        "p95": 64.3,
+        "p99": 72.1,
+        "min": 47.7,
+        "max": 80.9
+      },
+      "250-260s": {
+        "n": 2798,
+        "p50": 50.7,
+        "p95": 58.6,
+        "p99": 70.3,
+        "min": 47.3,
+        "max": 75.7
+      },
+      "260-270s": {
+        "n": 2851,
+        "p50": 51.0,
+        "p95": 61.9,
+        "p99": 70.3,
+        "min": 47.6,
+        "max": 85.4
+      },
+      "270-280s": {
+        "n": 2818,
+        "p50": 51.3,
+        "p95": 72.4,
+        "p99": 480.4,
+        "min": 47.6,
+        "max": 546.2
+      },
+      "280-290s": {
+        "n": 2958,
+        "p50": 51.9,
+        "p95": 73.1,
+        "p99": 95.6,
+        "min": 47.6,
+        "max": 108.6
+      },
+      "290-300s": {
+        "n": 3173,
+        "p50": 51.5,
+        "p95": 62.5,
+        "p99": 68.3,
+        "min": 47.6,
+        "max": 75.4
+      }
+    },
+    "by_action_pool_top": {
+      "buy/pump-amm": 47087,
+      "sell/pump-amm": 29244,
+      "buy/pump": 7332,
+      "sell/pump": 6213,
+      "distributeFees/pump": 3209,
+      "create/pump": 255,
+      "distributeFees/pump-amm": 54,
+      "remove/pump-amm": 8,
+      "add/pump-amm": 4,
+      "migrate/pump-amm": 4,
+      "createPool/pump-amm": 3
+    },
+    "messages_per_s": 924.5,
+    "mb_per_s": 1.408
+  },
+  "process_cpu_share_of_one_core": 0.092,
+  "pump_events_kept": 90135,
+  "pump_events_by_action": {
+    "sell/pump-amm": 29244,
+    "buy/pump": 7332,
+    "sell/pump": 6213,
+    "buy/pump-amm": 47087,
+    "create/pump": 255,
+    "migrate/pump-amm": 4
+  },
+  "missing_required_fields": {},
+  "duplicate_events": 3,
+  "provider_timestamp_to_jinx_receipt_ms": {
+    "n": 90135,
+    "p50": 51.3,
+    "p95": 63.1,
+    "p99": 93.4,
+    "min": 47.3,
+    "max": 546.2
+  },
+  "creations": {
+    "pumpapi": 255,
+    "pumpportal": 125,
+    "seen_by_both": 124,
+    "pumpportal_minus_pumpapi_receipt_ms": {
+      "n": 124,
+      "p50": 97.9,
+      "p95": 1277.2,
+      "p99": 1466.5,
+      "min": 1.7,
+      "max": 1599.2
+    },
+    "pumpportal_only_mid_window": 1,
+    "pumpapi_only_mid_window": 129,
+    "creator_txSigner_equals_pumpportal_traderPublicKey": "124/124"
+  },
+  "three_fee_payers_in_30s": {
+    "mints_with_buys": 359,
+    "mints_with_3_payers_in_30s": 178,
+    "of_which_creation_also_seen": 87,
+    "seconds_from_creation_to_third_payer": {
+      "n": 87,
+      "p50": 0.3,
+      "p95": 24.4,
+      "p99": 28.5,
+      "min": 0.0,
+      "max": 61.3
+    },
+    "buys_where_txSigner_is_not_a_trader_involved": 1671,
+    "examples": [
+      {
+        "mint": "AndX\u2026pump",
+        "third_buy_ts": 1792540603341,
+        "since_create_s": null,
+        "window_s": 11.6,
+        "seen_create": false
+      },
+      {
+        "mint": "Bdwo\u2026pump",
+        "third_buy_ts": 1792540592287,
+        "since_create_s": null,
+        "window_s": 0.6,
+        "seen_create": false
+      },
+      {
+        "mint": "2biu\u2026pump",
+        "third_buy_ts": 1792540592336,
+        "since_create_s": null,
+        "window_s": 0.6,
+        "seen_create": false
+      },
+      {
+        "mint": "Bc5W\u2026pump",
+        "third_buy_ts": 1792540592422,
+        "since_create_s": null,
+        "window_s": 0.6,
+        "seen_create": false
+      },
+      {
+        "mint": "B3An\u2026pump",
+        "third_buy_ts": 1792540606972,
+        "since_create_s": null,
+        "window_s": 15.1,
+        "seen_create": false
+      }
+    ]
+  },
+  "migration_continuity": {
+    "migrations_seen": 4,
+    "pumpportal_migrations_missing_from_pumpapi": 1,
+    "rows": [
+      {
+        "mint": "8g2a\u2026pump",
+        "migrate_pool_field": "pump-amm",
+        "curve_trades_before": 545,
+        "amm_trades_after": 2317,
+        "amm_trades_use_migrate_poolId": true,
+        "first_amm_trade_after_s": 0.0,
+        "pumpportal_saw_it": true,
+        "pumpportal_minus_pumpapi_recv_ms": 296.5
+      },
+      {
+        "mint": "8Tsp\u2026pump",
+        "migrate_pool_field": "pump-amm",
+        "curve_trades_before": 115,
+        "amm_trades_after": 346,
+        "amm_trades_use_migrate_poolId": true,
+        "first_amm_trade_after_s": 0.7,
+        "pumpportal_saw_it": false,
+        "pumpportal_minus_pumpapi_recv_ms": null
+      },
+      {
+        "mint": "8zem\u2026pump",
+        "migrate_pool_field": "pump-amm",
+        "curve_trades_before": 59,
+        "amm_trades_after": 338,
+        "amm_trades_use_migrate_poolId": true,
+        "first_amm_trade_after_s": 0.0,
+        "pumpportal_saw_it": true,
+        "pumpportal_minus_pumpapi_recv_ms": 65.6
+      },
+      {
+        "mint": "4VKP\u2026pump",
+        "migrate_pool_field": "pump-amm",
+        "curve_trades_before": 1,
+        "amm_trades_after": 353,
+        "amm_trades_use_migrate_poolId": true,
+        "first_amm_trade_after_s": 0.0,
+        "pumpportal_saw_it": true,
+        "pumpportal_minus_pumpapi_recv_ms": 426.6
+      }
+    ]
+  },
+  "fee_payer_on_chain": {
+    "sampled": 12,
+    "checked": 7,
+    "fee_payer_matches_txSigner": 7,
+    "slot_matches_block": 7,
+    "rows": [
+      {
+        "signature": "3bUs\u2026sjfF",
+        "fee_payer_is_txSigner": true,
+        "chain_slot_equals_block": true,
+        "chain_block_time_s": 1792540591,
+        "event_timestamp_ms": 1792540591695,
+        "txSigner_in_tradersInvolved": false,
+        "traders_involved": 1
+      },
+      {
+        "signature": "sPdS\u20267nTd",
+        "fee_payer_is_txSigner": true,
+        "chain_slot_equals_block": true,
+        "chain_block_time_s": 1792540591,
+        "event_timestamp_ms": 1792540591712,
+        "txSigner_in_tradersInvolved": true,
+        "traders_involved": 1
+      },
+      {
+        "signature": "67j9\u2026ecaa",
+        "error": "not found"
+      },
+      {
+        "signature": "4htE\u2026QvFp",
+        "fee_payer_is_txSigner": true,
+        "chain_slot_equals_block": true,
+        "chain_block_time_s": 1792540591,
+        "event_timestamp_ms": 1792540591727,
+        "txSigner_in_tradersInvolved": true,
+        "traders_involved": 1
+      },
+      {
+        "signature": "618w\u2026uAL2",
+        "error": "not found"
+      },
+      {
+        "signature": "28Wo\u2026ffPA",
+        "error": "not found"
+      },
+      {
+        "signature": "27ia\u2026cqVh",
+        "fee_payer_is_txSigner": true,
+        "chain_slot_equals_block": true,
+        "chain_block_time_s": 1792540591,
+        "event_timestamp_ms": 1792540591738,
+        "txSigner_in_tradersInvolved": true,
+        "traders_involved": 1
+      },
+      {
+        "signature": "R3a1\u2026qoqy",
+        "fee_payer_is_txSigner": true,
+        "chain_slot_equals_block": true,
+        "chain_block_time_s": 1792540591,
+        "event_timestamp_ms": 1792540591747,
+        "txSigner_in_tradersInvolved": true,
+        "traders_involved": 1
+      },
+      {
+        "signature": "63kE\u2026qZUv",
+        "fee_payer_is_txSigner": true,
+        "chain_slot_equals_block": true,
+        "chain_block_time_s": 1792540591,
+        "event_timestamp_ms": 1792540591750,
+        "txSigner_in_tradersInvolved": true,
+        "traders_involved": 1
+      },
+      {
+        "signature": "4daT\u2026PZAU",
+        "error": "not found"
+      },
+      {
+        "signature": "4z9Y\u2026M8mj",
+        "error": "not found"
+      },
+      {
+        "signature": "sR4y\u2026N1gH",
+        "fee_payer_is_txSigner": true,
+        "chain_slot_equals_block": true,
+        "chain_block_time_s": 1792540591,
+        "event_timestamp_ms": 1792540591808,
+        "txSigner_in_tradersInvolved": true,
+        "traders_involved": 1
+      }
+    ]
+  },
+  "sample": {
+    "path": "/tmp/claude-1001/-home-atlasops-codex-worktrees-JINX-engineering-ceabc2dd3f380301-claude-md-directive-review-adbf4b/52e20eb1-d1a0-40a4-baee-594b4a739c94/scratchpad/pumpapi-live-300s.jsonl.gz",
+    "events": 90135
+  }
+}

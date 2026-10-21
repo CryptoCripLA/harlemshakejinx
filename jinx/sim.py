@@ -1,7 +1,8 @@
-"""Replay of captured live PumpPortal messages through the real JINX pipeline.
+"""Replay of captured live feed messages through the real JINX pipeline.
 
-A capture is JSON lines of {"recv_ns": int, "raw": <message exactly as Mako's
-stream delivered it>}. Replay runs each message through the same normalizer,
+A capture is JSON lines of {"recv_ns": int, "raw": <message>}: for source
+"pumpportal" the message exactly as Mako's stream delivered it, for source
+"pumpapi" PumpAPI's message (or its compact record, which normalizes the same). Replay runs each message through the same normalizer,
 bus (with durable dedup), and core state as the live engine. Sequence numbers
 come from the record's position in the capture, so any reordering of the same
 records must produce identical final state.
@@ -21,6 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from jinx.adapters.mako.normalize import MalformedMessage, normalize
+from jinx.adapters.pumpapi.normalize import MalformedEvent, NotQuotedInSol, normalize as pumpapi_normalize
 from jinx.core.bus import EventBus, Lane
 from jinx.core.events import EventKind
 from jinx.core_state import CoreState
@@ -33,6 +35,10 @@ from jinx.recovery import recover
 from jinx.registry import TokenRegistry, WalletRegistry
 from jinx.store import Store
 from jinx import config
+
+
+NORMALIZERS = {"pumpportal": (normalize, (MalformedMessage,)),
+               "pumpapi": (pumpapi_normalize, (MalformedEvent, NotQuotedInSol))}
 
 
 def load_capture(path: Path) -> list[dict]:
@@ -71,14 +77,16 @@ class _Pipeline:
         self.report = recover(self.store, self.core, self.ledger, self.wallet, bus=self.bus)
 
 
-async def _feed(pipe: _Pipeline, indexed: list[tuple[int, dict]], result: ReplayResult, exercise=None) -> None:
+async def _feed(pipe: _Pipeline, indexed: list[tuple[int, dict]], result: ReplayResult, exercise=None,
+                source: str = "pumpportal") -> None:
+    normalize_fn, refused = NORMALIZERS[source]
     runner = asyncio.create_task(pipe.bus.run())
     try:
         for idx, rec in indexed:
             seqs = iter((2 * idx + 1, 2 * idx + 2))
             try:
-                events = normalize(rec["raw"], rec["recv_ns"], seqs.__next__)
-            except MalformedMessage:
+                events = normalize_fn(rec["raw"], rec["recv_ns"], seqs.__next__)
+            except refused:
                 result.malformed += 1
                 continue
             for ev in events:
@@ -95,7 +103,8 @@ async def _feed(pipe: _Pipeline, indexed: list[tuple[int, dict]], result: Replay
 
 
 def replay(records: list[dict], db_path: Path, shuffle_seed: int | None = None, duplicate_every: int | None = None,
-           restart_at: int | None = None, accounting_exercise: bool = False, exit_after: int = 0) -> ReplayResult:
+           restart_at: int | None = None, accounting_exercise: bool = False, exit_after: int = 0,
+           source: str = "pumpportal") -> ReplayResult:
     indexed = list(enumerate(records))
     if duplicate_every:
         indexed = [x for i, x in enumerate(indexed) for _ in range(2 if i % duplicate_every == 0 else 1)]
@@ -114,7 +123,7 @@ def replay(records: list[dict], db_path: Path, shuffle_seed: int | None = None, 
         exercise = _AccountingExercise(pipe, exit_after) if accounting_exercise else None
         if exercise:
             set_mode(pipe.store, Mode.AUTO, by="accounting-exercise")
-        asyncio.run(_feed(pipe, chunk, result, exercise))
+        asyncio.run(_feed(pipe, chunk, result, exercise, source))
         if exercise:
             result.accounting = exercise.summary()
     latency += pipe.bus.latency_ns(Lane.FAST)

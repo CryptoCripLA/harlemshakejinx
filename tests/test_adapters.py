@@ -18,7 +18,9 @@ from jinx.core.events import EventKind, Side
 
 ROOT = Path(__file__).resolve().parent.parent
 ADAPTERS = ROOT / "jinx" / "adapters"
-NAMES = ("gmgn", "mako", "d3ad", "datanomad")
+# every adapter package, discovered, so a new adapter is covered by the isolation tests automatically
+NAMES = tuple(sorted(p.name for p in ADAPTERS.iterdir() if p.is_dir() and (p / "__init__.py").exists()))
+assert {"gmgn", "mako", "d3ad", "datanomad", "pumpapi"} <= set(NAMES)
 
 CREATE = {"signature": "CS1", "mint": "MintAAApump", "traderPublicKey": "Dev111", "txType": "create",
           "initialBuy": 35_000_000.5, "solAmount": 1.0, "bondingCurveKey": "BC1",
@@ -75,7 +77,7 @@ def test_core_never_imports_adapters_or_reads_upstream_paths():
 def test_each_adapter_has_its_own_state_directory(tmp_path):
     from jinx.adapters.base import state_dir
     dirs = {state_dir(tmp_path, n) for n in NAMES}
-    assert len(dirs) == 4 and all(d.parent == tmp_path / "adapters" for d in dirs)
+    assert len(dirs) == len(NAMES) and all(d.parent == tmp_path / "adapters" for d in dirs)
 
 
 # ---- Mako: upstream PumpPortalStream behind a clean import -----------------------

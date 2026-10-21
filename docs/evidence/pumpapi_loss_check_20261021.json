@@ -1,0 +1,149 @@
+{
+  "generated_utc": "2026-10-21T00:12:29Z",
+  "window_s": 150.0,
+  "capture_errors": [
+    "ConnectionClosedError"
+  ],
+  "creations": {
+    "pumpapi_all": 22,
+    "pumpapi_sol_quoted": 16,
+    "pumpportal": 57,
+    "both": 13,
+    "pumpportal_creations_not_quoted_in_sol": 3,
+    "pumpportal_only_mid_window": [
+      {
+        "mint": "94pE\u2026pump",
+        "on_chain": "pump buy",
+        "pumpapi_saw_any_event_for_mint": false
+      },
+      {
+        "mint": "DiQd\u2026ZfhG",
+        "on_chain": "pump create",
+        "pumpapi_saw_any_event_for_mint": false
+      },
+      {
+        "mint": "FkbN\u2026A649",
+        "on_chain": "pump create",
+        "pumpapi_saw_any_event_for_mint": false
+      },
+      {
+        "mint": "GxTD\u202644Dx",
+        "on_chain": "pump create",
+        "pumpapi_saw_any_event_for_mint": false
+      },
+      {
+        "mint": "8mpX\u2026vjGP",
+        "on_chain": "pump create",
+        "pumpapi_saw_any_event_for_mint": false
+      }
+    ],
+    "pumpapi_only_sol_quoted_mid_window": 4,
+    "pumpapi_only_sample_on_chain": [
+      {
+        "mint": "DjvL\u2026h3Dp",
+        "mayhemMode": false,
+        "on_chain": "not retrievable"
+      },
+      {
+        "mint": "74fd\u2026pump",
+        "mayhemMode": false,
+        "on_chain": "not retrievable"
+      },
+      {
+        "mint": "2Za8\u2026pump",
+        "mayhemMode": false,
+        "on_chain": "not retrievable"
+      },
+      {
+        "mint": "CSmw\u2026pump",
+        "mayhemMode": true,
+        "on_chain": "not retrievable"
+      }
+    ]
+  },
+  "migrations": {
+    "pumpapi": 0,
+    "pumpportal": 3,
+    "both": 0,
+    "pumpportal_only": [
+      {
+        "mint": "7ooS\u2026pump",
+        "on_chain": "pump create",
+        "pumpapi_events_for_mint": 84
+      },
+      {
+        "mint": "2eCG\u2026pump",
+        "on_chain": "pump create",
+        "pumpapi_events_for_mint": 0
+      },
+      {
+        "mint": "AaNn\u2026pump",
+        "on_chain": "pump migrate",
+        "pumpapi_events_for_mint": 0
+      }
+    ]
+  },
+  "bonding_curve_trades_vs_chain": [
+    {
+      "mint": "7Toh\u2026pump",
+      "mint_ends_in_pump": true,
+      "distinct_poolIds": 1,
+      "slot_range": 171,
+      "chain_successful_txs": 108,
+      "chain_failed_txs": 30,
+      "pumpapi_txs": 108,
+      "in_both": 108,
+      "missing_from_pumpapi": 0,
+      "missing_classified": [],
+      "pumpapi_not_in_chain_listing": 0,
+      "extra_classified": []
+    },
+    {
+      "mint": "3kw1\u2026pump",
+      "mint_ends_in_pump": true,
+      "distinct_poolIds": 1,
+      "slot_range": 172,
+      "chain_successful_txs": 102,
+      "chain_failed_txs": 64,
+      "pumpapi_txs": 102,
+      "in_both": 102,
+      "missing_from_pumpapi": 0,
+      "missing_classified": [],
+      "pumpapi_not_in_chain_listing": 0,
+      "extra_classified": []
+    },
+    {
+      "mint": "8E39\u2026pump",
+      "mint_ends_in_pump": true,
+      "distinct_poolIds": 1,
+      "slot_range": 169,
+      "chain_successful_txs": 86,
+      "chain_failed_txs": 10,
+      "pumpapi_txs": 86,
+      "in_both": 86,
+      "missing_from_pumpapi": 0,
+      "missing_classified": [],
+      "pumpapi_not_in_chain_listing": 0,
+      "extra_classified": []
+    }
+  ],
+  "rpc_errors": [
+    "getTransaction: RuntimeError: {'code': -32015, 'message': 'Transaction version (1) is not supported by the requesting client. Plea",
+    "getTransaction: RuntimeError: {'code': -32015, 'message': 'Transaction version (1) is not supported by the requesting client. Plea",
+    "getTransaction: RuntimeError: {'code': -32015, 'message': 'Transaction version (1) is not supported by the requesting client. Plea",
+    "getTransaction: RuntimeError: {'code': -32015, 'message': 'Transaction version (1) is not supported by the requesting client. Plea",
+    "getTransaction: RuntimeError: {'code': -32015, 'message': 'Transaction version (1) is not supported by the requesting client. Plea",
+    "getTransaction: RuntimeError: {'code': -32015, 'message': 'Transaction version (1) is not supported by the requesting client. Plea",
+    "getTransaction: RuntimeError: {'code': -32015, 'message': 'Transaction version (1) is not supported by the requesting client. Plea",
+    "getTransaction: RuntimeError: {'code': -32015, 'message': 'Transaction version (1) is not supported by the requesting client. Plea",
+    "getTransaction: RuntimeError: {'code': -32015, 'message': 'Transaction version (1) is not supported by the requesting client. Plea",
+    "getTransaction: RuntimeError: {'code': -32015, 'message': 'Transaction version (1) is not supported by the requesting client. Plea",
+    "getTransaction: RuntimeError: {'code': -32015, 'message': 'Transaction version (1) is not supported by the requesting client. Plea",
+    "getTransaction: RuntimeError: {'code': -32015, 'message': 'Transaction version (1) is not supported by the requesting client. Plea",
+    "getTransaction: RuntimeError: {'code': -32015, 'message': 'Transaction version (1) is not supported by the requesting client. Plea",
+    "getTransaction: RuntimeError: {'code': -32015, 'message': 'Transaction version (1) is not supported by the requesting client. Plea",
+    "getTransaction: RuntimeError: {'code': -32015, 'message': 'Transaction version (1) is not supported by the requesting client. Plea",
+    "getTransaction: RuntimeError: {'code': -32015, 'message': 'Transaction version (1) is not supported by the requesting client. Plea"
+  ],
+  "rpc_error_count": 16
+}
