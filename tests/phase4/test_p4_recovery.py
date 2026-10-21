@@ -128,3 +128,25 @@ def test_restart_recovery_runs_before_any_event_and_is_idempotent(tmp_path):
     assert second.recovery.reopened_exits == 0 and second.recovery.released_unfilled == 0
     assert (h.state_view(second)["ledger"], second.wallet.balance()) == snapshot
     h.close(second)
+
+
+def test_after_a_restart_no_token_first_seen_before_it_can_pass_the_entry_rule(tmp_path):
+    """The market view is RAM only (owner order 2026-10-21), so a restart forgets every token's history. A token whose
+    launch happened before the restart has no provable peak afterwards and must stay blocked (B-02 §7); a token
+    launched after the restart is judged on its own complete history."""
+    from jinx.sim import load_capture
+    from tests.phase4.test_p4_chad_entry_predicates import LiveFeed
+    live = load_capture(h.FIXTURES / "pumpapi-live-20261021.jsonl.gz")
+    half = len(live) // 2
+    before = h.build_app(tmp_path)
+    h.run(before, h.deliveries(live[:half], "pumpapi"))
+    seen_before = {t.mint for t in before.core.tokens.all()}
+    h.close(before)
+    after = h.build_app(tmp_path)                                   # restart on the same data directory
+    after.pumpapi = LiveFeed()
+    assert len(after.core.tokens) == 0                              # the market view starts empty by design
+    h.run(after, h.deliveries(live, "pumpapi")[half:])
+    carried = [m for m in seen_before if after.core.tokens.get(m) is not None]
+    assert carried, "the second half must trade some tokens first seen before the restart"
+    assert not any(after.early.reserve_check(m, feed_live=True)["eligible"] for m in carried)
+    h.close(after)
