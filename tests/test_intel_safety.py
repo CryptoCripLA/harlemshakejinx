@@ -161,3 +161,13 @@ def test_transient_rugcheck_results_are_not_cached_by_the_safety_service():
     first = asyncio.run(svc.evaluate("M", "DEV", 2e9))
     second = asyncio.run(svc.evaluate("M", "DEV", 2e9))
     assert first.safety.verdict is Verdict.UNKNOWN and second.safety.verdict is Verdict.PASS and len(rc.calls) == 2
+
+
+def test_launch_outcomes_observed_after_the_decision_are_flagged_not_presented_as_known():
+    """Phase 4 finding P4-F7: is_open and ATH are GMGN's state when observed, not at the decision."""
+    created = {"inner_count": 1, "tokens": [{"token_address": "L", "create_timestamp": 100, "is_open": True,
+                                              "token_ath_mc": "9000000"}]}
+    at = dev_history("DEV", created, decision_ts_s=101.0, observed_ns=101 * 10**9).facts
+    later = dev_history("DEV", created, decision_ts_s=101.0, observed_ns=10_000 * 10**9).facts
+    assert at["outcomes_decision_time_safe"] is True and at["outcomes_observed_after_decision_s"] == 0.0
+    assert later["outcomes_decision_time_safe"] is False and later["outcomes_observed_after_decision_s"] == 9_899.0

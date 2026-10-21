@@ -6,8 +6,12 @@ safety threshold it runs behind are not specified (B-03), so this module records
 
 Decision-time safety (owner order, no future leakage): only launches created strictly before the decision time are
 counted. GMGN's lifetime totals (`inner_count`, `open_count`, `open_ratio`) include launches after the decision and
-are kept separately, marked `decision_time_safe: False`. GMGN returns a page of recent launches, so when its lifetime
-count exceeds the page the history is marked incomplete rather than extrapolated.
+are kept separately, marked `decision_time_safe: False`. Each earlier launch's outcome (graduated or not, its ATH) is
+GMGN's state at the time of observation, not at the decision: when the data was observed after the decision (a replay,
+a backtest, or simply the request's own latency live) `outcomes_decision_time_safe` is False and the gap is reported in
+`outcomes_observed_after_decision_s`, so a consumer never mistakes later outcomes for knowledge at the decision (Phase 4
+finding P4-F7). GMGN returns a page of recent launches, so when its lifetime count exceeds the page the history is
+marked incomplete rather than extrapolated.
 Source: GMGN `getCreatedTokens` (formats pinned by tests/fixtures/gmgn_security_sample_20261021.json).
 """
 from __future__ import annotations
@@ -54,6 +58,8 @@ def dev_history(creator: str | None, created: dict | None, decision_ts_s: float,
         "mean_bundler_rate_before_decision": (sum(bundler) / len(bundler)) if bundler else None,
         "last_launch_before_decision_ts": max((_num(t.get("create_timestamp")) for t in before), default=None),
         "history_complete": lifetime is not None and lifetime <= len(tokens),
+        "outcomes_decision_time_safe": observed_ns <= decision_ts_s * 1_000_000_000,
+        "outcomes_observed_after_decision_s": max(0.0, observed_ns / 1e9 - decision_ts_s),
         "gmgn_lifetime_counts": {"launches": lifetime, "graduated": _num(created.get("open_count")),
                                  "graduation_ratio": _num(created.get("open_ratio")), "decision_time_safe": False},
         "chad_gate": "CHAD runs Dev Intel after the safety score threshold (B-03); collected as evidence, not gating",

@@ -168,10 +168,6 @@ def test_screening_resumes_after_a_transient_rugcheck_network_error(tmp_path):
 
 # ---- P4-F7: developer history reads outcomes observed after the decision ---------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason=f"FINDING P4-F7 (Codex round 1, finding 3): jinx/intel/dev_reputation.py filters "
-                   f"launches by creation time but counts each launch's present-day is_open (graduation) and ATH as "
-                   f"facts 'before decision'. In a replay or backtest (observation after the decision) that is "
-                   f"lookahead. Owner: {LEAD}.")
 def test_developer_history_never_presents_later_observed_outcomes_as_known_at_the_decision():
     decision_s, observed_ns = 101.0, 10_000 * 1_000_000_000          # observed long after the decision
     created = {"inner_count": 1, "tokens": [{"token_address": "earlier-launch", "create_timestamp": 100,
