@@ -8,7 +8,7 @@ JINX servers or databases.
 
 | # | Service | Role | Where |
 |---|---|---|---|
-| 1 | **Contabo Cloud VPS 6** | Exclusive trading execution: the JINX engine, ledger, order path | 13.140.224.208, Carlstadt NJ (US-east). Not deployed yet (SSH key pending, §6) |
+| 1 | **Contabo Cloud VPS 6** | Exclusive trading execution: the JINX engine, ledger, order path | `vmi3672752`, 13.140.224.208, Carlstadt NJ (US-east): 6 vCPU, 12 GB RAM, 193 GB disk, Ubuntu 24.04.5. Reinstalled 2026-10-21 with key-only login (`ubuntu`, deploy key `jinx-deploy@jinx-nyc`); firewall allows SSH only. JINX runs as the `jinx` systemd service in paper mode, deployed by `deploy/contabo/deploy.sh` |
 | 2 | **Redis Cloud** | Fast transient state: health and token snapshots, every key expires | database `database-MVHIAO2Q` (id 14706944) |
 | 3 | **Neon PostgreSQL** | Durable trading ledger: positions with realized P&L, fills, exits, paper wallet, settings | org `org-shy-term-30862447`, project `flat-hat-34042458`, branch `production` (`br-icy-art-b48n1bjp`), AWS us-east-2 |
 | 3a | Neon Object Storage | Daily ledger backup, retention enforced by JINX | `br-icy-art-b48n1bjp.storage.c-6.us-east-2.aws.neon.tech`, bucket `jinx-backups` |
@@ -82,6 +82,17 @@ receive → state p50 0.42 ms, p95 0.78 ms, p99 1.10 ms (3,007 live events); wit
 entry p50 0.30 ms / p95 0.48 ms with the outbox triggers, 0.20 / 0.29 ms without them. The outbox adds ≈0.1 ms
 locally, and nothing remote sits on the order path.
 
+### 4.1 Contabo, live (2026-10-21, release a8129a7, ~3 minutes after start, mode OFF, paper)
+
+| Item | Measured |
+|---|---|
+| Health | `ok`; PumpAPI and PumpPortal connected; 4,806 events applied, 0 unapplied; 0 failures on all five services |
+| Local processing, receive → state | p50 0.79 ms, p95 2.06 ms, p99 4.97 ms (4,806 events). Slower than the engineering host (p50 0.43 ms): shared vCPU |
+| Process RAM | 99 MB (budget 1 GB, ceiling 2 GB); market store 2.3 MB in RAM (261 tokens, 1,211 wallets) |
+| Disk | ledger directory `/var/lib/jinx` 204 KB; code and venv `/opt/jinx` 157 MB (newest 3 releases kept); journal 16 MB (cap 500 MB); filesystem 2% used |
+| Neon / Railway / Redis / object storage | Neon 7.9 MB, Railway 8.2 MB (643 wallets written by the first pass), Redis 2.5 MB, backup 4.8 KB: all `ok` against budget |
+| TCP connect from Contabo (best of 5) | GMGN 1.9 ms, PumpPortal 2.3 ms, Railway proxy 7.0 ms, Neon 29.9 ms, PumpAPI 83.0 ms. PumpAPI's endpoint is far from US-east; it still delivered every event, but its stream lag is the larger of the two feeds |
+
 ## 5. Restore
 
 Ledger: download the newest `ledger/…db.gz` (`neon buckets object get jinx-backups/<key> --file x.gz`, or
@@ -94,8 +105,7 @@ same records row for row. Market data is never restored: it is rebuilt from the 
   (mode 600) for automation. Nothing is in Git, logs or docs (enforced by `tests/test_secrets.py`).
 - Neon `neondb_owner` password rotated 2026-10-21 with SQL `ALTER ROLE` (Neon's documented way to set a chosen
   password): the new one is verified and the previous one is rejected. Neon's schema and data were untouched.
-- Still open: Contabo accepts only password login, and no existing key is authorized. The one owner action is to run
-  `C:\Users\kevin\ClaudeDrop\add-jinx-key-contabo.ps1` (right-click → Run with PowerShell) and type the root password
-  once. After that the deployment runs without the owner.
+- Contabo access: reinstalled by owner approval 2026-10-21 with the deploy key only (no password login).
+- Before any live trading (Phase 3+), GMGN's trusted IP must include 13.140.224.208 (today it is the engineering host).
 - The object-storage keys and AI Gateway token shared in chat remain in use (owner decision); Neon offers rotation for
   them in the console only.

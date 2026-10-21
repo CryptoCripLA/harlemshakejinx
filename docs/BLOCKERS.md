@@ -100,3 +100,10 @@ safety 0–100 formula and pass threshold; momentum "stall" and "sustained volum
 - Owner decisions 2026-10-21: raw PumpAPI events are processed in RAM and discarded after extraction; no raw archive anywhere; new dedicated services (Contabo execution, Neon ledger, Railway research, Redis transient); permanent storage hygiene rules.
 - Implemented: the market store is in-memory only (event TTL 300 s + cap 60,000; raw payload released at apply; tokens and wallets idle 2 h + caps). Disk on the execution server holds only the ledger (172 KB measured). The earlier projection of 3.9 GB/day no longer applies: nothing from the feed is written to disk.
 - Evidence: `tests/test_market_memory.py`, `tests/test_storage_hygiene.py`, `docs/INFRASTRUCTURE.md` §4.
+
+## B-19 RugCheck has no approved source (CHAD C01)
+- CHAD: "Runs RugCheck, honeypot detection, and mint/freeze authority analysis on every candidate." Honeypot and mint/freeze authority come from GMGN `getTokenSecurity` (implemented, `jinx/intel/safety.py`). RugCheck itself is not called by any approved source (GMGN, Mako, D3AD, DataNomad).
+- Effect: the RugCheck predicate is UNKNOWN, so the safety verdict can be PASS for no token. CHAD's rule "do not generate a trade when a required predicate is unresolved" holds; Phase 3 entries stay disabled.
+- Needed (owner): approve RugCheck's free public API as the RugCheck source, or approve GMGN's security risk fields (`hide_risk`, `flags`, `is_show_alert`) as the RugCheck stand-in.
+- Reversible option: add a RugCheck adapter, off by default, behind the existing `rugcheck=` input of `assess()`.
+
