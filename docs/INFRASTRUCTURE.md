@@ -71,12 +71,14 @@ Budgets (env-overridable): RAM 1 GB, data directory 1 GB, Neon 400 MB (free plan
 | Outbox | 0 rows after replication or end of day | ≤ one row per trading record |
 | Neon Object Storage | 1 object, 4.8 KB (first real backup, `ledger/jinx-ledger-20261021.db.gz`) | newest 7 |
 | Neon AI Gateway | reachable, 60 models | 2 requests in flight |
-| Neon PostgreSQL, Redis, Railway PostgreSQL | not connected yet: connection strings pending (§6) | budgets above |
+| Neon PostgreSQL | connected 2026-10-21: PostgreSQL 18.6 via the pooler, fresh schema created by JINX (7 ledger tables + `jinx_meta`), 7.9 MB database (Neon's baseline), round trip 20 ms from jinx-nyc | budget 400 MB |
+| Redis Cloud | connected: Redis 8.6.2, 228 keys after one pass, every key with a TTL (97 s to 2 h, 0 without), 2.3 MB used, eviction policy `volatile-lru`, round trip 7 ms. Plain `redis://` (the free database offers no TLS): it carries only expiring snapshots, no credentials or trade records | budget 25 MB |
+| Railway PostgreSQL | provisioned (PostgreSQL 18, 5 GB volume); not connected: password pending (§6) | budget 4 GB |
 | pytest temp area | 0 bytes after a full run (was 99 MB) | none retained |
 | Filesystem (jinx-nyc, not JINX data) | 88% used, 3.7 GB free → monitor reports `warn` | Contabo will be measured on first deploy |
 
 Latency (local processing; order-execution latency to the network is measured separately in Phase 4):
-receive → state p50 0.42 ms, p95 0.78 ms, p99 1.10 ms (3,007 live events). Paper order path, 400 entry+exit cycles:
+receive → state p50 0.42 ms, p95 0.78 ms, p99 1.10 ms (3,007 live events); with Neon, Redis, object storage and the AI Gateway all connected, p50 0.44 ms, p95 0.80 ms, p99 1.22 ms (5,009 events, 130 s), RSS 102 MB. Paper order path, 400 entry+exit cycles:
 entry p50 0.30 ms / p95 0.48 ms with the outbox triggers, 0.20 / 0.29 ms without them. The outbox adds ≈0.1 ms
 locally, and nothing remote sits on the order path.
 
@@ -88,10 +90,9 @@ same records row for row. Market data is never restored: it is rebuilt from the 
 
 ## 6. Open items (owner)
 
-1. Neon PostgreSQL connection string (Neon console → Connect → pooled), the Railway PostgreSQL connection string
-   (Railway → Postgres → Variables → `DATABASE_URL` with the TCP proxy host `shuttle.proxy.rlwy.net:36046`), and the
-   Redis Cloud URL for `database-MVHIAO2Q`. The integrations available here return Railway variable names only, and
-   the Neon CLI sign-in cannot complete on a headless server. Once they are in the env file, JINX creates the fresh
-   schemas itself on start.
+1. Railway PostgreSQL password (Railway → Postgres → Variables → `PGPASSWORD`). The Railway integration returns
+   variable names only. Once it is in the env file, JINX creates the research schema itself.
+   Neon PostgreSQL and Redis Cloud are connected (2026-10-21).
 2. Contabo root SSH access for the deploy key `jinx-deploy@jinx-nyc->contabo-13.140.224.208`.
-3. Rotate the Neon object-storage keys and AI Gateway token: they were shared in chat (they work and are wired).
+3. Rotate the Neon object-storage keys and AI Gateway token (shared in chat) and reset the `neondb_owner` password
+   (it appeared in an engineering session's output on 2026-10-21). None of them is in the repository.
