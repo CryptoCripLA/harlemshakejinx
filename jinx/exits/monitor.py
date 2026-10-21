@@ -93,6 +93,8 @@ class PositionMonitor:
         """Fast-lane handler. A trade carrying reserves for a held mint is a price update."""
         if ev.kind is not EventKind.TRADE or ev.v_sol_lamports is None or ev.v_tokens is None:
             return None
+        if self.gateway.pending:
+            self.gateway.on_price(ev.event_time_ns, ev.mint)   # delayed paper orders due at this price fill first
         decision = None
         for pos in self.ledger.active():
             if pos.mint == ev.mint and pos.status is Status.OPEN:
@@ -104,6 +106,8 @@ class PositionMonitor:
         """Every open position, time-based checks (CHAD: "every 10 seconds"). Also prunes state of closed positions."""
         now = now_ns if now_ns is not None else self.clock_ns()
         self.stats.sweeps += 1
+        if self.gateway.pending:
+            self.gateway.process_due(now)
         open_ids, out = set(), []
         for pos in self.ledger.active():
             open_ids.add(pos.position_id)

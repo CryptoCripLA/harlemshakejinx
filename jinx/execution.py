@@ -15,6 +15,7 @@ import json
 import time
 from dataclasses import dataclass, field
 from decimal import Decimal
+from enum import StrEnum
 
 from jinx.ledger import PositionLedger, Status
 from jinx.modes import ExecutionMode, get_execution_mode
@@ -151,9 +152,101 @@ class ExitIntent:
                 "quote_status": self.quote_status, "quote_lamports": self.quote_lamports}
 
 
+class OrderState(StrEnum):
+    FILLED = "FILLED"
+    FAILED = "FAILED"
+    UNCERTAIN = "UNCERTAIN"
+
+
+@dataclass(frozen=True)
+class OrderOutcome:
+    state: OrderState
+    order_id: str | None
+    status: str | None
+    input_amount: int | None = None
+    output_amount: int | None = None
+    detail: str | None = None
+
+
+GMGN_SUCCESS = ("confirmed", "successful")
+GMGN_FAILURE = ("failed", "expired")
+
+
+def gmgn_order_outcome(report: dict) -> OrderOutcome:
+    """One GMGN `swap` / `order get` response -> FILLED, FAILED or UNCERTAIN (INTEGRATION_MAP §2 rule 3).
+
+    GMGN's skill docs (gmgn-swap SKILL.md, "swap / order get Response Fields"): status pending -> processed ->
+    confirmed, or failed / expired; actual amounts only in `report.input_amount` / `report.output_amount`, present
+    only on success (the same page also calls that status "successful"). So a fill is booked only for a success status
+    WITH both report amounts; an acknowledgement, a pending or processed order, a success without amounts, or an
+    unknown status is UNCERTAIN and is polled again, never assumed filled."""
+    order_id, status = report.get("order_id"), report.get("status")
+    if status in GMGN_FAILURE:
+        return OrderOutcome(OrderState.FAILED, order_id, status, detail=report.get("error_status") or status)
+    if status in GMGN_SUCCESS:
+        r = report.get("report") or {}
+        try:
+            i, o = int(r["input_amount"]), int(r["output_amount"])
+        except (KeyError, TypeError, ValueError):
+            return OrderOutcome(OrderState.UNCERTAIN, order_id, status, detail="success without report amounts")
+        if i >= 0 and o >= 0:
+            return OrderOutcome(OrderState.FILLED, order_id, status, i, o)
+    return OrderOutcome(OrderState.UNCERTAIN, order_id, status, detail="not final")
+
+
+@dataclass
+class _PendingFill:
+    side: str
+    intent: object
+    position_id: int
+    mint: str
+    due_ns: int
+
+
 class ExecutionGateway:
-    def __init__(self, store: Store, ledger: PositionLedger, paper: PaperExecutor, live=None) -> None:
+    """`fill_delay_ns` is a labelled paper simulation setting: when > 0, a paper order is priced at the reserves of the
+    first price update at least that long after the decision (event time), instead of the reserves the decision saw.
+    Until then the order is SUBMITTED and the position stays pending: nothing is booked. 0 (the default) fills at
+    the decision's reserves, which ignores latency (CLAUDE.md: an observed price is not automatically a fill)."""
+
+    def __init__(self, store: Store, ledger: PositionLedger, paper: PaperExecutor, live=None,
+                 fill_delay_ns: int = 0) -> None:
         self.store, self.ledger, self.paper, self.live = store, ledger, paper, live
+        if isinstance(fill_delay_ns, bool) or not isinstance(fill_delay_ns, int) or fill_delay_ns < 0:
+            raise ValueError("fill_delay_ns must be a non-negative int")
+        self.fill_delay_ns = fill_delay_ns
+        self.pending: dict[str, _PendingFill] = {}           # at most one per open order (slots bound it)
+
+    def _decision_time(self, mint: str, event_ns: int | None) -> int:
+        if event_ns is not None:
+            return event_ns
+        tok = self.paper.registry.get(mint)
+        return tok.latest_time_ns if tok is not None and tok.latest_time_ns is not None else time.time_ns()
+
+    def on_price(self, event_ns: int, mint: str) -> int:
+        """A new price for `mint` at event time `event_ns`: fill the paper orders now due. Returns fills attempted."""
+        due = [k for k, p in self.pending.items() if p.mint == mint and event_ns >= p.due_ns]
+        for k in due:
+            self._fill(self.pending.pop(k))
+        return len(due)
+
+    def process_due(self, now_ns: int) -> int:
+        """The sweep's clock: fill every paper order due by `now_ns` at the latest reserves."""
+        due = [k for k, p in self.pending.items() if now_ns >= p.due_ns]
+        for k in due:
+            self._fill(self.pending.pop(k))
+        return len(due)
+
+    def _fill(self, p: _PendingFill) -> ExecResult:
+        if p.side == "buy":
+            i = p.intent
+            res = self.paper.buy(p.position_id, i.intent_id, i.mint, i.budget_lamports)
+        else:
+            i = p.intent
+            res = self.paper.sell(p.position_id, i.intent_id, i.token_amount, quote_lamports=i.quote_lamports)
+        self._stage(i.intent_id, p.position_id, p.side, "FILLED" if res.ok else "FAILED", True,
+                    None if res.ok else res.reason)
+        return res
 
     def submit_entry(self, intent: EntryIntent) -> ExecResult:
         live = get_execution_mode(self.store) is ExecutionMode.LIVE
@@ -171,6 +264,10 @@ class ExecutionGateway:
             if pos.status is not Status.PENDING_OPEN:
                 return ExecResult(True, pos.position_id, "ALREADY_EXECUTED")  # it has its buy fill
         self._stage(intent.intent_id, r.position_id, "buy", "SUBMITTED", not live)
+        if self.fill_delay_ns > 0:
+            due = self._decision_time(intent.mint, None) + self.fill_delay_ns
+            self.pending[intent.intent_id] = _PendingFill("buy", intent, r.position_id, intent.mint, due)
+            return ExecResult(False, r.position_id, "PENDING_FILL")
         res = self.paper.buy(r.position_id, intent.intent_id, intent.mint, intent.budget_lamports)
         self._stage(intent.intent_id, r.position_id, "buy", "FILLED" if res.ok else "FAILED", not live,
                     None if res.ok else res.reason)
@@ -194,6 +291,10 @@ class ExecutionGateway:
             self._stage(intent.intent_id, pos.position_id, "sell", "REFUSED", pos.simulated, r.reason)
             return ExecResult(r.ok, intent.position_id, r.reason)
         self._stage(intent.intent_id, pos.position_id, "sell", "SUBMITTED", pos.simulated)
+        if self.fill_delay_ns > 0:
+            due = self._decision_time(pos.mint, intent.event_timestamp) + self.fill_delay_ns
+            self.pending[intent.intent_id] = _PendingFill("sell", intent, pos.position_id, pos.mint, due)
+            return ExecResult(False, pos.position_id, "PENDING_FILL")
         res = self.paper.sell(intent.position_id, intent.intent_id, intent.token_amount,
                               quote_lamports=intent.quote_lamports)
         self._stage(intent.intent_id, pos.position_id, "sell", "FILLED" if res.ok else "FAILED", pos.simulated,
