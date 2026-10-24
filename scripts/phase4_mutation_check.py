@@ -26,6 +26,7 @@ REC = "tests/phase4/test_p4_recovery.py"
 ORD = "tests/phase4/test_p4_orders.py"
 STR = "tests/phase4/test_p4_stress.py"
 REP = "tests/phase4/test_p4_replay_determinism.py"
+EXI = "tests/phase4/test_p4_exits.py"
 
 # (id, CHAD reference, patch code run inside the test process, tests that must fail)
 MUTATIONS = [
@@ -98,6 +99,23 @@ MUTATIONS = [
     ("dedup_off", "V03/V11 duplicates counted once",
      "import jinx.core.dedup as d; d.Deduplicator.first_time = lambda self, key, now_ns=None: True",
      f"{REP}::test_shuffled_and_resent_delivery_gives_the_identical_state[1-pumpapi-live]"),
+    ("collapse_boundary_41pct", "L219 below 40% of the entry threshold",
+     "import jinx.exits.executioner as e; from decimal import Decimal; e.COLLAPSE_FRACTION = Decimal('0.41')",
+     f"{EXI}::test_L218_confluence_collapse_waits_out_the_grace_window_and_uses_a_strict_boundary"),
+    ("collapse_grace_599s", "L219 10-minute grace window",
+     "import jinx.exits.executioner as e; e.GRACE_S = 599",
+     f"{EXI}::test_L218_confluence_collapse_waits_out_the_grace_window_and_uses_a_strict_boundary"),
+    ("divergence_75_sells_40pct", "L203 score 75+ exits 30%",
+     "import jinx.exits.executioner as e; from decimal import Decimal; "
+     "e.DIVERGENCE_BUCKETS = ((Decimal(75), Decimal('0.40')),) + e.DIVERGENCE_BUCKETS[1:]",
+     f"{EXI}::test_L196_negative_divergence_sells_the_bucket_fraction_once_and_only_in_profit[75-0.30]"),
+    ("sybil_exit_off", "L82 emergency exit fires instantly",
+     "import jinx.exits.chad as c; c.SybilEmergencyExit.__call__ = lambda self, ctx: None",
+     f"{EXI}::test_L82_shared_funders_found_after_entry_fire_the_emergency_exit_on_the_next_price"),
+    ("stop_loss_off", "BIGMAC_PAPER stop loss",
+     "import jinx.exits.bigmac_exit as b; o = b.evaluate_exit; "
+     "b.evaluate_exit = lambda cur, entry, peak, tp, sl, tr, act: o(cur, entry, peak, tp, 1000.0, tr, act)",
+     f"{EXI}::test_a_dump_after_entry_exits_on_the_stop_and_books_the_loss"),
 ]
 
 
