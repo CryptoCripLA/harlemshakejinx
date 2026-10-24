@@ -1,9 +1,9 @@
 {
- "utc": "2026-10-21T15:42:08Z",
- "commit": "fc07e0e90cf5e309b56e7a83d8537fd39c7f6488",
+ "utc": "2026-10-24T04:54:15Z",
+ "commit": "df60014825c030530d2d78a0d590f4b9aaf302cd",
  "unmutated_run": {
   "exit_code": 0,
-  "pytest": "90 passed, 2 xfailed, 8 warnings in 25.43s"
+  "pytest": "106 passed, 2 xfailed, 8 warnings in 20.60s"
  },
  "mutations": [
   {
@@ -12,7 +12,7 @@
    "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L78_three_buys_from_one_wallet_never_count_as_three_wallets",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.64s",
+   "pytest": "1 failed in 0.31s",
    "failed": "FAILED tests/phase4/test_p4_chad_entry_predicates.py::test_L78_three_buys_from_one_wallet_never_count_as_three_wallets"
   },
   {
@@ -21,7 +21,7 @@
    "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L65_three_wallets_spread_over_more_than_30_seconds_do_not_trigger",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.72s",
+   "pytest": "1 failed in 0.30s",
    "failed": "FAILED tests/phase4/test_p4_chad_entry_predicates.py::test_L65_three_wallets_spread_over_more_than_30_seconds_do_not_trigger"
   },
   {
@@ -30,7 +30,7 @@
    "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L65_three_wallets_exactly_30_seconds_apart_trigger",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.52s",
+   "pytest": "1 failed in 0.26s",
    "failed": "FAILED tests/phase4/test_p4_chad_entry_predicates.py::test_L65_three_wallets_exactly_30_seconds_apart_trigger"
   },
   {
@@ -39,7 +39,7 @@
    "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L68_below_the_half_sol_floor_is_refused",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.45s",
+   "pytest": "1 failed in 0.29s",
    "failed": "FAILED tests/phase4/test_p4_chad_entry_predicates.py::test_L68_below_the_half_sol_floor_is_refused"
   },
   {
@@ -48,7 +48,7 @@
    "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L69_exactly_ten_sol_is_inside_the_gate",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.56s",
+   "pytest": "1 failed in 0.30s",
    "failed": "FAILED tests/phase4/test_p4_chad_entry_predicates.py::test_L69_exactly_ten_sol_is_inside_the_gate"
   },
   {
@@ -57,7 +57,7 @@
    "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L68_exactly_half_a_sol_is_inside_the_gate",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 1.13s",
+   "pytest": "1 failed in 0.26s",
    "failed": "FAILED tests/phase4/test_p4_chad_entry_predicates.py::test_L68_exactly_half_a_sol_is_inside_the_gate"
   },
   {
@@ -66,7 +66,7 @@
    "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L69_above_the_ten_sol_ceiling_is_refused",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.53s",
+   "pytest": "1 failed in 0.27s",
    "failed": "FAILED tests/phase4/test_p4_chad_entry_predicates.py::test_L69_above_the_ten_sol_ceiling_is_refused"
   },
   {
@@ -75,7 +75,7 @@
    "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L227_a_token_that_ran_past_the_ceiling_and_came_back_is_refused",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.43s",
+   "pytest": "1 failed in 0.26s",
    "failed": "FAILED tests/phase4/test_p4_chad_entry_predicates.py::test_L227_a_token_that_ran_past_the_ceiling_and_came_back_is_refused"
   },
   {
@@ -84,7 +84,7 @@
    "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L81_three_buyers_sharing_one_funder_block_and_raise_the_emergency_exit",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.33s",
+   "pytest": "1 failed in 0.29s",
    "failed": "FAILED tests/phase4/test_p4_chad_entry_predicates.py::test_L81_three_buyers_sharing_one_funder_block_and_raise_the_emergency_exit"
   },
   {
@@ -93,7 +93,7 @@
    "test": "tests/phase4/test_p4_safety_rejections.py::test_L16_a_reported_honeypot_is_a_hard_veto",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.46s",
+   "pytest": "1 failed in 0.29s",
    "failed": "FAILED tests/phase4/test_p4_safety_rejections.py::test_L16_a_reported_honeypot_is_a_hard_veto"
   },
   {
@@ -102,7 +102,7 @@
    "test": "tests/phase4/test_p4_safety_rejections.py::test_L16_a_held_mint_authority_is_a_hard_veto",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.38s",
+   "pytest": "1 failed in 0.29s",
    "failed": "FAILED tests/phase4/test_p4_safety_rejections.py::test_L16_a_held_mint_authority_is_a_hard_veto"
   },
   {
@@ -111,7 +111,7 @@
    "test": "tests/phase4/test_p4_safety_rejections.py::test_L16_no_security_data_is_unknown_and_never_eligible",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.41s",
+   "pytest": "1 failed in 0.29s",
    "failed": "FAILED tests/phase4/test_p4_safety_rejections.py::test_L16_no_security_data_is_unknown_and_never_eligible"
   },
   {
@@ -120,7 +120,7 @@
    "test": "tests/phase4/test_p4_safety_rejections.py::test_L16_a_held_freeze_authority_is_a_hard_veto",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.45s",
+   "pytest": "1 failed in 0.29s",
    "failed": "FAILED tests/phase4/test_p4_safety_rejections.py::test_L16_a_held_freeze_authority_is_a_hard_veto"
   },
   {
@@ -129,7 +129,7 @@
    "test": "tests/phase4/test_p4_safety_rejections.py::test_L16_a_token_that_cannot_be_sold_is_a_hard_veto",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.38s",
+   "pytest": "1 failed in 0.28s",
    "failed": "FAILED tests/phase4/test_p4_safety_rejections.py::test_L16_a_token_that_cannot_be_sold_is_a_hard_veto"
   },
   {
@@ -138,7 +138,7 @@
    "test": "tests/phase4/test_p4_safety_rejections.py::test_L16_rugchecks_own_hard_findings_are_a_hard_veto[change0]",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.29s",
+   "pytest": "1 failed in 0.25s",
    "failed": "FAILED tests/phase4/test_p4_safety_rejections.py::test_L16_rugchecks_own_hard_findings_are_a_hard_veto[change0]"
   },
   {
@@ -147,7 +147,7 @@
    "test": "tests/phase4/test_p4_outages.py::test_a_pumpapi_reconnect_makes_every_tracked_history_incomplete_and_blocks_entry",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.49s",
+   "pytest": "1 failed in 0.36s",
    "failed": "FAILED tests/phase4/test_p4_outages.py::test_a_pumpapi_reconnect_makes_every_tracked_history_incomplete_and_blocks_entry"
   },
   {
@@ -156,7 +156,7 @@
    "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_B02_a_migrated_token_is_outside_this_entry_path",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.63s",
+   "pytest": "1 failed in 0.29s",
    "failed": "FAILED tests/phase4/test_p4_chad_entry_predicates.py::test_B02_a_migrated_token_is_outside_this_entry_path"
   },
   {
@@ -165,7 +165,7 @@
    "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L79_without_a_live_trade_feed_the_reserve_cannot_be_confirmed",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.49s",
+   "pytest": "1 failed in 0.29s",
    "failed": "FAILED tests/phase4/test_p4_chad_entry_predicates.py::test_L79_without_a_live_trade_feed_the_reserve_cannot_be_confirmed"
   },
   {
@@ -174,7 +174,7 @@
    "test": "tests/phase4/test_p4_recovery.py::test_hard_kill_with_an_open_position_a_pending_exit_and_an_unfilled_buy",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.87s",
+   "pytest": "1 failed in 0.64s",
    "failed": "FAILED tests/phase4/test_p4_recovery.py::test_hard_kill_with_an_open_position_a_pending_exit_and_an_unfilled_buy"
   },
   {
@@ -183,7 +183,7 @@
    "test": "tests/phase4/test_p4_orders.py::test_every_lamport_reconciles_over_randomized_round_trips_on_real_reserves",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.79s",
+   "pytest": "1 failed in 0.58s",
    "failed": "FAILED tests/phase4/test_p4_orders.py::test_every_lamport_reconciles_over_randomized_round_trips_on_real_reserves"
   },
   {
@@ -192,7 +192,7 @@
    "test": "tests/phase4/test_p4_stress.py::test_a_burst_of_entry_intents_never_holds_more_positions_than_the_owner_slots[1]",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.38s",
+   "pytest": "1 failed in 0.32s",
    "failed": "FAILED tests/phase4/test_p4_stress.py::test_a_burst_of_entry_intents_never_holds_more_positions_than_the_owner_slots[1]"
   },
   {
@@ -201,8 +201,53 @@
    "test": "tests/phase4/test_p4_replay_determinism.py::test_shuffled_and_resent_delivery_gives_the_identical_state[1-pumpapi-live]",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 1.00s",
+   "pytest": "1 failed in 0.70s",
    "failed": "FAILED tests/phase4/test_p4_replay_determinism.py::test_shuffled_and_resent_delivery_gives_the_identical_state[1-pumpapi-live]"
+  },
+  {
+   "mutation": "collapse_boundary_41pct",
+   "chad": "L219 below 40% of the entry threshold",
+   "test": "tests/phase4/test_p4_exits.py::test_L218_confluence_collapse_waits_out_the_grace_window_and_uses_a_strict_boundary",
+   "exit_code": 1,
+   "caught": true,
+   "pytest": "1 failed in 0.28s",
+   "failed": "FAILED tests/phase4/test_p4_exits.py::test_L218_confluence_collapse_waits_out_the_grace_window_and_uses_a_strict_boundary"
+  },
+  {
+   "mutation": "collapse_grace_599s",
+   "chad": "L219 10-minute grace window",
+   "test": "tests/phase4/test_p4_exits.py::test_L218_confluence_collapse_waits_out_the_grace_window_and_uses_a_strict_boundary",
+   "exit_code": 1,
+   "caught": true,
+   "pytest": "1 failed in 0.28s",
+   "failed": "FAILED tests/phase4/test_p4_exits.py::test_L218_confluence_collapse_waits_out_the_grace_window_and_uses_a_strict_boundary"
+  },
+  {
+   "mutation": "divergence_75_sells_40pct",
+   "chad": "L203 score 75+ exits 30%",
+   "test": "tests/phase4/test_p4_exits.py::test_L196_negative_divergence_sells_the_bucket_fraction_once_and_only_in_profit[75-0.30]",
+   "exit_code": 1,
+   "caught": true,
+   "pytest": "1 failed in 0.36s",
+   "failed": "FAILED tests/phase4/test_p4_exits.py::test_L196_negative_divergence_sells_the_bucket_fraction_once_and_only_in_profit[75-0.30]"
+  },
+  {
+   "mutation": "sybil_exit_off",
+   "chad": "L82 emergency exit fires instantly",
+   "test": "tests/phase4/test_p4_exits.py::test_L82_shared_funders_found_after_entry_fire_the_emergency_exit_on_the_next_price",
+   "exit_code": 1,
+   "caught": true,
+   "pytest": "1 failed in 0.29s",
+   "failed": "FAILED tests/phase4/test_p4_exits.py::test_L82_shared_funders_found_after_entry_fire_the_emergency_exit_on_the_next_price"
+  },
+  {
+   "mutation": "stop_loss_off",
+   "chad": "BIGMAC_PAPER stop loss",
+   "test": "tests/phase4/test_p4_exits.py::test_a_dump_after_entry_exits_on_the_stop_and_books_the_loss",
+   "exit_code": 1,
+   "caught": true,
+   "pytest": "1 failed in 0.33s",
+   "failed": "FAILED tests/phase4/test_p4_exits.py::test_a_dump_after_entry_exits_on_the_stop_and_books_the_loss"
   }
  ],
  "result": "PASS"

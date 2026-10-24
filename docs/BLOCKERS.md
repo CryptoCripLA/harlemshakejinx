@@ -131,7 +131,7 @@ Added 2026-10-21 with the Early Momentum build. The owner settled all but the fi
 - Owner's reasons: mint/freeze authority and an explicit rugged flag are structural (more supply can be minted, sells can be frozen); "Creator history of rugged tokens" and "Large Amount of LP Unlocked" are statistical or situational and common in a pump.fun token's first minutes, including on tokens that later run. A blanket danger veto would make RugCheck a universal quality gate, against earliest entry and the rule against invented scoring committees. GMGN runs first and can veto; RugCheck is secondary evidence. Live data showed tokens clearing every other check while carrying danger flags; blocking them would drop candidates inside the 30 s Early Momentum window.
 - Implementation: unchanged (`jinx/adapters/rugcheck/client.py::interpret`). Score, normalized score, risk findings and liquidity are logged, never thresholded; temporary failures stay uncached for re-checks. Pinned by `test_a_real_report_is_parsed_into_findings_scores_and_liquidity` and `test_rugcheck_completes_the_gate_and_a_full_pass_is_eligible`.
 
-## B-50 Phase 4 rows that wait for Phase 3 on main (Phase 4 builder, 2026-10-21)
+## B-50 Phase 4 rows that wait for Phase 3 on main (Phase 4 builder, 2026-10-21) — RESOLVED 2026-10-21: Phase 3 landed at 1f01beb
 - Blocked: the trading half of V01 (a continuous paper-trading run), V06 (every approved exit), V15 (paper P&L after all modeled costs), V16 (adverse moves and failed exits) and V21 (CHAD vs exit/wallet variants), in `docs/PHASE4_VERIFICATION_MATRIX.md`.
 - Evidence: Phase 3's size/fire/exit code (Executioner, Negative Divergence, Sybil emergency exit, BIGMAC_PAPER, monitor) is on branch `phase3/size-fire-exit`, not on `main` (checked 2026-10-21 15:05 UTC). Contabo runs release `fe01850` in mode OFF.
 - Needed: Phase 3 landing on main; then the owner-set parameters Phase 3 leaves fail-closed (B-03 confluence threshold and Kelly values, B-30 BigMac paper settings). Phase 4 runs its exit, P&L and variant checks the moment Phase 3 lands, using explicitly labelled test fixtures where a value is owner-unset.
@@ -140,6 +140,12 @@ Added 2026-10-21 with the Early Momentum build. The owner settled all but the fi
 # Phase 3 blockers (p3 builder, 2026-10-21; ids B-30..B-49)
 
 Each is a value or permission CHAD or the owner has not given. The code around it is built and tested; the missing value is fail-closed configuration, never an invented default.
+
+## B-51 A position whose coin stops trading is never exited (Phase 4 builder, 2026-10-24)
+- Blocked: trading with one entry slot. Once JINX holds a coin that stops trading, nothing sells it, so the slot stays taken and every later entry is refused.
+- Evidence: `docs/evidence/PHASE4_PAPER_PNL_20261024.json`, the whole engine on 45 minutes of real two-feed traffic (TEST_FIXTURE sizing and BigMac settings, labelled stand-ins for safety and funders): 991 Early Momentum detections, 1 entry, 0 exits, 454 later entries refused with SLOT_LIMIT, identical with fill delays of 0, 0.4, 1 and 2 s and with injected sell failures. In dollars at $102.72 per SOL (GMGN, 2026-10-24 04:50 UTC): a $10.27 buy left open at -$1.81 unrealized for the rest of the run.
+- Why: BIGMAC_PAPER decides only on a new price for the coin; Confluence Collapse needs an entry threshold, which a fast-path entry does not have (B-35); Negative Divergence has no producer (B-36); CHAD specifies no time or no-trade exit. Phase 3's own review flags the same gap (round 1, HIGH 1).
+- Needed: an owner rule for a held coin that stops trading (for example, sell after an owner-set time without a trade), or the owner's approval of the "time-based exits" research variant from the 2026-10-21 order after paper testing. No time limit is invented here.
 
 ## B-30 BIGMAC_PAPER settings are not set by the owner
 - The owner's BigMac exit (`jinx/exits/bigmac_exit.py`) is installed, proven equal to the original TypeScript, and wired into the position monitor. Its four percentages (take profit, stop loss, trailing stop, trailing activation) have no defaults by design ("Its numerical settings must be explicitly configured for paper testing, not inherited as live trading defaults").

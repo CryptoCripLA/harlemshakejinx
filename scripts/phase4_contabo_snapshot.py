@@ -32,36 +32,35 @@ def main() -> None:
     lines = r.stdout.splitlines()
     active, restarts, since, release = lines[0], lines[1], lines[2], lines[3]
     h = json.loads(lines[-1])
-    i = h["intel"]
-    em = i["early_momentum"]
+    i = h.get("intel", {})
+    em = i.get("early_momentum", {})
+    keep = ("connected", "received", "published", "duplicates", "malformed", "ingest_stalled", "connections",
+            "disconnects", "stalls", "receipt_lag_ms")
     snap = {
         "read_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "host": "Contabo vmi3672752 (13.140.224.208)", "how": "read-only: ssh + systemctl + GET /health",
         "service": {"active": active, "restarts": int(restarts), "active_since": since, "release": release},
-        "status": h["status"], "mode": h["mode"], "execution_mode": h["execution_mode"], "slots": h["slots"],
-        "paper_wallet": h["paper_wallet"],
-        "feeds": {a["adapter"]: {k: a.get(k) for k in ("connected", "received", "published", "duplicates",
-                                                       "malformed", "ingest_stalled", "connections", "disconnects",
-                                                       "stalls", "receipt_lag_ms") if k in a}
-                  for a in h["adapters"] if a.get("adapter") in ("mako", "pumpapi.stream", "rugcheck")},
-        "events_applied": h["store"]["events"], "unapplied": h["store"]["unapplied"],
-        "receive_to_state_ms_local": h["receive_to_state_ms"],
+        "status": h.get("status"), "mode": h.get("mode"), "execution_mode": h.get("execution_mode"),
+        "slots": h.get("slots"), "paper_wallet": h.get("paper_wallet"),
+        "feeds": {a["adapter"]: {k: a.get(k) for k in keep if k in a}
+                  for a in h.get("adapters", []) if a.get("adapter") in ("mako", "pumpapi.stream", "rugcheck")},
+        "receive_to_state_ms_local": h.get("receive_to_state_ms"),
         "admission_to_state_ms_local": h.get("admission_to_state_ms"),
-        "market_memory": h["market_memory"],
-        "early_momentum": {k: em[k] for k in ("events", "curve_buys", "detections", "buys_dropped_over_cap",
-                                              "listener_errors", "candidates", "detection_delay_ms",
-                                              "entry_summary", "screening")},
-        "safety": i["safety"], "background": i["background"],
-        "handler_processing_us": i.get("handler_processing_us"),
-        "migration": {k: v for k, v in i["migration"].items() if k not in ("latest",)},
-        "storage": {"status": h["storage"]["status"],
+        "market_memory": {k: v for k, v in (h.get("market_memory") or {}).items() if not isinstance(v, (list, dict))},
+        "early_momentum": {k: em.get(k) for k in ("events", "curve_buys", "detections", "listener_errors",
+                                                  "candidates", "detection_delay_ms", "entry_summary", "screening")
+                           if k in em},
+        "safety": i.get("safety"), "background": i.get("background"),
+        "trading": {k: v for k, v in (h.get("trading") or {}).items() if k not in ("latest_entries",)},
+        "storage": {"status": (h.get("storage") or {}).get("status"),
                     "components": {k: {f: c.get(f) for f in ("used_bytes", "budget_bytes", "status",
                                                                "growth_bytes_per_h")}
-                                   for k, c in h["storage"]["components"].items()}},
-        "services_failures": {k: v.get("failures") for k, v in h["services"].items()},
-        "bus": {k: v for k, v in h["bus"].items() if k != "handler_errors"},
-        "handler_errors": h["bus"].get("handler_errors"),
+                                   for k, c in (h.get("storage") or {}).get("components", {}).items()}},
+        "services_failures": {k: v.get("failures") for k, v in (h.get("services") or {}).items()},
+        "bus": {k: v for k, v in (h.get("bus") or {}).items() if not isinstance(v, (dict, list))},
     }
+    if isinstance(snap["trading"].get("monitor"), dict):
+        snap["trading"]["monitor"] = {k: v for k, v in snap["trading"]["monitor"].items() if k != "latest"}
     text = json.dumps(snap, indent=1, default=str)
     if args.out:
         Path(args.out).write_text(text + "\n")

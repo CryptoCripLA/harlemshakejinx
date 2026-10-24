@@ -14,6 +14,12 @@ Reviewer inputs (CLAUDE.md, Phase 4 "Independent panel audit"):
 - Simulation, replay, reconciliation, latency, secrets and license evidence: docs/evidence/PHASE4_*.json.
 - Known unresolved strategy parameters: docs/BLOCKERS.md (B-02, B-03, B-30, B-50 and the rest).
 
+Earlier rounds: docs/audits/phase4-codex-20261021-round*.md. For every finding of the latest earlier round, say
+whether it is fixed (and how you verified it), still open and correctly tracked (a strict-xfail test naming its owner,
+and an honest row in the matrix), or still open and NOT correctly tracked. Phase 3's own review
+(round 1 FAIL, kept on branch phase3/size-fire-exit, summarised in docs/PHASE4_VERIFICATION_MATRIX.md) is not yours
+to repeat, but say if a Phase 4 row relies on Phase 3 behaviour that review found broken.
+
 Please check, with file:line evidence for every finding:
 1. For each row of docs/PHASE4_VERIFICATION_MATRIX.md: does the named test or script actually verify what the row
    claims, through the real JINX code path (not a stand-in that bypasses it)? Is the stated status (PASSED, FAILED,

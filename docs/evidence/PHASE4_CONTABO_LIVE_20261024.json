@@ -1,0 +1,226 @@
+{
+ "read_utc": "2026-10-24T04:54:41Z",
+ "host": "Contabo vmi3672752 (13.140.224.208)",
+ "how": "read-only: ssh + systemctl + GET /health",
+ "service": {
+  "active": "active",
+  "restarts": 0,
+  "active_since": "Sat 2026-10-24 06:12:24 CEST",
+  "release": "/opt/jinx/releases/a39cb153a663"
+ },
+ "status": "ok",
+ "mode": "OFF",
+ "execution_mode": "PAPER",
+ "slots": {
+  "max": 1,
+  "active": 0
+ },
+ "paper_wallet": {
+  "reconciled": true,
+  "starting_lamports": 2000000000,
+  "balance_lamports": 2000000000
+ },
+ "feeds": {
+  "mako": {
+   "connected": true,
+   "received": 575,
+   "published": 314,
+   "duplicates": 551,
+   "malformed": 0,
+   "ingest_stalled": false
+  },
+  "pumpapi.stream": {
+   "connected": true,
+   "received": 1368327,
+   "published": 166073,
+   "duplicates": 12,
+   "malformed": 0,
+   "ingest_stalled": false,
+   "connections": 1,
+   "disconnects": 0,
+   "stalls": 0,
+   "receipt_lag_ms": {
+    "p50": 366.0,
+    "p95": 1356.1,
+    "n": 2000
+   }
+  },
+  "rugcheck": {
+   "connected": true
+  }
+ },
+ "receive_to_state_ms_local": {
+  "n": 20074,
+  "p50": 6.422528,
+  "p95": 276.824064,
+  "p99": 654.311424,
+  "max": 1796.742342,
+  "mean": 50.489654573727215,
+  "window_s": 300.0,
+  "total_n": 166387,
+  "total_max": 2557.765769
+ },
+ "admission_to_state_ms_local": {
+  "n": 20074,
+  "p50": 6.946816,
+  "p95": 276.824064,
+  "p99": 654.311424,
+  "max": 1797.496942,
+  "mean": 51.16416554966624,
+  "window_s": 300.0,
+  "total_n": 166387,
+  "total_max": 2567.400575
+ },
+ "market_memory": {
+  "rss_mb": 211.4,
+  "target_mb": 200,
+  "investigate_above_mb": 256,
+  "guardrail_mb": 384,
+  "status": "ok",
+  "maintenance_passes": 41,
+  "maintenance_errors": 0
+ },
+ "early_momentum": {
+  "events": 166387,
+  "curve_buys": 39493,
+  "detections": 623,
+  "listener_errors": 0,
+  "candidates": 500,
+  "detection_delay_ms": {
+   "p50": 112.033114,
+   "p95": 1182.576888,
+   "p99": 1979.194325,
+   "max": 4672.450448,
+   "n": 500
+  },
+  "entry_summary": {
+   "checked": 499,
+   "reserve_ok": 172,
+   "safety_ok": 414,
+   "reserve_and_safety_ok": 172,
+   "all_checks_ok": 163,
+   "reserve_blocked": {
+    "current_reserve_0_5_to_10_real_sol: FAIL": 194,
+    "current_reserve_0_5_to_10_real_sol: FAIL; peak_reserve_max_10_real_sol: FAIL (verified real SOL already exceeded 10)": 79,
+    "peak_reserve_max_10_real_sol: UNAVAILABLE (history incomplete: creation not observed)": 25,
+    "peak_reserve_max_10_real_sol: FAIL (verified real SOL already exceeded 10)": 13,
+    "current_reserve_0_5_to_10_real_sol: FAIL; peak_reserve_max_10_real_sol: UNAVAILABLE (history incomplete: creation not observed)": 10,
+    "current_reserve_0_5_to_10_real_sol: UNAVAILABLE (no verified real SOL in the newest reading); peak_reserve_max_10_real_sol: UNAVAILABLE (history unprovable: the creation has only JINX's receipt time and arrived after a feed gap, so trades and a higher peak before the gap cannot be excluded)": 3
+   }
+  },
+  "screening": {
+   "screened": 490,
+   "skipped": 133,
+   "funder_lookups_skipped": 138,
+   "funders_cached": 958
+  }
+ },
+ "safety": {
+  "evaluations": 489,
+  "cache_hits": 0,
+  "errors": 0,
+  "rugcheck_calls": 489,
+  "rugcheck_skipped_veto": 0
+ },
+ "background": {
+  "spawned": 778,
+  "shed": 0,
+  "deduplicated": 0,
+  "running": 2
+ },
+ "trading": {
+  "monitor": {
+   "price_updates": 0,
+   "sweeps": 246,
+   "evaluations": 0,
+   "no_valid_price": 0,
+   "exits_submitted": 0,
+   "exits_filled": 0,
+   "exits_not_filled": {},
+   "protective_checks": [
+    "CHAD_SYBIL_EMERGENCY",
+    "CHAD_CONFLUENCE_COLLAPSE"
+   ]
+  },
+  "executioner": {
+   "events": 0,
+   "not_in_profit": 0,
+   "no_entry_score": 0,
+   "repeat_event": 0,
+   "no_price": 0,
+   "exits": 0
+  },
+  "confluence_collapse": {
+   "unavailable": 0,
+   "no_threshold": 0
+  },
+  "entries": {
+   "MODE_OFF": 197
+  },
+  "sizing_configured": false
+ },
+ "storage": {
+  "status": "warn",
+  "components": {
+   "disk": {
+    "used_bytes": 360448,
+    "budget_bytes": 1073741824,
+    "status": "ok",
+    "growth_bytes_per_h": 0
+   },
+   "filesystem": {
+    "used_bytes": 2931167232,
+    "budget_bytes": 206900281344,
+    "status": "ok",
+    "growth_bytes_per_h": 1089639
+   },
+   "object_storage": {
+    "used_bytes": 20600,
+    "budget_bytes": 1073741824,
+    "status": "ok",
+    "growth_bytes_per_h": 0
+   },
+   "postgres": {
+    "used_bytes": 7946240,
+    "budget_bytes": 419430400,
+    "status": "ok",
+    "growth_bytes_per_h": 0
+   },
+   "ram": {
+    "used_bytes": 225501184,
+    "budget_bytes": 1073741824,
+    "status": "warn",
+    "growth_bytes_per_h": 170734336
+   },
+   "redis": {
+    "used_bytes": 5143104,
+    "budget_bytes": 26214400,
+    "status": "ok",
+    "growth_bytes_per_h": -90720
+   },
+   "research_postgres": {
+    "used_bytes": 88659647,
+    "budget_bytes": 4194304000,
+    "status": "ok",
+    "growth_bytes_per_h": 0
+   }
+  }
+ },
+ "services_failures": {
+  "postgres": 0,
+  "research_postgres": 0,
+  "redis": 0,
+  "object_storage": 0,
+  "ai_gateway": 0
+ },
+ "bus": {
+  "published": 166387,
+  "duplicates": 563,
+  "dispatched_fast": 166387,
+  "dispatched_background": 166387,
+  "fast_dropped": 0,
+  "fast_backpressure_waits": 0,
+  "background_dropped": 0,
+  "persist_errors": 0
+ }
+}
