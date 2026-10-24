@@ -221,3 +221,13 @@ def test_a_token_rugcheck_has_not_indexed_yet_is_unknown_and_asked_again():
     c = client_with(handler)
     first, second = run(with_worker(c, main(c)))
     assert first["error"] == "not_indexed" and second["verdict"] == "PASS" and len(calls) == 2
+
+
+
+@pytest.mark.parametrize("value", ["", False, 0, [], {}])
+@pytest.mark.parametrize("key", ["mintAuthority", "freezeAuthority"])
+def test_an_unreadable_authority_value_is_unknown_never_revoked(key, value):
+    """Phase 4 finding P4-F13: RugCheck's revoked value is null; a non-address value is unreadable, never a PASS."""
+    r = interpret({**REPORT, key: value})
+    assert r["verdict"] == "UNKNOWN" and r["error"] == "unreadable_authority"
+    assert interpret({**REPORT, key: value, "rugged": True})["verdict"] == "FAIL"     # a real failure still wins

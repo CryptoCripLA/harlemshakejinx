@@ -7,7 +7,8 @@ spaces calls at `min_interval_s` and honours `Retry-After` on 429.
 What JINX takes from a report (`interpret`), with no threshold of its own:
 - FAIL  RugCheck's own determinations that match CHAD's hard checks: `rugged: true`, or a mint or freeze authority
         still present. These are hard safety vetoes.
-- PASS  a well-formed report that states `rugged: false` and both authorities as revoked (null).
+- PASS  a well-formed report that states `rugged: false` and both authorities as revoked (null; any other non-address
+        value is unreadable and gives UNKNOWN, Phase 4 finding P4-F13).
 - UNKNOWN anything else: missing fields, HTTP errors, 429, timeouts, malformed bodies, a full queue.
 Risk findings (name, level, score, value), the raw `score`, `score_normalised` and liquidity are recorded as
 evidence. They are not converted into a CHAD safety score or an approval threshold: no mapping is approved.
@@ -45,6 +46,16 @@ def unknown(error: str, detail: str = "") -> dict:
     return {"verdict": "UNKNOWN", "source": SOURCE, "error": error, "detail": detail or error, "facts": {}}
 
 
+def _authority(value) -> str:
+    """RugCheck reports a revoked authority as null and a held one as its address. Anything else ("", false, 0, [],
+    {}, ...) is unreadable: never treated as revoked."""
+    if value is None:
+        return "revoked"
+    if isinstance(value, str) and value:
+        return "held"
+    return "unreadable"
+
+
 def interpret(report) -> dict:
     """Map one RugCheck report onto CHAD's RugCheck predicate (see the module docstring)."""
     if not isinstance(report, dict) or not all(k in report for k in ("rugged", "mintAuthority", "freezeAuthority")):
@@ -68,15 +79,20 @@ def interpret(report) -> dict:
         "creator": report.get("creator"),
         "detected_at": report.get("detectedAt"),
     }
-    fails = []
+    fails, unreadable = [], []
     if report.get("rugged") is True:
         fails.append("RugCheck marks the token rugged")
-    if report.get("mintAuthority"):
-        fails.append("mint authority present (RugCheck)")
-    if report.get("freezeAuthority"):
-        fails.append("freeze authority present (RugCheck)")
+    for key, label in (("mintAuthority", "mint"), ("freezeAuthority", "freeze")):
+        state = _authority(report.get(key))
+        if state == "held":
+            fails.append(f"{label} authority present (RugCheck)")
+        elif state == "unreadable":
+            unreadable.append(f"{key}={report.get(key)!r}")
     if fails:
         return {"verdict": "FAIL", "source": SOURCE, "detail": "; ".join(fails), "facts": facts}
+    if unreadable:      # Phase 4 finding P4-F13: only RugCheck's documented null means revoked
+        return {"verdict": "UNKNOWN", "source": SOURCE, "error": "unreadable_authority",
+                "detail": "authority not readable: " + ", ".join(unreadable), "facts": facts}
     if report.get("rugged") is False:
         return {"verdict": "PASS", "source": SOURCE, "detail": "", "facts": facts}
     return {"verdict": "UNKNOWN", "source": SOURCE, "error": "unstated", "detail": "rugged not stated", "facts": facts}
