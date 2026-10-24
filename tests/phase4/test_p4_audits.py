@@ -39,6 +39,9 @@ def test_a_credential_inside_a_gzip_capture_is_found():
         "database URL with a password (inside gzip)"]
     kp = bytes(Keypair())
     assert "Solana keypair (base58) (inside gzip)" in secrets_audit.scan(gzip.compress(base58.b58encode(kp)), [])
+    # a later member of a concatenated gzip stream (append-mode captures write one member per session)
+    assert secrets_audit.scan(gzip.compress(b"safe") + gzip.compress(secret), []) == [
+        "database URL with a password (inside gzip)"]
 
 
 def test_a_configured_value_is_found_and_reported_by_name_only():

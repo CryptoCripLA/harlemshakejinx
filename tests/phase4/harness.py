@@ -182,7 +182,7 @@ def state_view(app: JinxApp) -> dict:
         "tokens": app.core.tokens.digest(),
         "early_momentum": {}, "reserve_gates": {}, "graduation": {}, "migration": {}, "bundles": {},
         "whales": {"tracked": sorted((w, v["source"]) for w, v in app.whales.tracked.items()),
-                   "graduated": sorted(_canon(getattr(app.whales, "_graduated", {}))),
+                   "graduated": _canon(dict(getattr(app.whales, "_graduated", {}))),   # mint -> (time, clock)
                    "discovery_candidates": sorted(app.whales.discovery_candidates()),
                    "alerts": sorted((a["mint"], a["wallet"], a["signature"], a["ts"]) for a in app.whales.alerts)},
         "candidates": {},

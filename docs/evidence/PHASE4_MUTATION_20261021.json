@@ -1,9 +1,9 @@
 {
- "utc": "2026-10-24T04:54:15Z",
- "commit": "df60014825c030530d2d78a0d590f4b9aaf302cd",
+ "utc": "2026-10-24T05:14:44Z",
+ "commit": "d28423fcef9c58b428581d32bb5978342af9cd1b",
  "unmutated_run": {
   "exit_code": 0,
-  "pytest": "106 passed, 2 xfailed, 8 warnings in 20.60s"
+  "pytest": "106 passed, 2 xfailed, 8 warnings in 21.05s"
  },
  "mutations": [
   {
@@ -12,8 +12,8 @@
    "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L78_three_buys_from_one_wallet_never_count_as_three_wallets",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.31s",
-   "failed": "FAILED tests/phase4/test_p4_chad_entry_predicates.py::test_L78_three_buys_from_one_wallet_never_count_as_three_wallets"
+   "pytest": "1 failed in 0.25s",
+   "failure": "AssertionError: assert (EarlyMomentumEvidence(mint='P4Mintpump', window=(Buy(signature='C1', fee_payer='DEV', event_ns=1792540000000000000, cl...), observed_ns=1792540002049999872, detected_ns=1792818844806831991, processing_ns=16320, signal_type='early_momentum') is None)\ntmp_path = PosixPath('/tmp"
   },
   {
    "mutation": "window_31s",
@@ -21,8 +21,8 @@
    "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L65_three_wallets_spread_over_more_than_30_seconds_do_not_trigger",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.30s",
-   "failed": "FAILED tests/phase4/test_p4_chad_entry_predicates.py::test_L65_three_wallets_spread_over_more_than_30_seconds_do_not_trigger"
+   "pytest": "1 failed in 0.26s",
+   "failure": "AssertionError: assert (EarlyMomentumEvidence(mint='P4Mintpump', window=(Buy(signature='C1', fee_payer='DEV', event_ns=1792540000000000000, cl...), observed_ns=1792540030051000064, detected_ns=1792818845381423587, processing_ns=16401, signal_type='early_momentum') is None)\ntmp_path = PosixPath('/tmp"
   },
   {
    "mutation": "window_29s",
@@ -30,8 +30,8 @@
    "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L65_three_wallets_exactly_30_seconds_apart_trigger",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.26s",
-   "failed": "FAILED tests/phase4/test_p4_chad_entry_predicates.py::test_L65_three_wallets_exactly_30_seconds_apart_trigger"
+   "pytest": "1 failed in 0.25s",
+   "failure": "assert (None is not None)\ntmp_path = PosixPath('/tmp/jinx-pytest-r3mfispw/test_L65_three_wallets_exactly0')\nclose_apps = [<jinx.app.JinxApp object at 0x7209bf9801d0>]\n\n    def test_L65_three_wallets_exactly_30_seconds_apart_trigger(tmp_path, close_apps):\n        msgs = [create(mint=M, dev=\"DEV\", v_q"
   },
   {
    "mutation": "floor_0_1",
@@ -39,8 +39,8 @@
    "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L68_below_the_half_sol_floor_is_refused",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.29s",
-   "failed": "FAILED tests/phase4/test_p4_chad_entry_predicates.py::test_L68_below_the_half_sol_floor_is_refused"
+   "pytest": "1 failed in 0.26s",
+   "failure": "assert (True is False)\ntmp_path = PosixPath('/tmp/jinx-pytest-ur3gu06m/test_L68_below_the_half_sol_fl0')\nclose_apps = [<jinx.app.JinxApp object at 0x774956d64350>]\n\n    def test_L68_below_the_half_sol_floor_is_refused(tmp_path, close_apps):\n        msgs = [create(mint=M, dev=\"DEV\", v_quote=30.1, quo"
   },
   {
    "mutation": "ceiling_9_9",
@@ -48,8 +48,8 @@
    "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L69_exactly_ten_sol_is_inside_the_gate",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.30s",
-   "failed": "FAILED tests/phase4/test_p4_chad_entry_predicates.py::test_L69_exactly_ten_sol_is_inside_the_gate"
+   "pytest": "1 failed in 0.26s",
+   "failure": "assert (10.0 == 10.0 \u00b1 1.0e-05\n  \n  comparison failed\n  Obtained: 10.0\n  Expected: 10.0 \u00b1 1.0e-05 and False is True)\ntmp_path = PosixPath('/tmp/jinx-pytest-9dj0nhkz/test_L69_exactly_ten_sol_is_in0')\nclose_apps = [<jinx.app.JinxApp object at 0x732064d68530>]\n\n    def test_L69_exactly_ten_sol_is_insid"
   },
   {
    "mutation": "floor_0_6",
@@ -57,8 +57,8 @@
    "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L68_exactly_half_a_sol_is_inside_the_gate",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.26s",
-   "failed": "FAILED tests/phase4/test_p4_chad_entry_predicates.py::test_L68_exactly_half_a_sol_is_inside_the_gate"
+   "pytest": "1 failed in 0.27s",
+   "failure": "assert False is True\ntmp_path = PosixPath('/tmp/jinx-pytest-vkcq7e2c/test_L68_exactly_half_a_sol_is0')\nclose_apps = [<jinx.app.JinxApp object at 0x7814183644d0>]\n\n    def test_L68_exactly_half_a_sol_is_inside_the_gate(tmp_path, close_apps):\n        msgs = [create(mint=M, dev=\"DEV\", v_quote=30.2), bu"
   },
   {
    "mutation": "ceiling_20",
@@ -66,8 +66,8 @@
    "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L69_above_the_ten_sol_ceiling_is_refused",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.27s",
-   "failed": "FAILED tests/phase4/test_p4_chad_entry_predicates.py::test_L69_above_the_ten_sol_ceiling_is_refused"
+   "pytest": "1 failed in 0.25s",
+   "failure": "assert (True is False)\ntmp_path = PosixPath('/tmp/jinx-pytest-64ctjt2c/test_L69_above_the_ten_sol_cei0')\nclose_apps = [<jinx.app.JinxApp object at 0x731b46d609e0>]\n\n    def test_L69_above_the_ten_sol_ceiling_is_refused(tmp_path, close_apps):\n        msgs = baseline_msgs() + [buy(\"D\", 4, v_quote=40.5"
   },
   {
    "mutation": "peak_ceiling_20",
@@ -75,8 +75,8 @@
    "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L227_a_token_that_ran_past_the_ceiling_and_came_back_is_refused",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.26s",
-   "failed": "FAILED tests/phase4/test_p4_chad_entry_predicates.py::test_L227_a_token_that_ran_past_the_ceiling_and_came_back_is_refused"
+   "pytest": "1 failed in 0.28s",
+   "failure": "AssertionError: assert ('peak_reserve_max_10_real_sol' in ('sybil_funder',))\n +  where ('sybil_funder',) = EarlyMomentumEvidence(mint='P4Mintpump', window=(Buy(signature='C1', fee_payer='DEV', event_ns=1792540000000000000, cl...), observed_ns=1792540001049999872, detected_ns=1792818848866259339, pro"
   },
   {
    "mutation": "sybil_4",
@@ -84,8 +84,8 @@
    "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L81_three_buyers_sharing_one_funder_block_and_raise_the_emergency_exit",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.29s",
-   "failed": "FAILED tests/phase4/test_p4_chad_entry_predicates.py::test_L81_three_buyers_sharing_one_funder_block_and_raise_the_emergency_exit"
+   "pytest": "1 failed in 0.32s",
+   "failure": "AssertionError: assert ('sybil_funder' in ())\n +  where () = EarlyMomentumEvidence(mint='P4Mintpump', window=(Buy(signature='T2', fee_payer='A', event_ns=1792540001000000000, cloc...), observed_ns=1792540003049999872, detected_ns=1792818849541945145, processing_ns=17680, signal_type='early_momentum'"
   },
   {
    "mutation": "honeypot_ignored",
@@ -93,8 +93,8 @@
    "test": "tests/phase4/test_p4_safety_rejections.py::test_L16_a_reported_honeypot_is_a_hard_veto",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.29s",
-   "failed": "FAILED tests/phase4/test_p4_safety_rejections.py::test_L16_a_reported_honeypot_is_a_hard_veto"
+   "pytest": "1 failed in 0.31s",
+   "failure": "AssertionError: assert ('PASS' == 'FAIL'\n  \n  - FAIL\n  + PASS)\ntmp_path = PosixPath('/tmp/jinx-pytest-sgilacvf/test_L16_a_reported_honeypot_i0')\n\n    def test_L16_a_reported_honeypot_is_a_hard_veto(tmp_path):\n        check, safety, _, rc = screen(tmp_path, security={**SEC, \"honeypot\": 1})\n>       as"
   },
   {
    "mutation": "mint_authority_ignored",
@@ -103,7 +103,7 @@
    "exit_code": 1,
    "caught": true,
    "pytest": "1 failed in 0.29s",
-   "failed": "FAILED tests/phase4/test_p4_safety_rejections.py::test_L16_a_held_mint_authority_is_a_hard_veto"
+   "failure": "AssertionError: assert ('PASS' == 'FAIL'\n  \n  - FAIL\n  + PASS)\ntmp_path = PosixPath('/tmp/jinx-pytest-otzji32g/test_L16_a_held_mint_authority0')\n\n    def test_L16_a_held_mint_authority_is_a_hard_veto(tmp_path):\n        check, safety, _, _ = screen(tmp_path, security={**SEC, \"renounced_mint\": False})"
   },
   {
    "mutation": "unknown_is_pass",
@@ -112,7 +112,7 @@
    "exit_code": 1,
    "caught": true,
    "pytest": "1 failed in 0.29s",
-   "failed": "FAILED tests/phase4/test_p4_safety_rejections.py::test_L16_no_security_data_is_unknown_and_never_eligible"
+   "failure": "AssertionError: assert ('PASS' == 'UNKNOWN'\n  \n  - UNKNOWN\n  + PASS)\ntmp_path = PosixPath('/tmp/jinx-pytest-1bo2d2p3/test_L16_no_security_data_is_u0')\n\n    def test_L16_no_security_data_is_unknown_and_never_eligible(tmp_path):\n        check, safety, _, _ = screen(tmp_path, gmgn_mode=\"down\")\n>       "
   },
   {
    "mutation": "freeze_authority_ignored",
@@ -120,8 +120,8 @@
    "test": "tests/phase4/test_p4_safety_rejections.py::test_L16_a_held_freeze_authority_is_a_hard_veto",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.29s",
-   "failed": "FAILED tests/phase4/test_p4_safety_rejections.py::test_L16_a_held_freeze_authority_is_a_hard_veto"
+   "pytest": "1 failed in 0.31s",
+   "failure": "AssertionError: assert ('PASS' == 'FAIL'\n  \n  - FAIL\n  + PASS)\ntmp_path = PosixPath('/tmp/jinx-pytest-ks2b_g5i/test_L16_a_held_freeze_authori0')\n\n    def test_L16_a_held_freeze_authority_is_a_hard_veto(tmp_path):\n        check, safety, _, _ = screen(tmp_path, security={**SEC, \"renounced_freeze_accou"
   },
   {
    "mutation": "cannot_sell_ignored",
@@ -129,8 +129,8 @@
    "test": "tests/phase4/test_p4_safety_rejections.py::test_L16_a_token_that_cannot_be_sold_is_a_hard_veto",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.28s",
-   "failed": "FAILED tests/phase4/test_p4_safety_rejections.py::test_L16_a_token_that_cannot_be_sold_is_a_hard_veto"
+   "pytest": "1 failed in 0.31s",
+   "failure": "AssertionError: assert ('PASS' == 'FAIL'\n  \n  - FAIL\n  + PASS)\ntmp_path = PosixPath('/tmp/jinx-pytest-rcu9hd4c/test_L16_a_token_that_cannot_b0')\n\n    def test_L16_a_token_that_cannot_be_sold_is_a_hard_veto(tmp_path):\n        check, safety, _, _ = screen(tmp_path, security={**SEC, \"can_not_sell\": 1})"
   },
   {
    "mutation": "rugcheck_rugged_ignored",
@@ -138,8 +138,8 @@
    "test": "tests/phase4/test_p4_safety_rejections.py::test_L16_rugchecks_own_hard_findings_are_a_hard_veto[change0]",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.25s",
-   "failed": "FAILED tests/phase4/test_p4_safety_rejections.py::test_L16_rugchecks_own_hard_findings_are_a_hard_veto[change0]"
+   "pytest": "1 failed in 0.28s",
+   "failure": "AssertionError: assert ('PASS' == 'FAIL'\n  \n  - FAIL\n  + PASS)\ntmp_path = PosixPath('/tmp/jinx-pytest-mofftzcf/test_L16_rugchecks_own_hard_fi0')\nchange = {'rugged': True}\n\n    @pytest.mark.parametrize(\"change\", [{\"rugged\": True}, {\"mintAuthority\": \"Auth1\"}, {\"freezeAuthority\": \"Auth2\"}])\n    def tes"
   },
   {
    "mutation": "reconnect_gap_ignored",
@@ -147,8 +147,8 @@
    "test": "tests/phase4/test_p4_outages.py::test_a_pumpapi_reconnect_makes_every_tracked_history_incomplete_and_blocks_entry",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.36s",
-   "failed": "FAILED tests/phase4/test_p4_outages.py::test_a_pumpapi_reconnect_makes_every_tracked_history_incomplete_and_blocks_entry"
+   "pytest": "1 failed in 0.40s",
+   "failure": "assert (True is False)\ntmp_path = PosixPath('/tmp/jinx-pytest-45nkp640/test_a_pumpapi_reconnect_makes0')\n\n    def test_a_pumpapi_reconnect_makes_every_tracked_history_incomplete_and_blocks_entry(tmp_path):\n        \"\"\"Trades sent while the feed was down are lost, so a peak can no longer be proven (B-"
   },
   {
    "mutation": "migration_lifecycle_ignored",
@@ -156,8 +156,8 @@
    "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_B02_a_migrated_token_is_outside_this_entry_path",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.29s",
-   "failed": "FAILED tests/phase4/test_p4_chad_entry_predicates.py::test_B02_a_migrated_token_is_outside_this_entry_path"
+   "pytest": "1 failed in 0.27s",
+   "failure": "assert (False is True)\ntmp_path = PosixPath('/tmp/jinx-pytest-8438exew/test_B02_a_migrated_token_is_o0')\nclose_apps = [<jinx.app.JinxApp object at 0x799986b74740>]\n\n    def test_B02_a_migrated_token_is_outside_this_entry_path(tmp_path, close_apps):\n        msgs = baseline_msgs() + [migrate(mint=M, t"
   },
   {
    "mutation": "decision_recheck_ignores_feed",
@@ -165,8 +165,8 @@
    "test": "tests/phase4/test_p4_chad_entry_predicates.py::test_L79_without_a_live_trade_feed_the_reserve_cannot_be_confirmed",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.29s",
-   "failed": "FAILED tests/phase4/test_p4_chad_entry_predicates.py::test_L79_without_a_live_trade_feed_the_reserve_cannot_be_confirmed"
+   "pytest": "1 failed in 0.28s",
+   "failure": "assert (True is False)\ntmp_path = PosixPath('/tmp/jinx-pytest-i51hi6_v/test_L79_without_a_live_trade_0')\nclose_apps = [<jinx.app.JinxApp object at 0x7eb1ebb7c4a0>]\n\n    def test_L79_without_a_live_trade_feed_the_reserve_cannot_be_confirmed(tmp_path, close_apps):\n        check, _, _ = run_case(tmp_pa"
   },
   {
    "mutation": "recovery_skips_positions",
@@ -174,8 +174,8 @@
    "test": "tests/phase4/test_p4_recovery.py::test_hard_kill_with_an_open_position_a_pending_exit_and_an_unfilled_buy",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.64s",
-   "failed": "FAILED tests/phase4/test_p4_recovery.py::test_hard_kill_with_an_open_position_a_pending_exit_and_an_unfilled_buy"
+   "pytest": "1 failed in 0.58s",
+   "failure": "assert (0 == 1)\n +  where 0 = RecoveryReport(released_unfilled=0, reopened_exits=0, open_positions=2, wallet_reconciled=True).released_unfilled\ntmp_path = PosixPath('/tmp/jinx-pytest-ynbro6dv/test_hard_kill_with_an_open_po0')\n\n    def test_hard_kill_with_an_open_position_a_pending_exit_and_an_unfill"
   },
   {
    "mutation": "wallet_entry_off_by_one",
@@ -183,8 +183,8 @@
    "test": "tests/phase4/test_p4_orders.py::test_every_lamport_reconciles_over_randomized_round_trips_on_real_reserves",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.58s",
-   "failed": "FAILED tests/phase4/test_p4_orders.py::test_every_lamport_reconciles_over_randomized_round_trips_on_real_reserves"
+   "pytest": "1 failed in 0.57s",
+   "failure": "AssertionError: p1:r-e0:buy\nassert -25005001 == -25005000\ntmp_path = PosixPath('/tmp/jinx-pytest-010hex2o/test_every_lamport_reconciles_0')\n\n    def test_every_lamport_reconciles_over_randomized_round_trips_on_real_reserves(tmp_path):\n        \"\"\"Seeded random entries, partial and full exits, replays"
   },
   {
    "mutation": "two_slots_by_default",
@@ -193,7 +193,7 @@
    "exit_code": 1,
    "caught": true,
    "pytest": "1 failed in 0.32s",
-   "failed": "FAILED tests/phase4/test_p4_stress.py::test_a_burst_of_entry_intents_never_holds_more_positions_than_the_owner_slots[1]"
+   "failure": "assert (2 == 1)\n +  where 2 = sum(<generator object test_a_burst_of_entry_intents_never_holds_more_positions_than_the_owner_slots.<locals>.<genexpr> at 0x70b89d5a7d00>)\ntmp_path = PosixPath('/tmp/jinx-pytest-i1ukhydd/test_a_burst_of_entry_intents_0')\nslots = 1\n\n    @pytest.mark.parametrize(\"slots\", "
   },
   {
    "mutation": "dedup_off",
@@ -202,7 +202,7 @@
    "exit_code": 1,
    "caught": true,
    "pytest": "1 failed in 0.70s",
-   "failed": "FAILED tests/phase4/test_p4_replay_determinism.py::test_shuffled_and_resent_delivery_gives_the_identical_state[1-pumpapi-live]"
+   "failure": "assert (0 > 0)\n +  where 0 = RunStats(published=1451, duplicates=0, refused_records=0, background_left=0, handler_errors={}).duplicates\nbaselines = {'pumpapi-live': (RunStats(published=1211, duplicates=0, refused_records=0, background_left=0, handler_errors={}), {'t...Aqpump', 'near_threshold': None"
   },
   {
    "mutation": "collapse_boundary_41pct",
@@ -211,7 +211,7 @@
    "exit_code": 1,
    "caught": true,
    "pytest": "1 failed in 0.28s",
-   "failed": "FAILED tests/phase4/test_p4_exits.py::test_L218_confluence_collapse_waits_out_the_grace_window_and_uses_a_strict_boundary"
+   "failure": "AssertionError: assert [Decision(pos...459840675094)] == []\n  \n  Left contains one more item: Decision(position_id=1, intent_id='CHAD_CONFLUENCE_COLLAPSE:1', reason_code='confluence_collapse', source='CHAD_CONFLU..., result=ExecResult(ok=True, position_id=1, reason=None), decided_ns=1792819459840675"
   },
   {
    "mutation": "collapse_grace_599s",
@@ -220,7 +220,7 @@
    "exit_code": 1,
    "caught": true,
    "pytest": "1 failed in 0.28s",
-   "failed": "FAILED tests/phase4/test_p4_exits.py::test_L218_confluence_collapse_waits_out_the_grace_window_and_uses_a_strict_boundary"
+   "failure": "AssertionError: assert [Decision(pos...459483465458)] == []\n  \n  Left contains one more item: Decision(position_id=1, intent_id='CHAD_CONFLUENCE_COLLAPSE:1', reason_code='confluence_collapse', source='CHAD_CONFLU..., result=ExecResult(ok=True, position_id=1, reason=None), decided_ns=1792819459483465"
   },
   {
    "mutation": "divergence_75_sells_40pct",
@@ -228,8 +228,8 @@
    "test": "tests/phase4/test_p4_exits.py::test_L196_negative_divergence_sells_the_bucket_fraction_once_and_only_in_profit[75-0.30]",
    "exit_code": 1,
    "caught": true,
-   "pytest": "1 failed in 0.36s",
-   "failed": "FAILED tests/phase4/test_p4_exits.py::test_L196_negative_divergence_sells_the_bucket_fraction_once_and_only_in_profit[75-0.30]"
+   "pytest": "1 failed in 0.29s",
+   "failure": "AssertionError: assert (True and (1553811383929 - 932286830358) == 466143415178)\n +  where True = ExecResult(ok=True, position_id=1, reason=None).ok\n +    where ExecResult(ok=True, position_id=1, reason=None) = Decision(position_id=1, intent_id='CHAD_NEGATIVE_DIVERGENCE:1:ev-1', reason_code='negativ"
   },
   {
    "mutation": "sybil_exit_off",
@@ -238,7 +238,7 @@
    "exit_code": 1,
    "caught": true,
    "pytest": "1 failed in 0.29s",
-   "failed": "FAILED tests/phase4/test_p4_exits.py::test_L82_shared_funders_found_after_entry_fire_the_emergency_exit_on_the_next_price"
+   "failure": "assert (<Status.OPEN: 'OPEN'> is <Status.CLOSED: 'CLOSED'>)\n +  where <Status.OPEN: 'OPEN'> = Position(position_id=1, entry_intent_id='AUTO:early_momentum:P4Mintpump:1792540002000000000', entry_budget_lamports=99...er\", \"win_rate\": \"0.5\"}', signal_ns=1792540002000000000, last_mark_lamports=98025260,"
   },
   {
    "mutation": "stop_loss_off",
@@ -247,7 +247,7 @@
    "exit_code": 1,
    "caught": true,
    "pytest": "1 failed in 0.33s",
-   "failed": "FAILED tests/phase4/test_p4_exits.py::test_a_dump_after_entry_exits_on_the_stop_and_books_the_loss"
+   "failure": "assert (<Status.OPEN: 'OPEN'> is <Status.CLOSED: 'CLOSED'>)\n +  where <Status.OPEN: 'OPEN'> = Position(position_id=1, entry_intent_id='AUTO:early_momentum:P4Mintpump:1792540002000000000', entry_budget_lamports=99...er\", \"win_rate\": \"0.5\"}', signal_ns=1792540002000000000, last_mark_lamports=64925906,"
   }
  ],
  "result": "PASS"

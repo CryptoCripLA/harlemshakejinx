@@ -85,8 +85,7 @@ MUTATIONS = [
      f"{PRED}::test_L79_without_a_live_trade_feed_the_reserve_cannot_be_confirmed"),
     ("recovery_skips_positions", "V09 restart recovery",
      "import jinx.recovery as r; from jinx.recovery import RecoveryReport; "
-     "r.recover = lambda store, core, ledger, wallet, bus=None: RecoveryReport(core.apply_pending(), store.max_seq(), "
-     "0, 0, len(ledger.active()), wallet.reconcile().ok)",
+     "r.recover = lambda ledger, wallet: RecoveryReport(0, 0, len(ledger.active()), wallet.reconcile().ok)",
      f"{REC}::test_hard_kill_with_an_open_position_a_pending_exit_and_an_unfilled_buy"),
     ("wallet_entry_off_by_one", "V12 every lamport reconciles",
      "import jinx.paper as p; o = p.PaperWallet.apply; "
@@ -119,6 +118,25 @@ MUTATIONS = [
 ]
 
 
+def assertion_failure(junit: Path, test: str) -> str | None:
+    """The failure message of `test` in a JUnit report when it FAILED on an assertion; None for a pass, an error
+    (collection, fixture, TypeError ...) or another exception type."""
+    import xml.etree.ElementTree as ET
+    path, _, name = test.partition("::")
+    classname = path[:-3].replace("/", ".")
+    for case in ET.parse(junit).getroot().iter("testcase"):
+        if case.get("classname") == classname and case.get("name") == name:
+            failure = case.find("failure")
+            if failure is None:
+                return None
+            message = (failure.get("message") or "") + "\n" + (failure.text or "")
+            first = (failure.get("message") or "").split(":", 1)[0].strip()
+            if first in ("AssertionError", "assert") or (failure.get("message") or "").startswith("assert"):
+                return message[:300]
+            return None
+    return None
+
+
 def run(mid: str, patch: str, test: str) -> dict:
     with tempfile.TemporaryDirectory(prefix="jinx-p4-mut-") as d:
         plugin = Path(d) / f"p4mut_{mid}.py"
@@ -126,15 +144,15 @@ def run(mid: str, patch: str, test: str) -> dict:
             def pytest_configure(config):
                 {patch}
         """))
+        junit = Path(d) / "junit.xml"
         env = dict(os.environ, PYTHONPATH=f"{d}{os.pathsep}{ROOT}")
-        r = subprocess.run([PY, "-m", "pytest", "-p", "no:cacheprovider", "-rf", "-p", f"p4mut_{mid}", test],
-                           cwd=ROOT, env=env, capture_output=True, text=True)
+        r = subprocess.run([PY, "-m", "pytest", "-p", "no:cacheprovider", "-rf", "-p", f"p4mut_{mid}",
+                            f"--junitxml={junit}", test], cwd=ROOT, env=env, capture_output=True, text=True)
+        failure = assertion_failure(junit, test) if junit.exists() else None
     tail = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else r.stderr[-300:]
-    # caught = the named test itself failed on an assertion (not a collection error, not another test)
-    failed_line = next((l for l in r.stdout.splitlines() if l.startswith(f"FAILED {test}")), "")
-    caught = r.returncode == 1 and bool(failed_line) and " error" not in tail and "Error" not in failed_line.replace(
-        "AssertionError", "")
-    return {"exit_code": r.returncode, "caught": caught, "pytest": tail, "failed": failed_line[:300]}
+    # caught = the named test itself FAILED on an AssertionError (JUnit <failure>, not <error>, not another exception)
+    return {"exit_code": r.returncode, "caught": r.returncode == 1 and failure is not None, "pytest": tail,
+            "failure": failure}
 
 
 def main() -> None:

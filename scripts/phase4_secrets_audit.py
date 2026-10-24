@@ -84,16 +84,21 @@ MAX_INFLATED = 256 * 1024 * 1024        # a gzip member larger than this when in
 def scan(data: bytes, secrets) -> list[str]:
     """Credential kinds found in `data`; gzip content (captures, backups) is inflated and scanned as well."""
     kinds = _scan_bytes(data, secrets)
-    if data[:2] == b"\x1f\x8b":
+    rest, budget = data, MAX_INFLATED
+    while rest[:2] == b"\x1f\x8b":                  # every member of a (possibly concatenated) gzip stream
         import zlib
         try:
             d = zlib.decompressobj(16 + zlib.MAX_WBITS)
-            inflated = d.decompress(data, MAX_INFLATED)
-            if d.unconsumed_tail:
-                kinds.append("gzip content larger than the scan cap (not scanned past it)")
-            kinds += [f"{k} (inside gzip)" for k in _scan_bytes(inflated, secrets)]
+            inflated = d.decompress(rest, budget)
         except zlib.error:
             kinds.append("unreadable gzip content")
+            break
+        budget -= len(inflated)
+        kinds += [f"{k} (inside gzip)" for k in _scan_bytes(inflated, secrets) if f"{k} (inside gzip)" not in kinds]
+        if d.unconsumed_tail or budget <= 0:
+            kinds.append("gzip content larger than the scan cap (not scanned past it)")
+            break
+        rest = d.unused_data
     return kinds
 
 
