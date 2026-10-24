@@ -1,0 +1,787 @@
+{
+ "what": "Phase 4 research comparison on real captured markets: SIMULATED paper outcomes of JINX's eligible signals under labelled exit policies; not live trading, not profit, not a live policy",
+ "capture": "live45.fixed.jsonl.gz",
+ "records": 251073,
+ "capture_span_s": 2699.8,
+ "commit": "a598fc83d5e7244dd5194b8d5d178c720b1b6a6a",
+ "utc": "2026-10-24T05:26:01Z",
+ "usd_rate": {
+  "usd_per_sol": 102.72,
+  "source": "GMGN getGasPrice native_token_usd_price, 2026-10-24T04:50:07Z"
+ },
+ "budget_usd": 10.27,
+ "delay_ms": 400,
+ "engine": {
+  "detections": 991,
+  "entry_decisions": {
+   "entered": 1,
+   "SLOT_LIMIT": 454
+  }
+ },
+ "entry_ceiling": {
+  "real_sol": 10.0,
+  "usd": 1027.2,
+  "label": "owner decision B-02 (live policy)"
+ },
+ "stand_ins": {
+  "safety": "PASS for every screened candidate (GMGN/RugCheck answers not captured)",
+  "funders": "each buyer funded by a distinct wallet (GMGN wallet stats not captured)",
+  "bigmac": {
+   "policy": "BIGMAC_PAPER",
+   "take_profit_pct": 50,
+   "stop_loss_pct": 20,
+   "trailing_stop_pct": 12,
+   "trailing_stop_activation_pct": 20,
+   "label": "TEST_FIXTURE_phase3_replay",
+   "set_by": "scripts/phase3_paper_replay.py"
+  },
+  "kelly": {
+   "label": "TEST_FIXTURE_phase3_replay",
+   "bucket_floors": [
+    "0"
+   ],
+   "priors": {
+    "0": [
+     "0.5",
+     "2"
+    ]
+   },
+   "cap_fraction": "0.05",
+   "entry_filter": "early_momentum",
+   "unscored_bucket": "0"
+  }
+ },
+ "bigmac_fixture": {
+  "policy": "BIGMAC_PAPER",
+  "take_profit_pct": 50,
+  "stop_loss_pct": 20,
+  "trailing_stop_pct": 12,
+  "trailing_stop_activation_pct": 20,
+  "label": "TEST_FIXTURE_phase3_replay",
+  "set_by": "scripts/phase3_paper_replay.py"
+ },
+ "signals": {
+  "eligible": 455,
+  "priced": 411,
+  "hindsight_peak_value_after_fees": {
+   "at_least_1_5x": 82,
+   "at_least_2x": 42,
+   "at_least_5x": 9,
+   "at_least_10x": 0,
+   "never_above_cost": 169,
+   "median_peak_x": 1.066,
+   "best_peak_x": 8.22,
+   "label": "HINDSIGHT diagnostic: the best value each signal reached after a delayed buy; no policy can sell at it"
+  }
+ },
+ "policies": {
+  "BigMac fixture TP50 SL20 TS12 act20 (no timeout: as built)": {
+   "settings": {
+    "policy": "BIGMAC_PAPER",
+    "take_profit_pct": 50,
+    "stop_loss_pct": 20,
+    "trailing_stop_pct": 12,
+    "trailing_stop_activation_pct": 20,
+    "label": "TEST_FIXTURE_phase3_replay",
+    "set_by": "scripts/phase3_paper_replay.py"
+   },
+   "timeout_s": null,
+   "every_signal_on_its_own": {
+    "trades": 411,
+    "closed": 290,
+    "open_at_end": 121,
+    "wins": 98,
+    "losses": 192,
+    "realized_usd": -149.07,
+    "unrealized_usd": -118.51,
+    "median_trade_usd": -2.06,
+    "best_trade_usd": 12.36,
+    "worst_trade_usd": -5.99,
+    "exit_reasons": {
+     "open_at_end": 121,
+     "trailing_stop": 72,
+     "stop_loss": 173,
+     "take_profit": 45
+    }
+   },
+   "one_slot_as_jinx_trades": {
+    "trades": 1,
+    "closed": 0,
+    "open_at_end": 1,
+    "wins": 0,
+    "losses": 0,
+    "realized_usd": 0.0,
+    "unrealized_usd": -1.49,
+    "median_trade_usd": null,
+    "best_trade_usd": null,
+    "worst_trade_usd": null,
+    "exit_reasons": {
+     "open_at_end": 1
+    }
+   }
+  },
+  "BigMac fixture TP50 SL20 TS12 act20 + BigMac timeout 60 s": {
+   "settings": {
+    "policy": "BIGMAC_PAPER",
+    "take_profit_pct": 50,
+    "stop_loss_pct": 20,
+    "trailing_stop_pct": 12,
+    "trailing_stop_activation_pct": 20,
+    "label": "TEST_FIXTURE_phase3_replay",
+    "set_by": "scripts/phase3_paper_replay.py"
+   },
+   "timeout_s": 60,
+   "every_signal_on_its_own": {
+    "trades": 411,
+    "closed": 406,
+    "open_at_end": 5,
+    "wins": 111,
+    "losses": 295,
+    "realized_usd": -219.0,
+    "unrealized_usd": -2.05,
+    "median_trade_usd": -1.06,
+    "best_trade_usd": 12.36,
+    "worst_trade_usd": -5.99,
+    "exit_reasons": {
+     "timeout": 154,
+     "trailing_stop": 65,
+     "stop_loss": 148,
+     "take_profit": 39,
+     "open_at_end": 5
+    }
+   },
+   "one_slot_as_jinx_trades": {
+    "trades": 54,
+    "closed": 54,
+    "open_at_end": 0,
+    "wins": 13,
+    "losses": 41,
+    "realized_usd": -34.07,
+    "unrealized_usd": 0.0,
+    "median_trade_usd": -1.19,
+    "best_trade_usd": 11.03,
+    "worst_trade_usd": -5.7,
+    "exit_reasons": {
+     "timeout": 17,
+     "stop_loss": 24,
+     "take_profit": 4,
+     "trailing_stop": 9
+    }
+   }
+  },
+  "BigMac fixture TP50 SL20 TS12 act20 + BigMac timeout 180 s": {
+   "settings": {
+    "policy": "BIGMAC_PAPER",
+    "take_profit_pct": 50,
+    "stop_loss_pct": 20,
+    "trailing_stop_pct": 12,
+    "trailing_stop_activation_pct": 20,
+    "label": "TEST_FIXTURE_phase3_replay",
+    "set_by": "scripts/phase3_paper_replay.py"
+   },
+   "timeout_s": 180,
+   "every_signal_on_its_own": {
+    "trades": 411,
+    "closed": 403,
+    "open_at_end": 8,
+    "wins": 107,
+    "losses": 296,
+    "realized_usd": -252.36,
+    "unrealized_usd": -3.43,
+    "median_trade_usd": -1.34,
+    "best_trade_usd": 12.36,
+    "worst_trade_usd": -5.99,
+    "exit_reasons": {
+     "timeout": 124,
+     "trailing_stop": 69,
+     "stop_loss": 168,
+     "take_profit": 42,
+     "open_at_end": 8
+    }
+   },
+   "one_slot_as_jinx_trades": {
+    "trades": 23,
+    "closed": 22,
+    "open_at_end": 1,
+    "wins": 4,
+    "losses": 18,
+    "realized_usd": -12.35,
+    "unrealized_usd": -1.0,
+    "median_trade_usd": -1.54,
+    "best_trade_usd": 6.72,
+    "worst_trade_usd": -4.5,
+    "exit_reasons": {
+     "timeout": 3,
+     "stop_loss": 13,
+     "take_profit": 4,
+     "trailing_stop": 2,
+     "open_at_end": 1
+    }
+   }
+  },
+  "BigMac fixture TP50 SL20 TS12 act20 + BigMac timeout 300 s": {
+   "settings": {
+    "policy": "BIGMAC_PAPER",
+    "take_profit_pct": 50,
+    "stop_loss_pct": 20,
+    "trailing_stop_pct": 12,
+    "trailing_stop_activation_pct": 20,
+    "label": "TEST_FIXTURE_phase3_replay",
+    "set_by": "scripts/phase3_paper_replay.py"
+   },
+   "timeout_s": 300,
+   "every_signal_on_its_own": {
+    "trades": 411,
+    "closed": 397,
+    "open_at_end": 14,
+    "wins": 105,
+    "losses": 292,
+    "realized_usd": -255.78,
+    "unrealized_usd": -7.23,
+    "median_trade_usd": -1.4,
+    "best_trade_usd": 12.36,
+    "worst_trade_usd": -5.99,
+    "exit_reasons": {
+     "timeout": 116,
+     "trailing_stop": 70,
+     "stop_loss": 169,
+     "take_profit": 42,
+     "open_at_end": 14
+    }
+   },
+   "one_slot_as_jinx_trades": {
+    "trades": 27,
+    "closed": 27,
+    "open_at_end": 0,
+    "wins": 6,
+    "losses": 21,
+    "realized_usd": -6.07,
+    "unrealized_usd": 0.0,
+    "median_trade_usd": -1.49,
+    "best_trade_usd": 11.03,
+    "worst_trade_usd": -5.7,
+    "exit_reasons": {
+     "timeout": 7,
+     "stop_loss": 13,
+     "take_profit": 5,
+     "trailing_stop": 2
+    }
+   }
+  },
+  "BigMac fixture TP50 SL20 TS12 act20 + BigMac timeout 600 s": {
+   "settings": {
+    "policy": "BIGMAC_PAPER",
+    "take_profit_pct": 50,
+    "stop_loss_pct": 20,
+    "trailing_stop_pct": 12,
+    "trailing_stop_activation_pct": 20,
+    "label": "TEST_FIXTURE_phase3_replay",
+    "set_by": "scripts/phase3_paper_replay.py"
+   },
+   "timeout_s": 600,
+   "every_signal_on_its_own": {
+    "trades": 411,
+    "closed": 376,
+    "open_at_end": 35,
+    "wins": 103,
+    "losses": 273,
+    "realized_usd": -230.05,
+    "unrealized_usd": -29.72,
+    "median_trade_usd": -1.47,
+    "best_trade_usd": 12.36,
+    "worst_trade_usd": -5.99,
+    "exit_reasons": {
+     "timeout": 90,
+     "trailing_stop": 71,
+     "stop_loss": 170,
+     "take_profit": 45,
+     "open_at_end": 35
+    }
+   },
+   "one_slot_as_jinx_trades": {
+    "trades": 6,
+    "closed": 5,
+    "open_at_end": 1,
+    "wins": 1,
+    "losses": 4,
+    "realized_usd": -7.83,
+    "unrealized_usd": -1.21,
+    "median_trade_usd": -1.49,
+    "best_trade_usd": 0.83,
+    "worst_trade_usd": -3.89,
+    "exit_reasons": {
+     "timeout": 3,
+     "stop_loss": 2,
+     "open_at_end": 1
+    }
+   }
+  },
+  "BigMac TP off SL20 TS12 act20 (no timeout: as built)": {
+   "settings": {
+    "policy": "BIGMAC_PAPER",
+    "take_profit_pct": 0,
+    "stop_loss_pct": 20,
+    "trailing_stop_pct": 12,
+    "trailing_stop_activation_pct": 20,
+    "label": "TEST_FIXTURE_p4_tp_off",
+    "set_by": "phase4 research"
+   },
+   "timeout_s": null,
+   "every_signal_on_its_own": {
+    "trades": 411,
+    "closed": 290,
+    "open_at_end": 121,
+    "wins": 87,
+    "losses": 203,
+    "realized_usd": -197.11,
+    "unrealized_usd": -118.51,
+    "median_trade_usd": -2.14,
+    "best_trade_usd": 39.22,
+    "worst_trade_usd": -6.01,
+    "exit_reasons": {
+     "open_at_end": 121,
+     "trailing_stop": 114,
+     "stop_loss": 176
+    }
+   },
+   "one_slot_as_jinx_trades": {
+    "trades": 1,
+    "closed": 0,
+    "open_at_end": 1,
+    "wins": 0,
+    "losses": 0,
+    "realized_usd": 0.0,
+    "unrealized_usd": -1.49,
+    "median_trade_usd": null,
+    "best_trade_usd": null,
+    "worst_trade_usd": null,
+    "exit_reasons": {
+     "open_at_end": 1
+    }
+   }
+  },
+  "BigMac TP off SL20 TS12 act20 + BigMac timeout 60 s": {
+   "settings": {
+    "policy": "BIGMAC_PAPER",
+    "take_profit_pct": 0,
+    "stop_loss_pct": 20,
+    "trailing_stop_pct": 12,
+    "trailing_stop_activation_pct": 20,
+    "label": "TEST_FIXTURE_p4_tp_off",
+    "set_by": "phase4 research"
+   },
+   "timeout_s": 60,
+   "every_signal_on_its_own": {
+    "trades": 411,
+    "closed": 406,
+    "open_at_end": 5,
+    "wins": 104,
+    "losses": 302,
+    "realized_usd": -203.11,
+    "unrealized_usd": -2.05,
+    "median_trade_usd": -1.19,
+    "best_trade_usd": 39.33,
+    "worst_trade_usd": -5.99,
+    "exit_reasons": {
+     "timeout": 158,
+     "trailing_stop": 97,
+     "stop_loss": 151,
+     "open_at_end": 5
+    }
+   },
+   "one_slot_as_jinx_trades": {
+    "trades": 43,
+    "closed": 43,
+    "open_at_end": 0,
+    "wins": 9,
+    "losses": 34,
+    "realized_usd": -35.55,
+    "unrealized_usd": 0.0,
+    "median_trade_usd": -1.24,
+    "best_trade_usd": 11.45,
+    "worst_trade_usd": -5.92,
+    "exit_reasons": {
+     "timeout": 13,
+     "stop_loss": 19,
+     "trailing_stop": 11
+    }
+   }
+  },
+  "BigMac TP off SL20 TS12 act20 + BigMac timeout 180 s": {
+   "settings": {
+    "policy": "BIGMAC_PAPER",
+    "take_profit_pct": 0,
+    "stop_loss_pct": 20,
+    "trailing_stop_pct": 12,
+    "trailing_stop_activation_pct": 20,
+    "label": "TEST_FIXTURE_p4_tp_off",
+    "set_by": "phase4 research"
+   },
+   "timeout_s": 180,
+   "every_signal_on_its_own": {
+    "trades": 411,
+    "closed": 403,
+    "open_at_end": 8,
+    "wins": 96,
+    "losses": 307,
+    "realized_usd": -309.85,
+    "unrealized_usd": -3.43,
+    "median_trade_usd": -1.45,
+    "best_trade_usd": 39.22,
+    "worst_trade_usd": -6.01,
+    "exit_reasons": {
+     "timeout": 125,
+     "trailing_stop": 107,
+     "stop_loss": 171,
+     "open_at_end": 8
+    }
+   },
+   "one_slot_as_jinx_trades": {
+    "trades": 16,
+    "closed": 15,
+    "open_at_end": 1,
+    "wins": 3,
+    "losses": 12,
+    "realized_usd": -1.95,
+    "unrealized_usd": -1.0,
+    "median_trade_usd": -1.98,
+    "best_trade_usd": 14.86,
+    "worst_trade_usd": -3.6,
+    "exit_reasons": {
+     "timeout": 2,
+     "stop_loss": 9,
+     "trailing_stop": 4,
+     "open_at_end": 1
+    }
+   }
+  },
+  "BigMac TP off SL20 TS12 act20 + BigMac timeout 300 s": {
+   "settings": {
+    "policy": "BIGMAC_PAPER",
+    "take_profit_pct": 0,
+    "stop_loss_pct": 20,
+    "trailing_stop_pct": 12,
+    "trailing_stop_activation_pct": 20,
+    "label": "TEST_FIXTURE_p4_tp_off",
+    "set_by": "phase4 research"
+   },
+   "timeout_s": 300,
+   "every_signal_on_its_own": {
+    "trades": 411,
+    "closed": 397,
+    "open_at_end": 14,
+    "wins": 94,
+    "losses": 303,
+    "realized_usd": -309.02,
+    "unrealized_usd": -7.23,
+    "median_trade_usd": -1.49,
+    "best_trade_usd": 39.22,
+    "worst_trade_usd": -6.01,
+    "exit_reasons": {
+     "timeout": 116,
+     "trailing_stop": 109,
+     "stop_loss": 172,
+     "open_at_end": 14
+    }
+   },
+   "one_slot_as_jinx_trades": {
+    "trades": 15,
+    "closed": 14,
+    "open_at_end": 1,
+    "wins": 3,
+    "losses": 11,
+    "realized_usd": -1.22,
+    "unrealized_usd": -0.73,
+    "median_trade_usd": -2.13,
+    "best_trade_usd": 14.86,
+    "worst_trade_usd": -3.6,
+    "exit_reasons": {
+     "timeout": 1,
+     "stop_loss": 9,
+     "trailing_stop": 4,
+     "open_at_end": 1
+    }
+   }
+  },
+  "BigMac TP off SL20 TS12 act20 + BigMac timeout 600 s": {
+   "settings": {
+    "policy": "BIGMAC_PAPER",
+    "take_profit_pct": 0,
+    "stop_loss_pct": 20,
+    "trailing_stop_pct": 12,
+    "trailing_stop_activation_pct": 20,
+    "label": "TEST_FIXTURE_p4_tp_off",
+    "set_by": "phase4 research"
+   },
+   "timeout_s": 600,
+   "every_signal_on_its_own": {
+    "trades": 411,
+    "closed": 376,
+    "open_at_end": 35,
+    "wins": 92,
+    "losses": 284,
+    "realized_usd": -280.74,
+    "unrealized_usd": -29.72,
+    "median_trade_usd": -1.55,
+    "best_trade_usd": 39.22,
+    "worst_trade_usd": -6.01,
+    "exit_reasons": {
+     "timeout": 91,
+     "trailing_stop": 112,
+     "stop_loss": 173,
+     "open_at_end": 35
+    }
+   },
+   "one_slot_as_jinx_trades": {
+    "trades": 6,
+    "closed": 5,
+    "open_at_end": 1,
+    "wins": 1,
+    "losses": 4,
+    "realized_usd": -7.83,
+    "unrealized_usd": -1.21,
+    "median_trade_usd": -1.49,
+    "best_trade_usd": 0.83,
+    "worst_trade_usd": -3.89,
+    "exit_reasons": {
+     "timeout": 3,
+     "stop_loss": 2,
+     "open_at_end": 1
+    }
+   }
+  },
+  "BigMac TP off SL30 TS25 act50 (no timeout: as built)": {
+   "settings": {
+    "policy": "BIGMAC_PAPER",
+    "take_profit_pct": 0,
+    "stop_loss_pct": 30,
+    "trailing_stop_pct": 25,
+    "trailing_stop_activation_pct": 50,
+    "label": "TEST_FIXTURE_p4_wide_trail",
+    "set_by": "phase4 research"
+   },
+   "timeout_s": null,
+   "every_signal_on_its_own": {
+    "trades": 411,
+    "closed": 211,
+    "open_at_end": 200,
+    "wins": 54,
+    "losses": 157,
+    "realized_usd": -283.24,
+    "unrealized_usd": -226.89,
+    "median_trade_usd": -3.36,
+    "best_trade_usd": 30.24,
+    "worst_trade_usd": -6.01,
+    "exit_reasons": {
+     "open_at_end": 200,
+     "stop_loss": 139,
+     "trailing_stop": 72
+    }
+   },
+   "one_slot_as_jinx_trades": {
+    "trades": 1,
+    "closed": 0,
+    "open_at_end": 1,
+    "wins": 0,
+    "losses": 0,
+    "realized_usd": 0.0,
+    "unrealized_usd": -1.49,
+    "median_trade_usd": null,
+    "best_trade_usd": null,
+    "worst_trade_usd": null,
+    "exit_reasons": {
+     "open_at_end": 1
+    }
+   }
+  },
+  "BigMac TP off SL30 TS25 act50 + BigMac timeout 60 s": {
+   "settings": {
+    "policy": "BIGMAC_PAPER",
+    "take_profit_pct": 0,
+    "stop_loss_pct": 30,
+    "trailing_stop_pct": 25,
+    "trailing_stop_activation_pct": 50,
+    "label": "TEST_FIXTURE_p4_wide_trail",
+    "set_by": "phase4 research"
+   },
+   "timeout_s": 60,
+   "every_signal_on_its_own": {
+    "trades": 411,
+    "closed": 401,
+    "open_at_end": 10,
+    "wins": 84,
+    "losses": 317,
+    "realized_usd": -334.65,
+    "unrealized_usd": -9.58,
+    "median_trade_usd": -1.52,
+    "best_trade_usd": 41.0,
+    "worst_trade_usd": -5.99,
+    "exit_reasons": {
+     "timeout": 235,
+     "stop_loss": 122,
+     "trailing_stop": 44,
+     "open_at_end": 10
+    }
+   },
+   "one_slot_as_jinx_trades": {
+    "trades": 16,
+    "closed": 15,
+    "open_at_end": 1,
+    "wins": 6,
+    "losses": 9,
+    "realized_usd": 37.23,
+    "unrealized_usd": -0.56,
+    "median_trade_usd": -0.69,
+    "best_trade_usd": 20.05,
+    "worst_trade_usd": -5.07,
+    "exit_reasons": {
+     "timeout": 9,
+     "trailing_stop": 3,
+     "stop_loss": 3,
+     "open_at_end": 1
+    }
+   }
+  },
+  "BigMac TP off SL30 TS25 act50 + BigMac timeout 180 s": {
+   "settings": {
+    "policy": "BIGMAC_PAPER",
+    "take_profit_pct": 0,
+    "stop_loss_pct": 30,
+    "trailing_stop_pct": 25,
+    "trailing_stop_activation_pct": 50,
+    "label": "TEST_FIXTURE_p4_wide_trail",
+    "set_by": "phase4 research"
+   },
+   "timeout_s": 180,
+   "every_signal_on_its_own": {
+    "trades": 411,
+    "closed": 393,
+    "open_at_end": 18,
+    "wins": 68,
+    "losses": 325,
+    "realized_usd": -525.5,
+    "unrealized_usd": 31.37,
+    "median_trade_usd": -2.08,
+    "best_trade_usd": 30.24,
+    "worst_trade_usd": -6.01,
+    "exit_reasons": {
+     "timeout": 198,
+     "stop_loss": 134,
+     "trailing_stop": 61,
+     "open_at_end": 18
+    }
+   },
+   "one_slot_as_jinx_trades": {
+    "trades": 9,
+    "closed": 8,
+    "open_at_end": 1,
+    "wins": 1,
+    "losses": 7,
+    "realized_usd": -17.03,
+    "unrealized_usd": 1.15,
+    "median_trade_usd": -2.17,
+    "best_trade_usd": 0.04,
+    "worst_trade_usd": -3.9,
+    "exit_reasons": {
+     "timeout": 5,
+     "stop_loss": 3,
+     "open_at_end": 1
+    }
+   }
+  },
+  "BigMac TP off SL30 TS25 act50 + BigMac timeout 300 s": {
+   "settings": {
+    "policy": "BIGMAC_PAPER",
+    "take_profit_pct": 0,
+    "stop_loss_pct": 30,
+    "trailing_stop_pct": 25,
+    "trailing_stop_activation_pct": 50,
+    "label": "TEST_FIXTURE_p4_wide_trail",
+    "set_by": "phase4 research"
+   },
+   "timeout_s": 300,
+   "every_signal_on_its_own": {
+    "trades": 411,
+    "closed": 384,
+    "open_at_end": 27,
+    "wins": 63,
+    "losses": 321,
+    "realized_usd": -526.91,
+    "unrealized_usd": 20.27,
+    "median_trade_usd": -2.16,
+    "best_trade_usd": 30.24,
+    "worst_trade_usd": -6.01,
+    "exit_reasons": {
+     "timeout": 186,
+     "stop_loss": 135,
+     "trailing_stop": 63,
+     "open_at_end": 27
+    }
+   },
+   "one_slot_as_jinx_trades": {
+    "trades": 9,
+    "closed": 8,
+    "open_at_end": 1,
+    "wins": 1,
+    "losses": 7,
+    "realized_usd": -17.03,
+    "unrealized_usd": 1.15,
+    "median_trade_usd": -2.17,
+    "best_trade_usd": 0.04,
+    "worst_trade_usd": -3.9,
+    "exit_reasons": {
+     "timeout": 5,
+     "stop_loss": 3,
+     "open_at_end": 1
+    }
+   }
+  },
+  "BigMac TP off SL30 TS25 act50 + BigMac timeout 600 s": {
+   "settings": {
+    "policy": "BIGMAC_PAPER",
+    "take_profit_pct": 0,
+    "stop_loss_pct": 30,
+    "trailing_stop_pct": 25,
+    "trailing_stop_activation_pct": 50,
+    "label": "TEST_FIXTURE_p4_wide_trail",
+    "set_by": "phase4 research"
+   },
+   "timeout_s": 600,
+   "every_signal_on_its_own": {
+    "trades": 411,
+    "closed": 356,
+    "open_at_end": 55,
+    "wins": 60,
+    "losses": 296,
+    "realized_usd": -493.61,
+    "unrealized_usd": -18.26,
+    "median_trade_usd": -2.28,
+    "best_trade_usd": 30.24,
+    "worst_trade_usd": -6.01,
+    "exit_reasons": {
+     "timeout": 150,
+     "stop_loss": 138,
+     "trailing_stop": 68,
+     "open_at_end": 55
+    }
+   },
+   "one_slot_as_jinx_trades": {
+    "trades": 8,
+    "closed": 7,
+    "open_at_end": 1,
+    "wins": 0,
+    "losses": 7,
+    "realized_usd": -17.19,
+    "unrealized_usd": -0.64,
+    "median_trade_usd": -2.97,
+    "best_trade_usd": -0.73,
+    "worst_trade_usd": -3.67,
+    "exit_reasons": {
+     "timeout": 4,
+     "stop_loss": 3,
+     "open_at_end": 1
+    }
+   }
+  }
+ }
+}
