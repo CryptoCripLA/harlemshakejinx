@@ -1,0 +1,624 @@
+{
+ "what": "Phase 4 V15/V16 SIMULATED paper P&L on real captured markets; not live trading, not profit",
+ "capture": "live45.fixed.jsonl.gz",
+ "records": 251073,
+ "capture_span_s": 2699.8,
+ "sources": {
+  "pumpapi": 250070,
+  "pumpportal": 1003
+ },
+ "commit": "b1e8d069fc51d5444ef2e69d50fde25e8374c77d",
+ "utc": "2026-10-24T04:57:52Z",
+ "stand_ins": {
+  "safety": "PASS for every screened candidate (GMGN/RugCheck answers not captured)",
+  "funders": "each buyer funded by a distinct wallet (GMGN wallet stats not captured)",
+  "bigmac": {
+   "policy": "BIGMAC_PAPER",
+   "take_profit_pct": 50,
+   "stop_loss_pct": 20,
+   "trailing_stop_pct": 12,
+   "trailing_stop_activation_pct": 20,
+   "label": "TEST_FIXTURE_phase3_replay",
+   "set_by": "scripts/phase3_paper_replay.py"
+  },
+  "kelly": {
+   "label": "TEST_FIXTURE_phase3_replay",
+   "bucket_floors": [
+    "0"
+   ],
+   "priors": {
+    "0": [
+     "0.5",
+     "2"
+    ]
+   },
+   "cap_fraction": "0.05",
+   "entry_filter": "early_momentum",
+   "unscored_bucket": "0"
+  }
+ },
+ "not_modeled": [
+  "GMGN priority fees and tips (B-39: no owner value)",
+  "MEV and competing buys inside one block",
+  "partial fills (a paper fill is all or nothing)",
+  "on-chain landing failures other than the injected ones"
+ ],
+ "runs": [
+  {
+   "delay_ms": 0,
+   "fail_sell_every": 0,
+   "wall_s": 32.1,
+   "events_published": 251538,
+   "detections": 991,
+   "entry_decisions": {
+    "entered": 1,
+    "SLOT_LIMIT": 454
+   },
+   "exit_reasons": {},
+   "injected": {},
+   "exit_monitor": {
+    "price_updates": 7,
+    "sweeps": 270,
+    "evaluations": 277,
+    "no_valid_price": 0,
+    "exits_submitted": 0,
+    "exits_filled": 0,
+    "exits_not_filled": {},
+    "protective_checks": [
+     "CHAD_SYBIL_EMERGENCY",
+     "CHAD_CONFLUENCE_COLLAPSE"
+    ]
+   },
+   "pending_fills_left": 0,
+   "handler_errors": {},
+   "totals": {
+    "positions": 1,
+    "closed": 0,
+    "open": 1,
+    "realized_pnl_lamports": 0,
+    "unrealized_pnl_lamports": -17609735,
+    "paper_balance_lamports": 1899995500,
+    "paper_start_lamports": 2000000000,
+    "wallet_reconciled": true,
+    "simulated_fills": 1,
+    "actual_fills": 0,
+    "fees_lamports": 995095
+   },
+   "usd": {
+    "rate": "102.72",
+    "source": "GMGN getGasPrice native_token_usd_price, 2026-10-24T04:50:07Z",
+    "observed_ns": 1792817609811939900,
+    "realized_pnl": 0.0,
+    "unrealized_pnl": -1.81,
+    "paper_balance": 195.17,
+    "fees": 0.1
+   },
+   "realized_round_trips": {
+    "n": 0,
+    "losing": 0,
+    "winning": 0,
+    "worst_lamports": null,
+    "best_lamports": null
+   },
+   "trades": [
+    {
+     "position_id": 1,
+     "status": "OPEN",
+     "cost_lamports": 99999500,
+     "proceeds_lamports": 0,
+     "protocol_fees_lamports": 990095,
+     "network_fees_lamports": 5000,
+     "failed_attempts": 0,
+     "realized_pnl_lamports": null,
+     "unrealized_pnl_lamports": -17609735,
+     "peak_lamports": 97428008,
+     "exits": []
+    }
+   ]
+  },
+  {
+   "delay_ms": 0,
+   "fail_sell_every": 3,
+   "wall_s": 33.6,
+   "events_published": 251538,
+   "detections": 991,
+   "entry_decisions": {
+    "entered": 1,
+    "SLOT_LIMIT": 454
+   },
+   "exit_reasons": {},
+   "injected": {},
+   "exit_monitor": {
+    "price_updates": 7,
+    "sweeps": 270,
+    "evaluations": 277,
+    "no_valid_price": 0,
+    "exits_submitted": 0,
+    "exits_filled": 0,
+    "exits_not_filled": {},
+    "protective_checks": [
+     "CHAD_SYBIL_EMERGENCY",
+     "CHAD_CONFLUENCE_COLLAPSE"
+    ]
+   },
+   "pending_fills_left": 0,
+   "handler_errors": {},
+   "totals": {
+    "positions": 1,
+    "closed": 0,
+    "open": 1,
+    "realized_pnl_lamports": 0,
+    "unrealized_pnl_lamports": -17609735,
+    "paper_balance_lamports": 1899995500,
+    "paper_start_lamports": 2000000000,
+    "wallet_reconciled": true,
+    "simulated_fills": 1,
+    "actual_fills": 0,
+    "fees_lamports": 995095
+   },
+   "usd": {
+    "rate": "102.72",
+    "source": "GMGN getGasPrice native_token_usd_price, 2026-10-24T04:50:07Z",
+    "observed_ns": 1792817609811939900,
+    "realized_pnl": 0.0,
+    "unrealized_pnl": -1.81,
+    "paper_balance": 195.17,
+    "fees": 0.1
+   },
+   "realized_round_trips": {
+    "n": 0,
+    "losing": 0,
+    "winning": 0,
+    "worst_lamports": null,
+    "best_lamports": null
+   },
+   "trades": [
+    {
+     "position_id": 1,
+     "status": "OPEN",
+     "cost_lamports": 99999500,
+     "proceeds_lamports": 0,
+     "protocol_fees_lamports": 990095,
+     "network_fees_lamports": 5000,
+     "failed_attempts": 0,
+     "realized_pnl_lamports": null,
+     "unrealized_pnl_lamports": -17609735,
+     "peak_lamports": 97428008,
+     "exits": []
+    }
+   ]
+  },
+  {
+   "delay_ms": 400,
+   "fail_sell_every": 0,
+   "wall_s": 31.3,
+   "events_published": 251538,
+   "detections": 991,
+   "entry_decisions": {
+    "submitted_pending_fill": 1,
+    "SLOT_LIMIT": 454
+   },
+   "exit_reasons": {},
+   "injected": {},
+   "exit_monitor": {
+    "price_updates": 7,
+    "sweeps": 270,
+    "evaluations": 277,
+    "no_valid_price": 0,
+    "exits_submitted": 0,
+    "exits_filled": 0,
+    "exits_not_filled": {},
+    "protective_checks": [
+     "CHAD_SYBIL_EMERGENCY",
+     "CHAD_CONFLUENCE_COLLAPSE"
+    ]
+   },
+   "pending_fills_left": 0,
+   "handler_errors": {},
+   "totals": {
+    "positions": 1,
+    "closed": 0,
+    "open": 1,
+    "realized_pnl_lamports": 0,
+    "unrealized_pnl_lamports": -17609735,
+    "paper_balance_lamports": 1899995500,
+    "paper_start_lamports": 2000000000,
+    "wallet_reconciled": true,
+    "simulated_fills": 1,
+    "actual_fills": 0,
+    "fees_lamports": 995095
+   },
+   "usd": {
+    "rate": "102.72",
+    "source": "GMGN getGasPrice native_token_usd_price, 2026-10-24T04:50:07Z",
+    "observed_ns": 1792817609811939900,
+    "realized_pnl": 0.0,
+    "unrealized_pnl": -1.81,
+    "paper_balance": 195.17,
+    "fees": 0.1
+   },
+   "realized_round_trips": {
+    "n": 0,
+    "losing": 0,
+    "winning": 0,
+    "worst_lamports": null,
+    "best_lamports": null
+   },
+   "trades": [
+    {
+     "position_id": 1,
+     "status": "OPEN",
+     "cost_lamports": 99999500,
+     "proceeds_lamports": 0,
+     "protocol_fees_lamports": 990095,
+     "network_fees_lamports": 5000,
+     "failed_attempts": 0,
+     "realized_pnl_lamports": null,
+     "unrealized_pnl_lamports": -17609735,
+     "peak_lamports": 97428008,
+     "exits": []
+    }
+   ]
+  },
+  {
+   "delay_ms": 400,
+   "fail_sell_every": 3,
+   "wall_s": 31.5,
+   "events_published": 251538,
+   "detections": 991,
+   "entry_decisions": {
+    "submitted_pending_fill": 1,
+    "SLOT_LIMIT": 454
+   },
+   "exit_reasons": {},
+   "injected": {},
+   "exit_monitor": {
+    "price_updates": 7,
+    "sweeps": 270,
+    "evaluations": 277,
+    "no_valid_price": 0,
+    "exits_submitted": 0,
+    "exits_filled": 0,
+    "exits_not_filled": {},
+    "protective_checks": [
+     "CHAD_SYBIL_EMERGENCY",
+     "CHAD_CONFLUENCE_COLLAPSE"
+    ]
+   },
+   "pending_fills_left": 0,
+   "handler_errors": {},
+   "totals": {
+    "positions": 1,
+    "closed": 0,
+    "open": 1,
+    "realized_pnl_lamports": 0,
+    "unrealized_pnl_lamports": -17609735,
+    "paper_balance_lamports": 1899995500,
+    "paper_start_lamports": 2000000000,
+    "wallet_reconciled": true,
+    "simulated_fills": 1,
+    "actual_fills": 0,
+    "fees_lamports": 995095
+   },
+   "usd": {
+    "rate": "102.72",
+    "source": "GMGN getGasPrice native_token_usd_price, 2026-10-24T04:50:07Z",
+    "observed_ns": 1792817609811939900,
+    "realized_pnl": 0.0,
+    "unrealized_pnl": -1.81,
+    "paper_balance": 195.17,
+    "fees": 0.1
+   },
+   "realized_round_trips": {
+    "n": 0,
+    "losing": 0,
+    "winning": 0,
+    "worst_lamports": null,
+    "best_lamports": null
+   },
+   "trades": [
+    {
+     "position_id": 1,
+     "status": "OPEN",
+     "cost_lamports": 99999500,
+     "proceeds_lamports": 0,
+     "protocol_fees_lamports": 990095,
+     "network_fees_lamports": 5000,
+     "failed_attempts": 0,
+     "realized_pnl_lamports": null,
+     "unrealized_pnl_lamports": -17609735,
+     "peak_lamports": 97428008,
+     "exits": []
+    }
+   ]
+  },
+  {
+   "delay_ms": 1000,
+   "fail_sell_every": 0,
+   "wall_s": 31.5,
+   "events_published": 251538,
+   "detections": 991,
+   "entry_decisions": {
+    "submitted_pending_fill": 1,
+    "SLOT_LIMIT": 454
+   },
+   "exit_reasons": {},
+   "injected": {},
+   "exit_monitor": {
+    "price_updates": 7,
+    "sweeps": 270,
+    "evaluations": 277,
+    "no_valid_price": 0,
+    "exits_submitted": 0,
+    "exits_filled": 0,
+    "exits_not_filled": {},
+    "protective_checks": [
+     "CHAD_SYBIL_EMERGENCY",
+     "CHAD_CONFLUENCE_COLLAPSE"
+    ]
+   },
+   "pending_fills_left": 0,
+   "handler_errors": {},
+   "totals": {
+    "positions": 1,
+    "closed": 0,
+    "open": 1,
+    "realized_pnl_lamports": 0,
+    "unrealized_pnl_lamports": -17609735,
+    "paper_balance_lamports": 1899995500,
+    "paper_start_lamports": 2000000000,
+    "wallet_reconciled": true,
+    "simulated_fills": 1,
+    "actual_fills": 0,
+    "fees_lamports": 995095
+   },
+   "usd": {
+    "rate": "102.72",
+    "source": "GMGN getGasPrice native_token_usd_price, 2026-10-24T04:50:07Z",
+    "observed_ns": 1792817609811939900,
+    "realized_pnl": 0.0,
+    "unrealized_pnl": -1.81,
+    "paper_balance": 195.17,
+    "fees": 0.1
+   },
+   "realized_round_trips": {
+    "n": 0,
+    "losing": 0,
+    "winning": 0,
+    "worst_lamports": null,
+    "best_lamports": null
+   },
+   "trades": [
+    {
+     "position_id": 1,
+     "status": "OPEN",
+     "cost_lamports": 99999500,
+     "proceeds_lamports": 0,
+     "protocol_fees_lamports": 990095,
+     "network_fees_lamports": 5000,
+     "failed_attempts": 0,
+     "realized_pnl_lamports": null,
+     "unrealized_pnl_lamports": -17609735,
+     "peak_lamports": 97428008,
+     "exits": []
+    }
+   ]
+  },
+  {
+   "delay_ms": 1000,
+   "fail_sell_every": 3,
+   "wall_s": 33.0,
+   "events_published": 251538,
+   "detections": 991,
+   "entry_decisions": {
+    "submitted_pending_fill": 1,
+    "SLOT_LIMIT": 454
+   },
+   "exit_reasons": {},
+   "injected": {},
+   "exit_monitor": {
+    "price_updates": 7,
+    "sweeps": 270,
+    "evaluations": 277,
+    "no_valid_price": 0,
+    "exits_submitted": 0,
+    "exits_filled": 0,
+    "exits_not_filled": {},
+    "protective_checks": [
+     "CHAD_SYBIL_EMERGENCY",
+     "CHAD_CONFLUENCE_COLLAPSE"
+    ]
+   },
+   "pending_fills_left": 0,
+   "handler_errors": {},
+   "totals": {
+    "positions": 1,
+    "closed": 0,
+    "open": 1,
+    "realized_pnl_lamports": 0,
+    "unrealized_pnl_lamports": -17609735,
+    "paper_balance_lamports": 1899995500,
+    "paper_start_lamports": 2000000000,
+    "wallet_reconciled": true,
+    "simulated_fills": 1,
+    "actual_fills": 0,
+    "fees_lamports": 995095
+   },
+   "usd": {
+    "rate": "102.72",
+    "source": "GMGN getGasPrice native_token_usd_price, 2026-10-24T04:50:07Z",
+    "observed_ns": 1792817609811939900,
+    "realized_pnl": 0.0,
+    "unrealized_pnl": -1.81,
+    "paper_balance": 195.17,
+    "fees": 0.1
+   },
+   "realized_round_trips": {
+    "n": 0,
+    "losing": 0,
+    "winning": 0,
+    "worst_lamports": null,
+    "best_lamports": null
+   },
+   "trades": [
+    {
+     "position_id": 1,
+     "status": "OPEN",
+     "cost_lamports": 99999500,
+     "proceeds_lamports": 0,
+     "protocol_fees_lamports": 990095,
+     "network_fees_lamports": 5000,
+     "failed_attempts": 0,
+     "realized_pnl_lamports": null,
+     "unrealized_pnl_lamports": -17609735,
+     "peak_lamports": 97428008,
+     "exits": []
+    }
+   ]
+  },
+  {
+   "delay_ms": 2000,
+   "fail_sell_every": 0,
+   "wall_s": 32.7,
+   "events_published": 251538,
+   "detections": 991,
+   "entry_decisions": {
+    "submitted_pending_fill": 1,
+    "SLOT_LIMIT": 454
+   },
+   "exit_reasons": {},
+   "injected": {},
+   "exit_monitor": {
+    "price_updates": 7,
+    "sweeps": 270,
+    "evaluations": 277,
+    "no_valid_price": 0,
+    "exits_submitted": 0,
+    "exits_filled": 0,
+    "exits_not_filled": {},
+    "protective_checks": [
+     "CHAD_SYBIL_EMERGENCY",
+     "CHAD_CONFLUENCE_COLLAPSE"
+    ]
+   },
+   "pending_fills_left": 0,
+   "handler_errors": {},
+   "totals": {
+    "positions": 1,
+    "closed": 0,
+    "open": 1,
+    "realized_pnl_lamports": 0,
+    "unrealized_pnl_lamports": -17609735,
+    "paper_balance_lamports": 1899995500,
+    "paper_start_lamports": 2000000000,
+    "wallet_reconciled": true,
+    "simulated_fills": 1,
+    "actual_fills": 0,
+    "fees_lamports": 995095
+   },
+   "usd": {
+    "rate": "102.72",
+    "source": "GMGN getGasPrice native_token_usd_price, 2026-10-24T04:50:07Z",
+    "observed_ns": 1792817609811939900,
+    "realized_pnl": 0.0,
+    "unrealized_pnl": -1.81,
+    "paper_balance": 195.17,
+    "fees": 0.1
+   },
+   "realized_round_trips": {
+    "n": 0,
+    "losing": 0,
+    "winning": 0,
+    "worst_lamports": null,
+    "best_lamports": null
+   },
+   "trades": [
+    {
+     "position_id": 1,
+     "status": "OPEN",
+     "cost_lamports": 99999500,
+     "proceeds_lamports": 0,
+     "protocol_fees_lamports": 990095,
+     "network_fees_lamports": 5000,
+     "failed_attempts": 0,
+     "realized_pnl_lamports": null,
+     "unrealized_pnl_lamports": -17609735,
+     "peak_lamports": 97428008,
+     "exits": []
+    }
+   ]
+  },
+  {
+   "delay_ms": 2000,
+   "fail_sell_every": 3,
+   "wall_s": 32.8,
+   "events_published": 251538,
+   "detections": 991,
+   "entry_decisions": {
+    "submitted_pending_fill": 1,
+    "SLOT_LIMIT": 454
+   },
+   "exit_reasons": {},
+   "injected": {},
+   "exit_monitor": {
+    "price_updates": 7,
+    "sweeps": 270,
+    "evaluations": 277,
+    "no_valid_price": 0,
+    "exits_submitted": 0,
+    "exits_filled": 0,
+    "exits_not_filled": {},
+    "protective_checks": [
+     "CHAD_SYBIL_EMERGENCY",
+     "CHAD_CONFLUENCE_COLLAPSE"
+    ]
+   },
+   "pending_fills_left": 0,
+   "handler_errors": {},
+   "totals": {
+    "positions": 1,
+    "closed": 0,
+    "open": 1,
+    "realized_pnl_lamports": 0,
+    "unrealized_pnl_lamports": -17609735,
+    "paper_balance_lamports": 1899995500,
+    "paper_start_lamports": 2000000000,
+    "wallet_reconciled": true,
+    "simulated_fills": 1,
+    "actual_fills": 0,
+    "fees_lamports": 995095
+   },
+   "usd": {
+    "rate": "102.72",
+    "source": "GMGN getGasPrice native_token_usd_price, 2026-10-24T04:50:07Z",
+    "observed_ns": 1792817609811939900,
+    "realized_pnl": 0.0,
+    "unrealized_pnl": -1.81,
+    "paper_balance": 195.17,
+    "fees": 0.1
+   },
+   "realized_round_trips": {
+    "n": 0,
+    "losing": 0,
+    "winning": 0,
+    "worst_lamports": null,
+    "best_lamports": null
+   },
+   "trades": [
+    {
+     "position_id": 1,
+     "status": "OPEN",
+     "cost_lamports": 99999500,
+     "proceeds_lamports": 0,
+     "protocol_fees_lamports": 990095,
+     "network_fees_lamports": 5000,
+     "failed_attempts": 0,
+     "realized_pnl_lamports": null,
+     "unrealized_pnl_lamports": -17609735,
+     "peak_lamports": 97428008,
+     "exits": []
+    }
+   ]
+  }
+ ]
+}
