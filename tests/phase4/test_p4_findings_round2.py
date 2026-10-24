@@ -22,12 +22,9 @@ S = 1_000_000_000
 
 # ---- P4-F13: malformed RugCheck authority values read as revoked -----------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason=f"FINDING P4-F13 (Codex round 2, finding 1): jinx/adapters/rugcheck/client.py "
-                   f"interpret() tests mintAuthority/freezeAuthority by truthiness, so an empty string, false, 0, [] or {{}} "
-                   f"reads as 'no authority' and, with rugged false, the token PASSES; RugCheck's documented 'revoked' "
-                   f"value is null. Owner: {LEAD}.")
 @pytest.mark.parametrize("bad", ["", False, 0, [], {}])
 def test_an_unreadable_rugcheck_authority_value_is_never_a_pass(bad):
+    """Was P4-F13 (Codex round 2, finding 1); fixed by the lead in 58e179d: only null means a revoked authority."""
     for field in ("mintAuthority", "freezeAuthority"):
         report = interpret({**RC, field: bad})
         assert report["verdict"] != "PASS", (field, bad)
